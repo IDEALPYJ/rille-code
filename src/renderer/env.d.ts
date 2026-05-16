@@ -37,6 +37,47 @@ declare global {
     error?: string
   }
 
+  type GitFileDiffKind = 'staged' | 'unstaged' | 'untracked'
+  type GitResetMode = 'soft' | 'mixed' | 'hard'
+
+  interface GitDiffResult {
+    success: boolean
+    filePath: string
+    original: string
+    modified: string
+    originalLabel: string
+    modifiedLabel: string
+    isBinary?: boolean
+    error?: string
+  }
+
+  interface GitCommit {
+    hash: string
+    shortHash: string
+    author: string
+    date: string
+    subject: string
+    parents: string[]
+  }
+
+  interface GitLogResult {
+    success: boolean
+    commits: GitCommit[]
+    error?: string
+  }
+
+  interface GitCommitFile {
+    path: string
+    previousPath?: string
+    status: string
+  }
+
+  interface GitCommitFilesResult {
+    success: boolean
+    files: GitCommitFile[]
+    error?: string
+  }
+
   interface TerminalSession {
     id: string
     cwd: string
@@ -69,6 +110,13 @@ declare global {
     gitStage(rootPath: string, filePath: string): Promise<GitCommandResult>
     gitUnstage(rootPath: string, filePath: string): Promise<GitCommandResult>
     gitCommit(rootPath: string, message: string): Promise<GitCommandResult>
+    gitFileDiff(rootPath: string, filePath: string, kind: GitFileDiffKind): Promise<GitDiffResult>
+    gitLog(rootPath: string, limit?: number): Promise<GitLogResult>
+    gitCommitFiles(rootPath: string, hash: string): Promise<GitCommitFilesResult>
+    gitCommitFileDiff(rootPath: string, hash: string, filePath: string, previousPath?: string): Promise<GitDiffResult>
+    gitCheckoutCommit(rootPath: string, hash: string): Promise<GitCommandResult>
+    gitCreateBranchFromCommit(rootPath: string, hash: string, branchName: string): Promise<GitCommandResult>
+    gitResetToCommit(rootPath: string, hash: string, mode: GitResetMode): Promise<GitCommandResult>
     terminalCreate(cwd?: string, cols?: number, rows?: number): Promise<TerminalSession>
     terminalWrite(id: string, data: string): Promise<void>
     terminalResize(id: string, cols: number, rows: number): Promise<void>

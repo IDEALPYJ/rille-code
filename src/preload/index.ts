@@ -16,6 +16,13 @@ export interface RilleAPI {
   gitStage(rootPath: string, filePath: string): Promise<GitCommandResult>
   gitUnstage(rootPath: string, filePath: string): Promise<GitCommandResult>
   gitCommit(rootPath: string, message: string): Promise<GitCommandResult>
+  gitFileDiff(rootPath: string, filePath: string, kind: GitFileDiffKind): Promise<GitDiffResult>
+  gitLog(rootPath: string, limit?: number): Promise<GitLogResult>
+  gitCommitFiles(rootPath: string, hash: string): Promise<GitCommitFilesResult>
+  gitCommitFileDiff(rootPath: string, hash: string, filePath: string, previousPath?: string): Promise<GitDiffResult>
+  gitCheckoutCommit(rootPath: string, hash: string): Promise<GitCommandResult>
+  gitCreateBranchFromCommit(rootPath: string, hash: string, branchName: string): Promise<GitCommandResult>
+  gitResetToCommit(rootPath: string, hash: string, mode: GitResetMode): Promise<GitCommandResult>
   terminalCreate(cwd?: string, cols?: number, rows?: number): Promise<TerminalSession>
   terminalWrite(id: string, data: string): Promise<void>
   terminalResize(id: string, cols: number, rows: number): Promise<void>
@@ -59,6 +66,47 @@ export interface GitCommandResult {
   error?: string
 }
 
+export type GitFileDiffKind = 'staged' | 'unstaged' | 'untracked'
+export type GitResetMode = 'soft' | 'mixed' | 'hard'
+
+export interface GitDiffResult {
+  success: boolean
+  filePath: string
+  original: string
+  modified: string
+  originalLabel: string
+  modifiedLabel: string
+  isBinary?: boolean
+  error?: string
+}
+
+export interface GitCommit {
+  hash: string
+  shortHash: string
+  author: string
+  date: string
+  subject: string
+  parents: string[]
+}
+
+export interface GitLogResult {
+  success: boolean
+  commits: GitCommit[]
+  error?: string
+}
+
+export interface GitCommitFile {
+  path: string
+  previousPath?: string
+  status: string
+}
+
+export interface GitCommitFilesResult {
+  success: boolean
+  files: GitCommitFile[]
+  error?: string
+}
+
 export interface TerminalSession {
   id: string
   cwd: string
@@ -91,6 +139,13 @@ const api: RilleAPI = {
   gitStage: (rootPath, filePath) => ipcRenderer.invoke('git:stage', rootPath, filePath),
   gitUnstage: (rootPath, filePath) => ipcRenderer.invoke('git:unstage', rootPath, filePath),
   gitCommit: (rootPath, message) => ipcRenderer.invoke('git:commit', rootPath, message),
+  gitFileDiff: (rootPath, filePath, kind) => ipcRenderer.invoke('git:fileDiff', rootPath, filePath, kind),
+  gitLog: (rootPath, limit) => ipcRenderer.invoke('git:log', rootPath, limit),
+  gitCommitFiles: (rootPath, hash) => ipcRenderer.invoke('git:commitFiles', rootPath, hash),
+  gitCommitFileDiff: (rootPath, hash, filePath, previousPath) => ipcRenderer.invoke('git:commitFileDiff', rootPath, hash, filePath, previousPath),
+  gitCheckoutCommit: (rootPath, hash) => ipcRenderer.invoke('git:checkoutCommit', rootPath, hash),
+  gitCreateBranchFromCommit: (rootPath, hash, branchName) => ipcRenderer.invoke('git:createBranchFromCommit', rootPath, hash, branchName),
+  gitResetToCommit: (rootPath, hash, mode) => ipcRenderer.invoke('git:resetToCommit', rootPath, hash, mode),
   terminalCreate: (cwd, cols, rows) => ipcRenderer.invoke('terminal:create', cwd, cols, rows),
   terminalWrite: (id, data) => ipcRenderer.invoke('terminal:write', id, data),
   terminalResize: (id, cols, rows) => ipcRenderer.invoke('terminal:resize', id, cols, rows),

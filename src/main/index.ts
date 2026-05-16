@@ -44,6 +44,35 @@ interface GitCommandResult {
   error?: string
 }
 
+type GitFileDiffKind = 'staged' | 'unstaged' | 'untracked'
+type GitResetMode = 'soft' | 'mixed' | 'hard'
+
+interface GitDiffResult {
+  success: boolean
+  filePath: string
+  original: string
+  modified: string
+  originalLabel: string
+  modifiedLabel: string
+  isBinary?: boolean
+  error?: string
+}
+
+interface GitCommitSummary {
+  hash: string
+  shortHash: string
+  author: string
+  date: string
+  subject: string
+  parents: string[]
+}
+
+interface GitCommitFile {
+  path: string
+  previousPath?: string
+  status: string
+}
+
 interface TerminalSession {
   id: string
   cwd: string
@@ -53,6 +82,7 @@ interface TerminalSession {
 const MAX_SEARCH_RESULTS = 300
 const MAX_SEARCH_FILE_SIZE = 1024 * 1024
 const GIT_TIMEOUT_MS = 10_000
+const EMPTY_TREE_HASH = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 const terminalSessions = new Map<string, pty.IPty>()
 
 function createWindow(): void {
@@ -267,6 +297,223 @@ async function getGitStatus(rootPath: string): Promise<GitStatusResult> {
   }
 }
 
+function hasBinaryMarker(content: string): boolean {
+  return content.includes('\0')
+}
+
+function normalizeGitLimit(limit?: number): number {
+  if (!Number.isFinite(limit)) return 50
+  return Math.max(1, Math.min(200, Math.floor(limit ?? 50)))
+}
+
+function createTextReadResult(content = ''): { success: boolean; content: string; isBinary?: boolean; error?: string } {
+  return { success: true, content, isBinary: hasBinaryMarker(content) }
+}
+
+async function readGitObjectText(
+  repoRoot: string,
+  revision: string,
+  filePath: string,
+): Promise<{ success: boolean; content: string; isBinary?: boolean; error?: string }> {
+  const spec = revision === ':' ? `:${filePath}` : `${revision}:${filePath}`
+  const result = await runGit(repoRoot, ['show', spec])
+  if (!result.success) {
+    return createTextReadResult('')
+  }
+  return createTextReadResult(result.stdout)
+}
+
+async function readWorktreeText(
+  repoRoot: string,
+  filePath: string,
+): Promise<{ success: boolean; content: string; isBinary?: boolean; error?: string }> {
+  const absolutePath = join(repoRoot, filePath)
+  if (!existsSync(absolutePath)) {
+    return createTextReadResult('')
+  }
+
+  try {
+    const content = await readFile(absolutePath, 'utf-8')
+    return createTextReadResult(content)
+  } catch (error) {
+    return {
+      success: false,
+      content: '',
+      error: error instanceof Error ? error.message : '无法读取文件内容。',
+    }
+  }
+}
+
+function buildGitDiffResult(
+  filePath: string,
+  original: { success: boolean; content: string; isBinary?: boolean; error?: string },
+  modified: { success: boolean; content: string; isBinary?: boolean; error?: string },
+  originalLabel: string,
+  modifiedLabel: string,
+): GitDiffResult {
+  if (!original.success || !modified.success) {
+    return {
+      success: false,
+      filePath,
+      original: '',
+      modified: '',
+      originalLabel,
+      modifiedLabel,
+      error: original.error || modified.error || '无法读取 diff 内容。',
+    }
+  }
+
+  if (original.isBinary || modified.isBinary) {
+    return {
+      success: true,
+      filePath,
+      original: '',
+      modified: '',
+      originalLabel,
+      modifiedLabel,
+      isBinary: true,
+      error: '二进制文件无法在文本 diff 中预览。',
+    }
+  }
+
+  return {
+    success: true,
+    filePath,
+    original: original.content,
+    modified: modified.content,
+    originalLabel,
+    modifiedLabel,
+  }
+}
+
+async function getGitFileDiff(rootPath: string, filePath: string, kind: GitFileDiffKind): Promise<GitDiffResult> {
+  const repo = await resolveRepoRoot(rootPath)
+  const gitPath = repo.success ? toGitPath(repo.repoRoot, filePath) : filePath
+  if (!repo.success) {
+    return {
+      success: false,
+      filePath: gitPath,
+      original: '',
+      modified: '',
+      originalLabel: '',
+      modifiedLabel: '',
+      error: repo.error,
+    }
+  }
+
+  if (kind === 'staged') {
+    const original = await readGitObjectText(repo.repoRoot, 'HEAD', gitPath)
+    const modified = await readGitObjectText(repo.repoRoot, ':', gitPath)
+    return buildGitDiffResult(gitPath, original, modified, 'HEAD', '已暂存')
+  }
+
+  if (kind === 'untracked') {
+    const original = createTextReadResult('')
+    const modified = await readWorktreeText(repo.repoRoot, gitPath)
+    return buildGitDiffResult(gitPath, original, modified, '空文件', '工作区')
+  }
+
+  const original = await readGitObjectText(repo.repoRoot, ':', gitPath)
+  const modified = await readWorktreeText(repo.repoRoot, gitPath)
+  return buildGitDiffResult(gitPath, original, modified, '索引', '工作区')
+}
+
+async function getGitLog(rootPath: string, limit?: number): Promise<{ success: boolean; commits: GitCommitSummary[]; error?: string }> {
+  const repo = await resolveRepoRoot(rootPath)
+  if (!repo.success) return { success: false, commits: [], error: repo.error }
+
+  const result = await runGit(repo.repoRoot, [
+    'log',
+    `-${normalizeGitLimit(limit)}`,
+    '--date=iso-strict',
+    '--pretty=format:%H%x1f%h%x1f%an%x1f%ad%x1f%s%x1f%P%x1e',
+  ])
+
+  if (!result.success) {
+    return { success: false, commits: [], error: result.error }
+  }
+
+  const commits = result.stdout
+    .split('\x1e')
+    .map(item => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const [hash = '', shortHash = '', author = '', date = '', subject = '', parents = ''] = item.split('\x1f')
+      return { hash, shortHash, author, date, subject, parents: parents.split(' ').filter(Boolean) }
+    })
+    .filter(commit => Boolean(commit.hash))
+
+  return { success: true, commits }
+}
+
+async function getCommitBase(repoRoot: string, hash: string): Promise<string> {
+  const parentsResult = await runGit(repoRoot, ['rev-list', '--parents', '-n', '1', hash])
+  if (!parentsResult.success) return EMPTY_TREE_HASH
+  const [, firstParent] = parentsResult.stdout.trim().split(/\s+/)
+  return firstParent || EMPTY_TREE_HASH
+}
+
+async function getGitCommitFiles(rootPath: string, hash: string): Promise<{ success: boolean; files: GitCommitFile[]; error?: string }> {
+  const repo = await resolveRepoRoot(rootPath)
+  if (!repo.success) return { success: false, files: [], error: repo.error }
+
+  const base = await getCommitBase(repo.repoRoot, hash)
+  const result = await runGit(repo.repoRoot, ['diff', '--name-status', '-z', base, hash, '--'])
+  if (!result.success) {
+    return { success: false, files: [], error: result.error }
+  }
+
+  const records = result.stdout.split('\0').filter(Boolean)
+  const files: GitCommitFile[] = []
+  for (let index = 0; index < records.length;) {
+    const status = records[index++] ?? ''
+    if (!status) continue
+
+    if (status.startsWith('R') || status.startsWith('C')) {
+      const previousPath = records[index++] ?? ''
+      const path = records[index++] ?? previousPath
+      files.push({ path, previousPath, status: status[0] })
+      continue
+    }
+
+    const path = records[index++] ?? ''
+    if (path) files.push({ path, status: status[0] })
+  }
+
+  return { success: true, files }
+}
+
+async function getGitCommitFileDiff(
+  rootPath: string,
+  hash: string,
+  filePath: string,
+  previousPath?: string,
+): Promise<GitDiffResult> {
+  const repo = await resolveRepoRoot(rootPath)
+  if (!repo.success) {
+    return {
+      success: false,
+      filePath,
+      original: '',
+      modified: '',
+      originalLabel: '',
+      modifiedLabel: '',
+      error: repo.error,
+    }
+  }
+
+  const gitPath = toGitPath(repo.repoRoot, filePath)
+  const oldGitPath = previousPath ? toGitPath(repo.repoRoot, previousPath) : gitPath
+  const base = await getCommitBase(repo.repoRoot, hash)
+  const shortBase = base === EMPTY_TREE_HASH ? '空文件' : base.slice(0, 7)
+  const original = base === EMPTY_TREE_HASH
+    ? createTextReadResult('')
+    : await readGitObjectText(repo.repoRoot, base, oldGitPath)
+  const modified = await readGitObjectText(repo.repoRoot, hash, gitPath)
+
+  return buildGitDiffResult(gitPath, original, modified, shortBase, hash.slice(0, 7))
+}
+
 function getDefaultShell(): string {
   if (process.platform === 'win32') {
     return process.env.COMSPEC || 'powershell.exe'
@@ -396,6 +643,53 @@ ipcMain.handle('git:commit', async (_event, rootPath: string, message: string) =
   const repo = await resolveRepoRoot(rootPath)
   if (!repo.success) return { success: false, error: repo.error }
   const result = await runGit(repo.repoRoot, ['commit', '-m', message])
+  return { success: result.success, error: result.error }
+})
+
+ipcMain.handle('git:fileDiff', async (_event, rootPath: string, filePath: string, kind: GitFileDiffKind) => {
+  return getGitFileDiff(rootPath, filePath, kind)
+})
+
+ipcMain.handle('git:log', async (_event, rootPath: string, limit?: number) => {
+  return getGitLog(rootPath, limit)
+})
+
+ipcMain.handle('git:commitFiles', async (_event, rootPath: string, hash: string) => {
+  return getGitCommitFiles(rootPath, hash)
+})
+
+ipcMain.handle('git:commitFileDiff', async (_event, rootPath: string, hash: string, filePath: string, previousPath?: string) => {
+  return getGitCommitFileDiff(rootPath, hash, filePath, previousPath)
+})
+
+ipcMain.handle('git:checkoutCommit', async (_event, rootPath: string, hash: string) => {
+  const repo = await resolveRepoRoot(rootPath)
+  if (!repo.success) return { success: false, error: repo.error }
+  const result = await runGit(repo.repoRoot, ['checkout', '--detach', hash])
+  return { success: result.success, error: result.error }
+})
+
+ipcMain.handle('git:createBranchFromCommit', async (_event, rootPath: string, hash: string, branchName: string) => {
+  const repo = await resolveRepoRoot(rootPath)
+  if (!repo.success) return { success: false, error: repo.error }
+
+  const normalizedBranchName = branchName.trim()
+  const validation = await runGit(repo.repoRoot, ['check-ref-format', '--branch', normalizedBranchName])
+  if (!normalizedBranchName || !validation.success) {
+    return { success: false, error: validation.error || '分支名无效。' }
+  }
+
+  const result = await runGit(repo.repoRoot, ['checkout', '-b', normalizedBranchName, hash])
+  return { success: result.success, error: result.error }
+})
+
+ipcMain.handle('git:resetToCommit', async (_event, rootPath: string, hash: string, mode: GitResetMode) => {
+  const repo = await resolveRepoRoot(rootPath)
+  if (!repo.success) return { success: false, error: repo.error }
+  if (mode !== 'soft' && mode !== 'mixed' && mode !== 'hard') {
+    return { success: false, error: 'Reset mode is invalid.' }
+  }
+  const result = await runGit(repo.repoRoot, ['reset', `--${mode}`, hash])
   return { success: result.success, error: result.error }
 })
 

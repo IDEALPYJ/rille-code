@@ -15,6 +15,7 @@ import { Editor, type EditorDiagnostic } from './components/Editor'
 import { StatusBar, type StatusDiagnostic } from './components/StatusBar'
 import { SearchPanel } from './components/SearchPanel'
 import { GitPanel } from './components/GitPanel'
+import { GitDiffViewer, type GitDiffTarget } from './components/GitDiffViewer'
 import { TerminalPanel } from './components/TerminalPanel'
 
 // ── Types ────────────────────────────────────────────────────
@@ -110,6 +111,7 @@ export default function App() {
   const [isTerminalVisible, setIsTerminalVisible] = useState(false)
   const [terminalNewSignal, setTerminalNewSignal] = useState(0)
   const [terminalKillSignal, setTerminalKillSignal] = useState(0)
+  const [gitDiffTarget, setGitDiffTarget] = useState<GitDiffTarget | null>(null)
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 })
   const [diagnostics, setDiagnostics] = useState<EditorDiagnostic[]>([])
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -120,6 +122,7 @@ export default function App() {
     const tree = await window.rille.readDirectory(path)
     editorRef.current = null
     pendingRevealRef.current = null
+    setGitDiffTarget(null)
     setCursorPosition({ line: 1, column: 1 })
     setDiagnostics([])
     setState(prev => ({ ...prev, workspacePath: path, fileTree: tree, openFiles: [], activeFilePath: null }))
@@ -138,6 +141,7 @@ export default function App() {
   }, [state.workspacePath])
 
   const openFile = useCallback(async (path: string) => {
+    setGitDiffTarget(null)
     const existing = state.openFiles.find(f => normalizePath(f.path) === normalizePath(path))
     if (existing) {
       setState(prev => ({ ...prev, activeFilePath: existing.path }))
@@ -159,6 +163,7 @@ export default function App() {
   }, [openFile])
 
   const closeFile = useCallback((path: string) => {
+    setGitDiffTarget(null)
     setState(prev => {
       const idx = prev.openFiles.findIndex(f => f.path === path)
       const newFiles = prev.openFiles.filter(f => f.path !== path)
@@ -173,11 +178,13 @@ export default function App() {
   const closeAllFiles = useCallback(() => {
     editorRef.current = null
     pendingRevealRef.current = null
+    setGitDiffTarget(null)
     setCursorPosition({ line: 1, column: 1 })
     setState(prev => ({ ...prev, openFiles: [], activeFilePath: null }))
   }, [])
 
   const setActiveFile = useCallback((path: string) => {
+    setGitDiffTarget(null)
     setState(prev => ({ ...prev, activeFilePath: path }))
   }, [])
 
@@ -214,7 +221,8 @@ export default function App() {
     }))
   }, [state.openFiles])
 
-  const activeFile = state.openFiles.find(f => f.path === state.activeFilePath)
+  const selectedOpenFile = state.openFiles.find(f => f.path === state.activeFilePath)
+  const activeFile = gitDiffTarget ? undefined : selectedOpenFile
   const workspaceName = state.workspacePath?.split(/[/\\]/).pop() ?? 'RilleCode'
   const workspaceTitle = workspaceName.toUpperCase()
 
@@ -308,6 +316,13 @@ export default function App() {
     setTerminalKillSignal(value => value + 1)
   }, [])
 
+  const openGitDiff = useCallback((target: GitDiffTarget) => {
+    editorRef.current = null
+    pendingRevealRef.current = null
+    setCursorPosition({ line: 1, column: 1 })
+    setGitDiffTarget(target)
+  }, [])
+
   const ctx: AppContextType = {
     ...state,
     setWorkspace, openFile, closeFile, setActiveFile, updateFileContent, saveFile,
@@ -377,7 +392,7 @@ export default function App() {
     }
 
     if (activeSideView === 'git') {
-      return <GitPanel rootPath={state.workspacePath} />
+      return <GitPanel rootPath={state.workspacePath} onOpenDiff={openGitDiff} />
     }
 
     return (
@@ -483,16 +498,22 @@ export default function App() {
           </aside>
 
           <section className="editor-area">
-            {activeFile && (
+            {state.openFiles.length > 0 && (
               <Tabs
                 files={state.openFiles}
-                activePath={state.activeFilePath}
+                activePath={gitDiffTarget ? null : state.activeFilePath}
                 onSelect={setActiveFile}
                 onClose={closeFile}
               />
             )}
             <div className="editor-container">
-              {activeFile ? (
+              {gitDiffTarget && state.workspacePath ? (
+                <GitDiffViewer
+                  key={gitDiffTarget.id}
+                  rootPath={state.workspacePath}
+                  target={gitDiffTarget}
+                />
+              ) : activeFile ? (
                 <Editor
                   key={activeFile.path}
                   path={activeFile.path}

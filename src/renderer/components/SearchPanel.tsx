@@ -60,11 +60,11 @@ export function SearchPanel({ rootPath, onOpenFile }: Props) {
       </div>
       <label className="option-row">
         <input type="checkbox" checked={caseSensitive} onChange={(event) => setCaseSensitive(event.target.checked)} />
-        区分大小写
+        <span>区分大小写</span>
       </label>
       <label className="option-row">
         <input type="checkbox" checked={includeDependencies} onChange={(event) => setIncludeDependencies(event.target.checked)} />
-        Include dependencies
+        <span>Include dependencies</span>
       </label>
       {!rootPath && <div className="panel-empty">打开文件夹后可以搜索项目。</div>}
       {error && <div className="panel-error">{error}</div>}
@@ -78,10 +78,11 @@ export function SearchPanel({ rootPath, onOpenFile }: Props) {
             className="search-result"
             key={`${result.filePath}:${result.line}:${result.column}`}
             onClick={() => onOpenFile(result.filePath)}
+            title={`${result.filePath}:${result.line}\n${result.preview}`}
           >
-            <span className="result-file">{fileName(result.filePath)}</span>
-            <span className="result-path">{compactPath(result.filePath)}:{result.line}</span>
-            <span className="result-preview">{result.preview}</span>
+            <span className="result-file" title={fileName(result.filePath)}>{fileName(result.filePath)}</span>
+            <span className="result-path" title={`${result.filePath}:${result.line}`}>{compactPath(result.filePath)}:{result.line}</span>
+            <span className="result-preview" title={result.preview}>{result.preview}</span>
           </button>
         ))}
       </div>
