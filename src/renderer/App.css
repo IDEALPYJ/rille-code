@@ -225,13 +225,27 @@ button {
 
 .sidebar {
   width: var(--sidebar-width);
-  min-width: 210px;
+  min-width: 170px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--bg-side);
+}
+
+.sidebar-resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  user-select: none;
   border-right: 1px solid var(--border);
+}
+
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:active {
+  background: #d0d5dd;
 }
 
 .workspace-root {
@@ -272,13 +286,15 @@ button {
 }
 
 .file-tree::-webkit-scrollbar,
-.tabs-bar::-webkit-scrollbar {
+.tabs-bar::-webkit-scrollbar,
+.git-history-list::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 .file-tree::-webkit-scrollbar-thumb,
-.tabs-bar::-webkit-scrollbar-thumb {
+.tabs-bar::-webkit-scrollbar-thumb,
+.git-history-list::-webkit-scrollbar-thumb {
   background: #c8ccd3;
   border-radius: 999px;
   border: 2px solid transparent;
@@ -786,6 +802,62 @@ button {
 .panel-empty.compact {
   margin: 5px 0 7px;
   color: #9aa1ad;
+}
+
+.remote-section {
+  padding: 9px 8px 2px;
+}
+
+.remote-section + .remote-section {
+  border-top: 1px solid var(--border-soft);
+}
+
+.remote-section-title {
+  margin: 0 0 5px;
+  color: #7a8494;
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.remote-row {
+  width: 100%;
+  height: 28px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  border-radius: 4px;
+  color: #4b5563;
+  cursor: pointer;
+  text-align: left;
+}
+
+.remote-row:hover:not(:disabled),
+.remote-row:focus-visible {
+  background: #e9edf4;
+  outline: none;
+}
+
+.remote-row:disabled {
+  color: #aab1bd;
+  cursor: default;
+}
+
+.remote-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-action.icon {
+  width: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 
 .panel-error {
@@ -1305,6 +1377,10 @@ button {
 }
 
 .git-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   padding: 0 8px 8px;
   background: var(--bg-side);
 }
@@ -1315,6 +1391,275 @@ button {
 
 .git-branch {
   display: none;
+}
+
+.git-icon-button {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: #4f5867;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.git-icon-button:hover:not(:disabled) {
+  color: #1f2937;
+  background: #e9edf4;
+}
+
+.git-icon-button:focus-visible {
+  outline: 1px solid #8eb8f2;
+  outline-offset: -1px;
+}
+
+.git-icon-button:disabled {
+  color: #b0b8c4;
+  background: transparent;
+  cursor: default;
+}
+
+.git-icon-button.danger {
+  color: #a42d2d;
+}
+
+.git-icon-button.danger:hover:not(:disabled) {
+  color: #861f1f;
+  background: #fff1f1;
+}
+
+.git-branch-toolbar {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 6px;
+}
+
+.git-branch-menu-wrap {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+
+.git-branch-button {
+  width: 100%;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 4px;
+  color: #343c4a;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+
+.git-branch-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-branch-button:hover:not(:disabled) {
+  background: #e9edf4;
+}
+
+.git-branch-button:disabled {
+  color: #a5adba;
+  cursor: default;
+  background: transparent;
+}
+
+.git-branch-menu {
+  position: absolute;
+  left: 0;
+  top: 28px;
+  z-index: 90;
+  width: min(360px, calc(100vw - 56px));
+  max-height: 370px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid #d7dce5;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+}
+
+.git-branch-menu-header {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  color: #7a8494;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.git-branch-empty {
+  padding: 6px;
+  color: #9aa2b0;
+  font-size: 12px;
+}
+
+.git-branch-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.git-branch-row-main,
+.git-branch-remote-row {
+  min-width: 0;
+  min-height: 30px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 4px 7px;
+  border: 0;
+  border-radius: 5px;
+  color: #2d3542;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.git-branch-row-main:hover:not(:disabled),
+.git-branch-remote-row:hover:not(:disabled),
+.git-branch-row-main.active {
+  background: #eef4ff;
+}
+
+.git-branch-row-main:disabled {
+  cursor: default;
+}
+
+.git-branch-row-main span,
+.git-branch-remote-row span,
+.git-branch-row-main small,
+.git-branch-remote-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-branch-row-main span,
+.git-branch-remote-row span {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.git-branch-row-main small,
+.git-branch-remote-row small {
+  color: #8b93a0;
+  font-size: 10.5px;
+}
+
+.git-branch-delete {
+  width: 26px;
+  height: 26px;
+}
+
+.git-operation-alert {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 7px 8px;
+  border: 1px solid #f1d393;
+  border-radius: 6px;
+  color: #7a4d00;
+  background: #fff7e6;
+  font-size: 12px;
+}
+
+.git-operation-alert span {
+  min-width: 0;
+  flex: 1;
+  line-height: 1.35;
+}
+
+.git-operation-alert button {
+  color: #7a4d00;
+}
+
+.git-view pre.panel-error,
+.git-view pre.panel-success {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+}
+
+.git-scm-action-bar {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1px;
+  margin: 5px 0 3px;
+}
+
+.git-stash-row {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.git-stash-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.git-stash-main span,
+.git-stash-main small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-stash-main span {
+  color: #344054;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.git-stash-main small {
+  color: #7a8494;
+  font-size: 11px;
+}
+
+.git-stash-row .git-icon-button {
+  color: #315c9b;
+}
+
+.git-stash-row .git-icon-button:hover:not(:disabled) {
+  background: #dfeaff;
+}
+
+.git-stash-row .git-icon-button.danger {
+  color: #a12626;
 }
 
 .git-commit-box {
@@ -1330,25 +1675,27 @@ button {
 
 .commit-input {
   width: 100%;
-  height: 34px;
-  min-height: 34px;
-  max-height: 34px;
+  min-height: 28px;
   resize: none;
   overflow: hidden;
-  padding: 7px 8px;
+  padding: 4px 8px;
   border: 1px solid #d7dce5;
   border-radius: 5px;
   outline: none;
   color: #20242c;
   background: #ffffff;
   font: inherit;
-  line-height: 18px;
+  line-height: 20px;
 }
 
 .commit-button {
   width: 100%;
-  height: 32px;
-  margin-top: 8px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 6px;
   border-radius: 5px;
   color: #ffffff;
   background: #0f6fc6;
@@ -1458,23 +1805,52 @@ button {
 }
 
 .git-history-panel {
+  height: 240px;
+  max-height: 45%;
+  min-height: 0;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   margin: 8px -8px -8px;
   border-top: 1px solid var(--border);
   background: #fafafa;
 }
 
-.git-history-toggle {
-  width: 100%;
-  height: 30px;
+.git-history-panel.collapsed {
+  height: 27px;
+  max-height: 27px;
+}
+
+.git-history-panel-header {
+  height: 27px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 8px;
-  color: #20242c;
+  gap: 2px;
+  padding: 0 4px 0 2px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.git-history-panel.collapsed .git-history-panel-header {
+  border-bottom: 0;
+}
+
+.git-history-toggle {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  color: #293241;
+  background: transparent;
   cursor: pointer;
+  font: inherit;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   text-align: left;
 }
 
@@ -1482,13 +1858,23 @@ button {
   background: #eef1f5;
 }
 
-.git-history-toggle span:nth-child(2) {
+.git-history-toggle span {
   min-width: 0;
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
 }
 
 .git-history-list {
-  max-height: 240px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 2px 0 7px;
 }
@@ -1496,17 +1882,23 @@ button {
 .git-history-row {
   width: 100%;
   height: 24px;
-  min-height: 24px;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 0;
   overflow: hidden;
-  padding: 0 6px 0 0;
+  margin: 0;
+  padding: 0 4px 0 0;
+  border: 0;
+  background: transparent;
   border-radius: 4px;
   color: #3d4654;
   cursor: pointer;
+  font: inherit;
   text-align: left;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .git-history-row:hover,
@@ -1533,6 +1925,17 @@ button {
   font-weight: 400;
 }
 
+.git-history-author {
+  flex-shrink: 0;
+  margin-left: 8px;
+  color: #8b919e;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 90px;
+}
+
 .git-context-menu {
   position: fixed;
   z-index: 80;
@@ -1549,12 +1952,19 @@ button {
   height: 27px;
   display: flex;
   align-items: center;
+  gap: 7px;
   padding: 0 8px;
+  border: 0;
   border-radius: 4px;
   color: #242932;
+  background: transparent;
   cursor: pointer;
   font-size: 12px;
   text-align: left;
+}
+
+.git-context-menu button svg {
+  flex-shrink: 0;
 }
 
 .git-context-menu button:hover {
@@ -1567,6 +1977,93 @@ button {
 
 .git-context-menu button.danger:hover {
   background: #fff1f1;
+}
+
+.git-hover-card {
+  position: fixed;
+  z-index: 79;
+  width: 310px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  border: 1px solid #d7dce5;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  pointer-events: auto;
+}
+
+.git-hover-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.git-hover-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  object-fit: cover;
+}
+
+.git-hover-avatar-fallback {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.git-hover-name {
+  color: #1f2430;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.git-hover-email {
+  color: #8b919e;
+  font-size: 11.5px;
+}
+
+.git-hover-date {
+  color: #6a7282;
+  font-size: 11.5px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eef0f4;
+}
+
+.git-hover-body {
+  margin: 0 0 8px;
+  color: #4a4f59;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+}
+
+.git-hover-stats {
+  color: #3d4654;
+  font-size: 12px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eef0f4;
+}
+
+.git-hover-hash {
+  color: #8b919e;
+  font-size: 11px;
+  font-family: monospace;
+  word-break: break-all;
+  user-select: all;
 }
 
 .git-diff-view {
@@ -1796,4 +2293,625 @@ button {
 .terminal-body .xterm-viewport,
 .terminal-body .xterm-screen {
   background: #fbfcfe !important;
+}
+
+/* ── Bottom Panel Tabs ───────────────────────────────────── */
+.statusbar .problems-summary {
+  border: 0;
+  background: transparent;
+  font: inherit;
+}
+
+.statusbar .problems-summary.active,
+.statusbar .problems-summary:focus-visible {
+  background: #e8edf5;
+  outline: none;
+}
+
+.terminal-panel {
+  position: relative;
+  height: 276px;
+  min-height: 180px;
+  border-top: 1px solid #d8dde6;
+  background: #fbfcfe;
+}
+
+.terminal-header {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 7px 0 10px;
+  border-bottom: 1px solid #e1e5ec;
+  background: #f7f7f7;
+}
+
+.terminal-tabs {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+
+.terminal-tab {
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 0;
+  color: #526070;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.terminal-tab:hover:not(.active) {
+  background: #eceff3;
+}
+
+.terminal-tab.active {
+  color: #1f2937;
+  background: #ffffff;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.terminal-actions {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.terminal-actions button {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: #4f5867;
+  background: transparent;
+  cursor: pointer;
+}
+
+.terminal-actions button:hover:not(:disabled) {
+  color: #1f2937;
+  background: #e9edf4;
+}
+
+.terminal-actions button:disabled {
+  color: #b0b8c4;
+  cursor: default;
+}
+
+.terminal-meta {
+  max-width: 220px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0 4px;
+  color: #5f6b7a;
+  font-size: 12px;
+}
+
+.bottom-panel-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 8px;
+  background: #fbfcfe;
+}
+
+.bottom-panel-empty {
+  padding: 14px 10px;
+  color: #8b93a0;
+  font-size: 12px;
+}
+
+.problems-panel {
+  padding: 4px 0;
+}
+
+.problems-panel .problem-row {
+  min-height: 28px;
+  align-items: center;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.problems-panel .problem-row:hover {
+  background: #eef4ff;
+}
+
+.problems-panel .problem-main {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.problems-panel .problem-message,
+.problems-panel .problem-location {
+  display: block;
+}
+
+.terminal-body-hidden {
+  position: absolute;
+  left: -10000px;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Real Bottom Panel Workbench ─────────────────────────── */
+.terminal-panel {
+  height: 300px;
+  min-height: 190px;
+}
+
+.terminal-profile-wrap {
+  position: relative;
+}
+
+.terminal-create-group {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.terminal-create-group button {
+  border-radius: 0;
+}
+
+.terminal-actions .terminal-profile-chevron {
+  width: 18px;
+}
+
+.terminal-profile-menu {
+  position: absolute;
+  right: 0;
+  top: 27px;
+  z-index: 100;
+  min-width: 220px;
+  max-height: 330px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid #d7dce5;
+  border-radius: 5px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+}
+
+.terminal-profile-section + .terminal-profile-section {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid #edf0f5;
+}
+
+.terminal-profile-label {
+  height: 22px;
+  padding: 5px 8px 2px;
+  color: #7c8797;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.terminal-profile-menu button {
+  width: 100%;
+  height: 28px;
+  justify-content: flex-start;
+  gap: 7px;
+  padding: 0 8px;
+}
+
+.terminal-workbench {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 188px;
+  background: #fbfcfe;
+}
+
+.terminal-stack {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--terminal-split-count, 1), minmax(0, 1fr));
+  border-right: 1px solid #edf0f5;
+}
+
+.terminal-pane {
+  display: none;
+  min-width: 0;
+  min-height: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+  border-right: 1px solid #edf0f5;
+}
+
+.terminal-pane.visible {
+  display: block;
+  pointer-events: auto;
+}
+
+.terminal-pane.last-visible {
+  border-right: 0;
+}
+
+.terminal-pane.active {
+  outline: 1px solid rgba(37, 99, 235, 0.25);
+  outline-offset: -1px;
+}
+
+.terminal-pane .xterm,
+.terminal-pane .xterm-viewport,
+.terminal-pane .xterm-screen {
+  height: 100%;
+  background: #fbfcfe !important;
+}
+
+.terminal-session-list {
+  min-width: 0;
+  padding: 6px 0;
+  background: #f7f8fa;
+  overflow-y: auto;
+}
+
+.terminal-session-group {
+  margin: 0 4px 6px;
+  padding: 3px 0 4px;
+  border-radius: 4px;
+}
+
+.terminal-session-group.active {
+  background: rgba(37, 99, 235, 0.05);
+}
+
+.terminal-session-group-title {
+  height: 22px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  color: #7a8494;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.terminal-session-group-title small {
+  min-width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #64748b;
+  background: #edf1f7;
+  font-size: 10px;
+}
+
+.terminal-session-row {
+  position: relative;
+  width: 100%;
+  height: 28px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  padding: 0 28px 0 8px;
+  border: 0;
+  border-radius: 4px;
+  color: #4b5563;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+}
+
+.terminal-session-row:hover,
+.terminal-session-row:focus-visible,
+.terminal-session-row.active {
+  background: #e8edf5;
+  outline: none;
+}
+
+.terminal-session-row.dragging {
+  opacity: 0.45;
+}
+
+.terminal-session-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-session-row small {
+  color: #9b2f2f;
+  font-size: 11px;
+}
+
+.terminal-session-close {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  color: #6b7280;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.terminal-session-row:hover .terminal-session-close,
+.terminal-session-row:focus-within .terminal-session-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.terminal-session-close:hover {
+  color: #b91c1c;
+  background: #f1dede;
+}
+
+.output-toolbar,
+.debug-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 7px;
+}
+
+.output-toolbar button,
+.debug-controls button {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  color: #4f5867;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.output-toolbar button:hover,
+.debug-controls button:hover:not(:disabled),
+.output-toolbar button.active {
+  color: #1f2937;
+  background: #e9edf4;
+}
+
+.debug-controls button:disabled {
+  color: #b0b8c4;
+  cursor: default;
+}
+
+.output-row {
+  display: grid;
+  grid-template-columns: 72px 74px minmax(0, 1fr);
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid #edf0f5;
+  color: #344054;
+  font-size: 12px;
+}
+
+.output-row.error {
+  color: #a12626;
+}
+
+.output-row.warning {
+  color: #8a5a00;
+}
+
+.output-time,
+.output-channel {
+  color: #7a8494;
+  white-space: nowrap;
+}
+
+.output-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.output-row pre {
+  grid-column: 3;
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #697386;
+  font-family: var(--font-mono, monospace);
+}
+
+.debug-panel {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  gap: 7px;
+}
+
+.debug-config {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) minmax(120px, 220px);
+  gap: 6px;
+}
+
+.debug-config textarea {
+  grid-column: 1 / -1;
+  min-height: 70px;
+  resize: vertical;
+  font-family: var(--font-mono, monospace);
+}
+
+.debug-config input,
+.debug-config textarea,
+.debug-input-row input {
+  border: 1px solid #d7dce5;
+  border-radius: 4px;
+  padding: 5px 7px;
+  color: #20242c;
+  background: #ffffff;
+  font: inherit;
+  font-size: 12px;
+}
+
+.debug-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: #637083;
+  font-size: 12px;
+}
+
+.debug-state.running {
+  color: #0f7a55;
+}
+
+.debug-state.paused {
+  color: #9a6700;
+}
+
+.debug-state.error,
+.debug-error {
+  color: #a12626;
+}
+
+.debug-error {
+  padding: 5px 7px;
+  background: #fff1f1;
+  border: 1px solid #ffd7d7;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.debug-console {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #edf0f5;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.debug-console-row {
+  padding: 4px 8px;
+  border-bottom: 1px solid #f0f2f6;
+  color: #344054;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.debug-console-row.error {
+  color: #a12626;
+}
+
+.debug-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 6px;
+}
+
+.debug-input-row button,
+.ports-actions button {
+  width: 26px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  color: #4f5867;
+  background: transparent;
+  cursor: pointer;
+}
+
+.debug-input-row button:hover:not(:disabled),
+.ports-actions button:hover {
+  background: #e9edf4;
+}
+
+.ports-table {
+  min-width: 620px;
+  border-top: 1px solid #edf0f5;
+}
+
+.ports-header,
+.ports-row {
+  display: grid;
+  grid-template-columns: 110px minmax(160px, 1fr) 90px minmax(120px, 1fr) 70px;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-bottom: 1px solid #edf0f5;
+  font-size: 12px;
+}
+
+.ports-header {
+  color: #7a8494;
+  background: #f7f8fa;
+  font-weight: 700;
+}
+
+.ports-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ports-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.editor-breakpoint-glyph {
+  position: relative;
+}
+
+.editor-breakpoint-glyph::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  display: block;
+  margin: 4px auto 0;
+  border-radius: 50%;
+  background: #d73a49;
 }

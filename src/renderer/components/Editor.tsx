@@ -20,6 +20,8 @@ interface Props {
   onEditorMount?: (editor: editor.IStandaloneCodeEditor, monaco: Monaco) => void
   onCursorPositionChange?: (position: { line: number; column: number }) => void
   onDiagnosticsChange?: (diagnostics: EditorDiagnostic[]) => void
+  breakpointLines?: number[]
+  onBreakpointToggle?: (line: number) => void
 }
 
 function pathFromMarker(marker: editor.IMarker): string {
@@ -35,17 +37,48 @@ export function Editor({
   onEditorMount,
   onCursorPositionChange,
   onDiagnosticsChange,
+  breakpointLines = [],
+  onBreakpointToggle,
 }: Props) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
   const onSaveRef = useRef(onSave)
   const disposablesRef = useRef<IDisposable[]>([])
+  const breakpointDecorationIdsRef = useRef<string[]>([])
 
   useEffect(() => {
     onSaveRef.current = onSave
   }, [onSave])
 
+
+  const updateBreakpointDecorations = useCallback((lines: number[]) => {
+    const ed = editorRef.current
+    if (!ed) return
+    breakpointDecorationIdsRef.current = ed.deltaDecorations(
+      breakpointDecorationIdsRef.current,
+      lines.map(line => ({
+        range: {
+          startLineNumber: line,
+          startColumn: 1,
+          endLineNumber: line,
+          endColumn: 1,
+        },
+        options: {
+          glyphMarginClassName: 'editor-breakpoint-glyph',
+          glyphMarginHoverMessage: { value: 'Breakpoint' },
+        },
+      })),
+    )
+  }, [])
+
+  useEffect(() => {
+    updateBreakpointDecorations(breakpointLines)
+  }, [breakpointLines, updateBreakpointDecorations])
+
   useEffect(() => {
     return () => {
+      if (editorRef.current) {
+        breakpointDecorationIdsRef.current = editorRef.current.deltaDecorations(breakpointDecorationIdsRef.current, [])
+      }
       disposablesRef.current.forEach(disposable => disposable.dispose())
       disposablesRef.current = []
       editorRef.current = null
@@ -117,6 +150,11 @@ export function Editor({
     disposablesRef.current.push(
       ed.onDidChangeCursorPosition(emitCursor),
       monaco.editor.onDidChangeMarkers(emitDiagnostics),
+      ed.onMouseDown((event) => {
+        if (event.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN && event.target.position) {
+          onBreakpointToggle?.(event.target.position.lineNumber)
+        }
+      }),
     )
 
     ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
@@ -124,9 +162,10 @@ export function Editor({
     })
 
     emitCursor()
+    updateBreakpointDecorations(breakpointLines)
     setTimeout(emitDiagnostics, 0)
     ed.focus()
-  }, [onCursorPositionChange, onDiagnosticsChange, onEditorMount])
+  }, [breakpointLines, onBreakpointToggle, onCursorPositionChange, onDiagnosticsChange, onEditorMount, updateBreakpointDecorations])
 
   return (
     <div className="monaco-shell">
@@ -173,8 +212,8 @@ export function Editor({
           quickSuggestions: true,
           parameterHints: { enabled: true },
           folding: true,
-          glyphMargin: false,
-          lineDecorationsWidth: 10,
+          glyphMargin: true,
+          lineDecorationsWidth: 12,
           lineNumbersMinChars: 3,
           overviewRulerBorder: false,
           hideCursorInOverviewRuler: true,

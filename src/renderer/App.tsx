@@ -8,6 +8,7 @@ import {
   Files,
   GitBranch,
   Search,
+  Server,
 } from 'lucide-react'
 import { FileTree } from './components/FileTree'
 import { Tabs } from './components/Tabs'
@@ -17,6 +18,7 @@ import { SearchPanel } from './components/SearchPanel'
 import { GitPanel } from './components/GitPanel'
 import { GitDiffViewer, type GitDiffTarget } from './components/GitDiffViewer'
 import { TerminalPanel } from './components/TerminalPanel'
+import { RemotePanel } from './components/RemotePanel'
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -44,7 +46,14 @@ export interface AppContextType extends AppState {
   saveFile: (path: string) => Promise<void>
 }
 
-type SideView = 'explorer' | 'search' | 'git'
+type SideView = 'explorer' | 'search' | 'git' | 'remote'
+type BottomPanelTab = 'problems' | 'output' | 'debug' | 'terminal' | 'ports'
+
+type TerminalLaunchRequest = {
+  id: number
+  profileId?: string
+  sshHost?: string
+}
 
 type MenuActionItem = {
   type?: 'item'
@@ -108,12 +117,16 @@ export default function App() {
   })
   const [activeSideView, setActiveSideView] = useState<SideView>('explorer')
   const [openMenu, setOpenMenu] = useState<string | null>(null)
-  const [isTerminalVisible, setIsTerminalVisible] = useState(false)
+  const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(false)
+  const [activeBottomTab, setActiveBottomTab] = useState<BottomPanelTab>('terminal')
   const [terminalNewSignal, setTerminalNewSignal] = useState(0)
   const [terminalKillSignal, setTerminalKillSignal] = useState(0)
+  const [terminalLaunchRequest, setTerminalLaunchRequest] = useState<TerminalLaunchRequest | null>(null)
   const [gitDiffTarget, setGitDiffTarget] = useState<GitDiffTarget | null>(null)
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 })
   const [diagnostics, setDiagnostics] = useState<EditorDiagnostic[]>([])
+  const [breakpoints, setBreakpoints] = useState<Record<string, number[]>>({})
+  const [sidebarWidth, setSidebarWidth] = useState(264)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<MonacoEditorApi.IStandaloneCodeEditor | null>(null)
   const pendingRevealRef = useRef<{ path: string; line: number; column: number } | null>(null)
@@ -125,6 +138,7 @@ export default function App() {
     setGitDiffTarget(null)
     setCursorPosition({ line: 1, column: 1 })
     setDiagnostics([])
+    setBreakpoints({})
     setState(prev => ({ ...prev, workspacePath: path, fileTree: tree, openFiles: [], activeFilePath: null }))
     setActiveSideView('explorer')
   }, [])
@@ -275,6 +289,24 @@ export default function App() {
     }
   }, [openFile, revealEditorPosition, state.activeFilePath])
 
+
+  const debugBreakpoints = useMemo<DebugBreakpoint[]>(() => Object.entries(breakpoints)
+    .map(([sourcePath, lines]) => ({ sourcePath, lines: [...lines].sort((a, b) => a - b) }))
+    .filter(item => item.lines.length > 0), [breakpoints])
+
+  const toggleBreakpoint = useCallback((filePath: string, line: number) => {
+    setBreakpoints(prev => {
+      const current = prev[filePath] || []
+      const nextLines = current.includes(line)
+        ? current.filter(item => item !== line)
+        : [...current, line].sort((a, b) => a - b)
+      const next = { ...prev }
+      if (nextLines.length === 0) delete next[filePath]
+      else next[filePath] = nextLines
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     editorRef.current = null
     setCursorPosition({ line: 1, column: 1 })
@@ -307,10 +339,20 @@ export default function App() {
     setActiveFile(state.openFiles[nextIndex].path)
   }, [setActiveFile, state.activeFilePath, state.openFiles])
 
-  const newTerminal = useCallback(() => {
-    setIsTerminalVisible(true)
-    setTerminalNewSignal(value => value + 1)
+  const showBottomPanel = useCallback((tab: BottomPanelTab) => {
+    setActiveBottomTab(tab)
+    setIsBottomPanelVisible(true)
   }, [])
+
+  const newTerminal = useCallback(() => {
+    showBottomPanel('terminal')
+    setTerminalNewSignal(value => value + 1)
+  }, [showBottomPanel])
+
+  const openTerminalProfile = useCallback((profileId?: string, sshHost?: string) => {
+    showBottomPanel('terminal')
+    setTerminalLaunchRequest(prev => ({ id: (prev?.id ?? 0) + 1, profileId, sshHost }))
+  }, [showBottomPanel])
 
   const closeTerminal = useCallback(() => {
     setTerminalKillSignal(value => value + 1)
@@ -380,11 +422,21 @@ export default function App() {
       label: '终端(T)',
       items: [
         { label: '新建终端', shortcut: 'Ctrl+Shift+`', action: newTerminal },
-        { label: isTerminalVisible ? '隐藏终端' : '显示终端', shortcut: 'Ctrl+`', action: () => setIsTerminalVisible(value => !value) },
+        {
+          label: isBottomPanelVisible && activeBottomTab === 'terminal' ? '隐藏终端' : '显示终端',
+          shortcut: 'Ctrl+`',
+          action: () => {
+            if (isBottomPanelVisible && activeBottomTab === 'terminal') {
+              setIsBottomPanelVisible(false)
+            } else {
+              showBottomPanel('terminal')
+            }
+          },
+        },
         { label: '关闭终端', action: closeTerminal },
       ],
     },
-  ], [activeFile, closeAllFiles, closeFile, closeTerminal, cycleFile, isTerminalVisible, newTerminal, openFileFromDialog, openWorkspace, runEditorCommand, saveAllFiles, saveFile, saveFileAs, state.openFiles])
+  ], [activeBottomTab, activeFile, closeAllFiles, closeFile, closeTerminal, cycleFile, isBottomPanelVisible, newTerminal, openFileFromDialog, openWorkspace, runEditorCommand, saveAllFiles, saveFile, saveFileAs, showBottomPanel, state.openFiles])
 
   const renderSidebar = () => {
     if (activeSideView === 'search') {
@@ -393,6 +445,10 @@ export default function App() {
 
     if (activeSideView === 'git') {
       return <GitPanel rootPath={state.workspacePath} onOpenDiff={openGitDiff} />
+    }
+
+    if (activeSideView === 'remote') {
+      return <RemotePanel onOpenTerminal={openTerminalProfile} />
     }
 
     return (
@@ -413,10 +469,6 @@ export default function App() {
               onSelectFile={openFile}
               activePath={state.activeFilePath}
             />
-            <div className="sidebar-footer">
-              <button type="button" className="sidebar-fold"><ChevronRight size={14} />大纲</button>
-              <button type="button" className="sidebar-fold"><ChevronRight size={14} />时间线</button>
-            </div>
           </>
         ) : (
           <div className="panel-empty">打开文件夹后可以浏览文件。</div>
@@ -431,7 +483,9 @@ export default function App() {
       ? '在左侧搜索项目内容'
       : activeSideView === 'git'
         ? '在左侧管理 Git 变更'
-        : '从资源管理器选择文件'
+        : activeSideView === 'remote'
+          ? '在左侧连接远程环境'
+          : '从资源管理器选择文件'
 
   return (
     <AppContext.Provider value={ctx}>
@@ -491,11 +545,31 @@ export default function App() {
             <button type="button" className={'activity-item ' + (activeSideView === 'explorer' ? 'active' : '')} title="Explorer" onClick={() => setActiveSideView('explorer')}><Files size={18} /></button>
             <button type="button" className={'activity-item ' + (activeSideView === 'search' ? 'active' : '')} title="Search" onClick={() => setActiveSideView('search')}><Search size={18} /></button>
             <button type="button" className={'activity-item ' + (activeSideView === 'git' ? 'active' : '')} title="Source Control" onClick={() => setActiveSideView('git')}><GitBranch size={18} /></button>
+            <button type="button" className={'activity-item ' + (activeSideView === 'remote' ? 'active' : '')} title="Remote" onClick={() => setActiveSideView('remote')}><Server size={18} /></button>
           </aside>
 
-          <aside className="sidebar">
+          <aside className="sidebar" style={{ width: sidebarWidth }}>
             {renderSidebar()}
           </aside>
+
+          <div
+            className="sidebar-resize-handle"
+            onPointerDown={(e) => {
+              e.preventDefault()
+              const startX = e.clientX
+              const startWidth = sidebarWidth
+              const onMove = (ev: PointerEvent) => {
+                const delta = ev.clientX - startX
+                setSidebarWidth(Math.max(170, Math.min(500, startWidth + delta)))
+              }
+              const onUp = () => {
+                document.removeEventListener('pointermove', onMove)
+                document.removeEventListener('pointerup', onUp)
+              }
+              document.addEventListener('pointermove', onMove)
+              document.addEventListener('pointerup', onUp)
+            }}
+          />
 
           <section className="editor-area">
             {state.openFiles.length > 0 && (
@@ -527,6 +601,8 @@ export default function App() {
                   }}
                   onCursorPositionChange={setCursorPosition}
                   onDiagnosticsChange={setDiagnostics}
+                  breakpointLines={breakpoints[activeFile.path] || []}
+                  onBreakpointToggle={(line) => toggleBreakpoint(activeFile.path, line)}
                 />
               ) : (
                 <div className="empty-editor">
@@ -540,10 +616,16 @@ export default function App() {
             </div>
             <TerminalPanel
               cwd={state.workspacePath}
-              visible={isTerminalVisible}
+              visible={isBottomPanelVisible}
+              activeTab={activeBottomTab}
+              diagnostics={visibleDiagnostics}
+              breakpoints={debugBreakpoints}
               newSignal={terminalNewSignal}
               killSignal={terminalKillSignal}
-              onHide={() => setIsTerminalVisible(false)}
+              launchRequest={terminalLaunchRequest}
+              onActiveTabChange={(tab) => showBottomPanel(tab)}
+              onSelectDiagnostic={openDiagnostic}
+              onHide={() => setIsBottomPanelVisible(false)}
             />
           </section>
         </main>
@@ -552,7 +634,8 @@ export default function App() {
           diagnostics={visibleDiagnostics}
           cursorLine={cursorPosition.line}
           cursorColumn={cursorPosition.column}
-          onSelectDiagnostic={openDiagnostic}
+          problemsActive={isBottomPanelVisible && activeBottomTab === 'problems'}
+          onOpenProblems={() => showBottomPanel('problems')}
         />
       </div>
     </AppContext.Provider>
