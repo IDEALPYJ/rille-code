@@ -163,9 +163,49 @@ declare global {
     isDefault?: boolean
   }
 
+  interface WorkspaceLocation {
+    kind: 'local' | 'ssh' | 'wsl'
+    path: string
+    label: string
+    connectionId?: string
+    targetId?: string
+  }
+
+  interface RemoteConnection {
+    id: string
+    targetId: string
+    kind: 'ssh' | 'wsl'
+    label: string
+    home: string
+    status: 'connecting' | 'connected' | 'error'
+    error?: string
+  }
+
+  type SshAuthMethod = 'sshConfigOrAgent' | 'password' | 'identityFile' | 'identityFileWithPassphrase'
+
+  interface SshTargetConfig {
+    id: string
+    alias: string
+    hostName: string
+    user?: string
+    port?: number
+    authMethod: SshAuthMethod
+    identityFile?: string
+    proxyJump?: string
+    extraOptions?: string
+    defaultRemotePath?: string
+  }
+
+  interface RemoteAuthPromptRequest {
+    requestId: string
+    prompt: string
+    kind: 'password' | 'confirmation' | 'text'
+  }
+
   interface TerminalLaunchOptions {
     profileId?: string
     sshHost?: string
+    workspace?: WorkspaceLocation | null
   }
 
   interface RemoteTarget {
@@ -175,7 +215,10 @@ declare global {
     profileId: string
     host?: string
     distro?: string
-    source: 'detected' | 'ssh-config' | 'wsl'
+    source: 'detected' | 'configured' | 'ssh-config' | 'wsl'
+    sshConfigId?: string
+    sshConfig?: SshTargetConfig
+    defaultRemotePath?: string
   }
 
   interface TerminalSession {
@@ -184,6 +227,7 @@ declare global {
     shell: string
     profileId: string
     name: string
+    workspace?: WorkspaceLocation | null
   }
 
   interface PortEntry {
@@ -245,46 +289,57 @@ declare global {
     saveFileDialog(defaultPath?: string): Promise<string | null>
     newWindow(): Promise<void>
     exitApp(): Promise<void>
-    readDirectory(dirPath: string): Promise<FileEntry[]>
-    readFile(filePath: string): Promise<string>
-    writeFile(filePath: string, content: string): Promise<boolean>
-    fileExists(filePath: string): Promise<boolean>
-    getFileInfo(filePath: string): Promise<{ size: number; modifiedTime: number } | null>
-    searchFiles(rootPath: string, query: string, options: SearchOptions): Promise<SearchResult[]>
-    gitStatus(rootPath: string): Promise<GitStatusResult>
-    gitStage(rootPath: string, filePath: string): Promise<GitCommandResult>
-    gitUnstage(rootPath: string, filePath: string): Promise<GitCommandResult>
-    gitCommit(rootPath: string, message: string): Promise<GitCommandResult>
-    gitFileDiff(rootPath: string, filePath: string, kind: GitFileDiffKind): Promise<GitDiffResult>
-    gitLog(rootPath: string, limit?: number, skip?: number): Promise<GitLogResult>
-    gitCommitFiles(rootPath: string, hash: string): Promise<GitCommitFilesResult>
-    gitCommitFileDiff(rootPath: string, hash: string, filePath: string, previousPath?: string): Promise<GitDiffResult>
-    gitCheckoutCommit(rootPath: string, hash: string): Promise<GitCommandResult>
-    gitCreateBranchFromCommit(rootPath: string, hash: string, branchName: string): Promise<GitCommandResult>
-    gitResetToCommit(rootPath: string, hash: string, mode: GitResetMode): Promise<GitCommandResult>
-    gitBranches(rootPath: string): Promise<GitBranchesResult>
-    gitSwitchBranch(rootPath: string, branchName: string, branchType: 'local' | 'remote', autoStash?: boolean): Promise<GitOperationResult>
-    gitCreateBranch(rootPath: string, branchName: string, startPoint?: string, checkout?: boolean): Promise<GitOperationResult>
-    gitDeleteBranch(rootPath: string, branchName: string): Promise<GitOperationResult>
-    gitFetch(rootPath: string): Promise<GitOperationResult>
-    gitPull(rootPath: string, autoStash?: boolean): Promise<GitOperationResult>
-    gitPush(rootPath: string): Promise<GitOperationResult>
-    gitMerge(rootPath: string, branchName: string, autoStash?: boolean): Promise<GitOperationResult>
-    gitRebase(rootPath: string, branchName: string, autoStash?: boolean): Promise<GitOperationResult>
-    gitAbortMerge(rootPath: string): Promise<GitOperationResult>
-    gitAbortRebase(rootPath: string): Promise<GitOperationResult>
-    gitStashList(rootPath: string): Promise<GitStashListResult>
-    gitStashPush(rootPath: string, message?: string): Promise<GitOperationResult>
-    gitStashApply(rootPath: string, stashRef: string): Promise<GitOperationResult>
-    gitStashPop(rootPath: string, stashRef: string): Promise<GitOperationResult>
-    gitStashDrop(rootPath: string, stashRef: string): Promise<GitOperationResult>
-    gitResolveCommitAvatars(rootPath: string, hashes: string[]): Promise<GitAvatarResult>
+    readDirectory(dirPath: string, workspace?: WorkspaceLocation | null): Promise<FileEntry[]>
+    readFile(filePath: string, workspace?: WorkspaceLocation | null): Promise<string>
+    writeFile(filePath: string, content: string, workspace?: WorkspaceLocation | null): Promise<boolean>
+    fileExists(filePath: string, workspace?: WorkspaceLocation | null): Promise<boolean>
+    getFileInfo(filePath: string, workspace?: WorkspaceLocation | null): Promise<{ size: number; modifiedTime: number } | null>
+    searchFiles(rootPath: string, query: string, options: SearchOptions, workspace?: WorkspaceLocation | null): Promise<SearchResult[]>
+    gitStatus(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitStatusResult>
+    gitStage(rootPath: string, filePath: string, workspace?: WorkspaceLocation | null): Promise<GitCommandResult>
+    gitUnstage(rootPath: string, filePath: string, workspace?: WorkspaceLocation | null): Promise<GitCommandResult>
+    gitCommit(rootPath: string, message: string, workspace?: WorkspaceLocation | null): Promise<GitCommandResult>
+    gitFileDiff(rootPath: string, filePath: string, kind: GitFileDiffKind, workspace?: WorkspaceLocation | null): Promise<GitDiffResult>
+    gitLog(rootPath: string, limit?: number, skip?: number, workspace?: WorkspaceLocation | null): Promise<GitLogResult>
+    gitCommitFiles(rootPath: string, hash: string, workspace?: WorkspaceLocation | null): Promise<GitCommitFilesResult>
+    gitCommitFileDiff(rootPath: string, hash: string, filePath: string, previousPath?: string, workspace?: WorkspaceLocation | null): Promise<GitDiffResult>
+    gitCheckoutCommit(rootPath: string, hash: string, workspace?: WorkspaceLocation | null): Promise<GitCommandResult>
+    gitCreateBranchFromCommit(rootPath: string, hash: string, branchName: string, workspace?: WorkspaceLocation | null): Promise<GitCommandResult>
+    gitResetToCommit(rootPath: string, hash: string, mode: GitResetMode, workspace?: WorkspaceLocation | null): Promise<GitCommandResult>
+    gitBranches(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitBranchesResult>
+    gitSwitchBranch(rootPath: string, branchName: string, branchType: 'local' | 'remote', autoStash?: boolean, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitCreateBranch(rootPath: string, branchName: string, startPoint?: string, checkout?: boolean, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitDeleteBranch(rootPath: string, branchName: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitFetch(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitPull(rootPath: string, autoStash?: boolean, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitPush(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitMerge(rootPath: string, branchName: string, autoStash?: boolean, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitRebase(rootPath: string, branchName: string, autoStash?: boolean, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitAbortMerge(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitAbortRebase(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitStashList(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitStashListResult>
+    gitStashPush(rootPath: string, message?: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitStashApply(rootPath: string, stashRef: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitStashPop(rootPath: string, stashRef: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitStashDrop(rootPath: string, stashRef: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+    gitResolveCommitAvatars(rootPath: string, hashes: string[], workspace?: WorkspaceLocation | null): Promise<GitAvatarResult>
     outputList(): Promise<OutputEntry[]>
     outputClear(): Promise<void>
     onOutputEntry(callback: (entry: OutputEntry) => void): () => void
     onOutputCleared(callback: () => void): () => void
     terminalListProfiles(): Promise<TerminalProfile[]>
     remoteListTargets(): Promise<RemoteTarget[]>
+    remoteListSshConfigs(): Promise<SshTargetConfig[]>
+    remoteSaveSshConfig(config: Partial<SshTargetConfig>): Promise<SshTargetConfig>
+    remoteDeleteSshConfig(id: string): Promise<boolean>
+    remoteSelectIdentityFile(): Promise<string | null>
+    remoteRespondAuthPrompt(requestId: string, response: { value?: string; cancelled?: boolean }): Promise<boolean>
+    onRemoteAuthPrompt(callback: (request: RemoteAuthPromptRequest) => void): () => void
+    remoteConnect(targetId: string, sshHost?: string): Promise<RemoteConnection>
+    remoteDisconnect(connectionId: string): Promise<boolean>
+    remoteListConnections(): Promise<RemoteConnection[]>
+    remoteGetHome(connectionId: string): Promise<string>
+    remoteOpenWorkspace(connectionId: string, remotePath: string): Promise<WorkspaceLocation>
     terminalCreate(cwd?: string, cols?: number, rows?: number, launchOptions?: TerminalLaunchOptions): Promise<TerminalSession>
     terminalWrite(id: string, data: string): Promise<void>
     terminalResize(id: string, cols: number, rows: number): Promise<void>

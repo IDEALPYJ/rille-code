@@ -23,7 +23,7 @@ import {
 import type { GitDiffTarget } from './GitDiffViewer'
 
 interface Props {
-  rootPath: string | null
+  workspace: WorkspaceLocation | null
   onOpenDiff: (target: GitDiffTarget) => void
 }
 
@@ -369,7 +369,8 @@ function GitFileRow({ file, status, kind, actionLabel, actionTitle, onAction, on
   )
 }
 
-export function GitPanel({ rootPath, onOpenDiff }: Props) {
+export function GitPanel({ workspace, onOpenDiff }: Props) {
+  const rootPath = workspace?.path ?? null
   const [status, setStatus] = useState<GitStatusResult | null>(null)
   const [branches, setBranches] = useState<GitBranch[]>([])
   const [currentBranch, setCurrentBranch] = useState('')
@@ -399,7 +400,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
 
     setIsHistoryLoading(true)
     try {
-      const result = await window.rille.gitLog(rootPath, 50, skip)
+      const result = await window.rille.gitLog(rootPath, 50, skip, workspace)
       if (result.success) {
         if (skip && skip > 0) {
           setHistory(prev => [...prev, ...result.commits])
@@ -424,7 +425,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
     } finally {
       setIsHistoryLoading(false)
     }
-  }, [rootPath])
+  }, [rootPath, workspace])
 
   const loadBranches = useCallback(async () => {
     if (!rootPath) {
@@ -434,7 +435,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
       return
     }
 
-    const result = await window.rille.gitBranches(rootPath)
+    const result = await window.rille.gitBranches(rootPath, workspace)
     if (result.success) {
       setBranches(result.branches)
       setCurrentBranch(result.current)
@@ -445,7 +446,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
       setOperationState(null)
       setMessage(result.error || '加载分支失败。')
     }
-  }, [rootPath])
+  }, [rootPath, workspace])
 
   const loadStashes = useCallback(async () => {
     if (!rootPath) {
@@ -453,13 +454,13 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
       return
     }
 
-    const result = await window.rille.gitStashList(rootPath)
+    const result = await window.rille.gitStashList(rootPath, workspace)
     if (result.success) {
       setStashes(result.stashes)
     } else {
       setStashes([])
     }
-  }, [rootPath])
+  }, [rootPath, workspace])
 
   const refresh = useCallback(async (options?: { keepMessage?: boolean }) => {
     if (!rootPath) {
@@ -476,7 +477,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
     setIsLoading(true)
     if (!options?.keepMessage) setMessage(null)
     try {
-      const nextStatus = await window.rille.gitStatus(rootPath)
+      const nextStatus = await window.rille.gitStatus(rootPath, workspace)
       setStatus(nextStatus)
       if (nextStatus.operationState) setOperationState(nextStatus.operationState)
     } catch (error) {
@@ -492,7 +493,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
     } finally {
       setIsLoading(false)
     }
-  }, [rootPath])
+  }, [rootPath, workspace])
 
   const refreshAll = useCallback(async (options?: { keepMessage?: boolean }) => {
     await Promise.all([refresh(options), loadBranches(), loadStashes()])
@@ -506,7 +507,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
   useEffect(() => {
     avatarRequestedRef.current.clear()
     setAvatarMap({})
-  }, [rootPath])
+  }, [rootPath, workspace])
 
   useEffect(() => {
     if (!rootPath || history.length === 0) return
@@ -518,7 +519,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
 
     hashes.forEach(hash => avatarRequestedRef.current.add(hash))
     let disposed = false
-    window.rille.gitResolveCommitAvatars(rootPath, hashes)
+    window.rille.gitResolveCommitAvatars(rootPath, hashes, workspace)
       .then((result) => {
         if (!disposed && result.success && Object.keys(result.avatars).length > 0) {
           setAvatarMap(prev => ({ ...prev, ...result.avatars }))
@@ -529,7 +530,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
     return () => {
       disposed = true
     }
-  }, [avatarMap, history, rootPath])
+  }, [avatarMap, history, rootPath, workspace])
 
   useEffect(() => {
     if (!commitMenu && !isBranchMenuOpen) return
@@ -552,17 +553,17 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
 
   const stageFile = useCallback(async (file: string) => {
     if (!rootPath) return
-    const result = await window.rille.gitStage(rootPath, file)
+    const result = await window.rille.gitStage(rootPath, file, workspace)
     if (!result.success) setMessage(result.error || 'Stage failed')
     await refresh()
-  }, [refresh, rootPath])
+  }, [refresh, rootPath, workspace])
 
   const unstageFile = useCallback(async (file: string) => {
     if (!rootPath) return
-    const result = await window.rille.gitUnstage(rootPath, file)
+    const result = await window.rille.gitUnstage(rootPath, file, workspace)
     if (!result.success) setMessage(result.error || 'Unstage failed')
     await refresh()
-  }, [refresh, rootPath])
+  }, [refresh, rootPath, workspace])
 
   const openFileDiff = useCallback((file: string, kind: GitFileDiffKind) => {
     onOpenDiff({ id: `file:${kind}:${encodeURIComponent(file)}`, type: 'file', filePath: file, kind })
@@ -587,7 +588,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
   const commit = useCallback(async () => {
     if (!rootPath || !canCommit) return
     setMessage(null)
-    const result = await window.rille.gitCommit(rootPath, commitMessage.trim())
+    const result = await window.rille.gitCommit(rootPath, commitMessage.trim(), workspace)
     if (result.success) {
       setCommitMessage('')
       setMessage('Commit created')
@@ -595,7 +596,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
     } else {
       setMessage(result.error || 'Commit failed')
     }
-  }, [canCommit, commitMessage, refreshAll, rootPath])
+  }, [canCommit, commitMessage, refreshAll, rootPath, workspace])
 
   const runTool = useCallback(async (
     id: string,
@@ -632,10 +633,10 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
     setIsBranchMenuOpen(false)
     await runTool(
       `switch-${branch.name}`,
-      () => window.rille.gitSwitchBranch(rootPath, branch.name, branch.type, autoStash),
+      () => window.rille.gitSwitchBranch(rootPath, branch.name, branch.type, autoStash, workspace),
       `已切换到 ${branch.name}`,
     )
-  }, [confirmAutoStash, rootPath, runTool])
+  }, [confirmAutoStash, rootPath, runTool, workspace])
 
   const createBranch = useCallback(async () => {
     if (!rootPath) return
@@ -644,20 +645,20 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
     setIsBranchMenuOpen(false)
     await runTool(
       'create-branch',
-      () => window.rille.gitCreateBranch(rootPath, branchName.trim(), undefined, true),
+      () => window.rille.gitCreateBranch(rootPath, branchName.trim(), undefined, true, workspace),
       `已创建并切换到 ${branchName.trim()}`,
     )
-  }, [rootPath, runTool])
+  }, [rootPath, runTool, workspace])
 
   const deleteBranch = useCallback(async (branch: GitBranch) => {
     if (!rootPath || branch.current || branch.type !== 'local') return
     if (!window.confirm(`删除本地分支 ${branch.name}？仅使用安全删除，未合并分支会被 Git 拒绝。`)) return
     await runTool(
       `delete-${branch.name}`,
-      () => window.rille.gitDeleteBranch(rootPath, branch.name),
+      () => window.rille.gitDeleteBranch(rootPath, branch.name, workspace),
       `已删除分支 ${branch.name}`,
     )
-  }, [rootPath, runTool])
+  }, [rootPath, runTool, workspace])
 
   const runProtectedTool = useCallback(async (
     id: string,
@@ -675,23 +676,23 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
     const defaultTarget = localBranches.find(branch => !branch.current)?.name || remoteBranches[0]?.name || ''
     const target = window.prompt('合并哪个分支到当前分支？', defaultTarget)
     if (!target?.trim()) return
-    await runProtectedTool('merge', `合并 ${target.trim()}`, autoStash => window.rille.gitMerge(rootPath, target.trim(), autoStash), `已合并 ${target.trim()}`)
-  }, [localBranches, remoteBranches, rootPath, runProtectedTool])
+    await runProtectedTool('merge', `合并 ${target.trim()}`, autoStash => window.rille.gitMerge(rootPath, target.trim(), autoStash, workspace), `已合并 ${target.trim()}`)
+  }, [localBranches, remoteBranches, rootPath, runProtectedTool, workspace])
 
   const rebaseBranch = useCallback(async () => {
     if (!rootPath) return
     const defaultTarget = localBranches.find(branch => !branch.current)?.name || remoteBranches[0]?.name || ''
-    const target = window.prompt('将当前分支 rebase 到：', defaultTarget)
+    const target = window.prompt('将当前分支变基到：', defaultTarget)
     if (!target?.trim()) return
-    await runProtectedTool('rebase', `Rebase 到 ${target.trim()}`, autoStash => window.rille.gitRebase(rootPath, target.trim(), autoStash), `已 rebase 到 ${target.trim()}`)
-  }, [localBranches, remoteBranches, rootPath, runProtectedTool])
+    await runProtectedTool('rebase', `变基到 ${target.trim()}`, autoStash => window.rille.gitRebase(rootPath, target.trim(), autoStash, workspace), `已变基到 ${target.trim()}`)
+  }, [localBranches, remoteBranches, rootPath, runProtectedTool, workspace])
 
   const stashPush = useCallback(async () => {
     if (!rootPath) return
-    const stashMessage = window.prompt('Stash 说明：', `RilleCode stash ${new Date().toLocaleString()}`)
+    const stashMessage = window.prompt('储藏说明：', `RilleCode 储藏 ${new Date().toLocaleString()}`)
     if (stashMessage === null) return
-    await runTool('stash-push', () => window.rille.gitStashPush(rootPath, stashMessage), '已创建 stash')
-  }, [rootPath, runTool])
+    await runTool('stash-push', () => window.rille.gitStashPush(rootPath, stashMessage, workspace), '已创建储藏')
+  }, [rootPath, runTool, workspace])
 
   const runCommitCommand = useCallback(async (
     action: () => Promise<GitCommandResult>,
@@ -746,7 +747,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
     if (action === 'checkout') {
       setCommitMenu(null)
       if (!window.confirm(`检出 ${commitItem.shortHash} 会进入 detached HEAD。继续吗？`)) return
-      await runCommitCommand(() => window.rille.gitCheckoutCommit(rootPath, commitItem.hash), `已检出 ${commitItem.shortHash}`)
+      await runCommitCommand(() => window.rille.gitCheckoutCommit(rootPath, commitItem.hash, workspace), `已检出 ${commitItem.shortHash}`)
       return
     }
 
@@ -754,7 +755,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
       setCommitMenu(null)
       const branchName = window.prompt('从该提交创建并切换到新分支：', `branch-${commitItem.shortHash}`)
       if (!branchName) return
-      await runCommitCommand(() => window.rille.gitCreateBranchFromCommit(rootPath, commitItem.hash, branchName), `已创建并切换到 ${branchName.trim()}`)
+      await runCommitCommand(() => window.rille.gitCreateBranchFromCommit(rootPath, commitItem.hash, branchName, workspace), `已创建并切换到 ${branchName.trim()}`)
       return
     }
 
@@ -762,9 +763,9 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
       const mode = action.replace('reset-', '') as GitResetMode
       setCommitMenu(null)
       if (!window.confirm(`执行 git reset --${mode} ${commitItem.shortHash}？`)) return
-      await runCommitCommand(() => window.rille.gitResetToCommit(rootPath, commitItem.hash, mode), `已 reset --${mode} 到 ${commitItem.shortHash}`)
+      await runCommitCommand(() => window.rille.gitResetToCommit(rootPath, commitItem.hash, mode, workspace), `已 reset --${mode} 到 ${commitItem.shortHash}`)
     }
-  }, [openCommitDiff, rootPath, runCommitCommand])
+  }, [openCommitDiff, rootPath, runCommitCommand, workspace])
 
   return (
     <div className="side-view git-view">
@@ -874,7 +875,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
                   title="中止 merge"
                   aria-label="中止 merge"
                   disabled={isBusy}
-                  onClick={() => void runTool('abort-merge', () => window.rille.gitAbortMerge(rootPath!), '已中止 merge')}
+                  onClick={() => void runTool('abort-merge', () => window.rille.gitAbortMerge(rootPath!, workspace), '已中止 merge')}
                 >
                   <X size={14} />
                 </button>
@@ -886,7 +887,7 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
                   title="中止 rebase"
                   aria-label="中止 rebase"
                   disabled={isBusy}
-                  onClick={() => void runTool('abort-rebase', () => window.rille.gitAbortRebase(rootPath!), '已中止 rebase')}
+                  onClick={() => void runTool('abort-rebase', () => window.rille.gitAbortRebase(rootPath!, workspace), '已中止 rebase')}
                 >
                   <X size={14} />
                 </button>
@@ -920,15 +921,15 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
               </button>
             </div>
 
-            {message && <pre className={message === 'Commit created' || message.startsWith('已') ? 'panel-success' : 'panel-error'}>{message}</pre>}
+            {message && <pre className={message === 'Commit created' || message.startsWith('已') ? 'panel-success' : 'panel-error'}>{message === 'Commit created' ? '提交已创建' : message}</pre>}
 
             <div className="git-scm-action-bar" aria-label="Git actions">
-              <button type="button" className="git-icon-button" title="Fetch" aria-label="Fetch" disabled={isBusy} onClick={() => void runTool('fetch', () => window.rille.gitFetch(rootPath!), 'Fetch 完成')}><Download size={15} /></button>
-              <button type="button" className="git-icon-button" title="Pull" aria-label="Pull" disabled={isBusy} onClick={() => void runProtectedTool('pull', 'Pull', autoStash => window.rille.gitPull(rootPath!, autoStash), 'Pull 完成')}><RotateCcw size={15} /></button>
-              <button type="button" className="git-icon-button" title="Push" aria-label="Push" disabled={isBusy} onClick={() => void runTool('push', () => window.rille.gitPush(rootPath!), 'Push 完成')}><Upload size={15} /></button>
-              <button type="button" className="git-icon-button" title="Merge" aria-label="Merge" disabled={isBusy} onClick={() => void mergeBranch()}><GitMerge size={15} /></button>
-              <button type="button" className="git-icon-button" title="Rebase" aria-label="Rebase" disabled={isBusy} onClick={() => void rebaseBranch()}><GitPullRequest size={15} /></button>
-              <button type="button" className="git-icon-button" title="Stash" aria-label="Stash" disabled={isBusy} onClick={() => void stashPush()}><Archive size={15} /></button>
+              <button type="button" className="git-icon-button" title="获取" aria-label="获取" disabled={isBusy} onClick={() => void runTool('fetch', () => window.rille.gitFetch(rootPath!, workspace), '获取完成')}><Download size={15} /></button>
+              <button type="button" className="git-icon-button" title="拉取" aria-label="拉取" disabled={isBusy} onClick={() => void runProtectedTool('pull', '拉取', autoStash => window.rille.gitPull(rootPath!, autoStash, workspace), '拉取完成')}><RotateCcw size={15} /></button>
+              <button type="button" className="git-icon-button" title="推送" aria-label="推送" disabled={isBusy} onClick={() => void runTool('push', () => window.rille.gitPush(rootPath!, workspace), '推送完成')}><Upload size={15} /></button>
+              <button type="button" className="git-icon-button" title="合并" aria-label="合并" disabled={isBusy} onClick={() => void mergeBranch()}><GitMerge size={15} /></button>
+              <button type="button" className="git-icon-button" title="变基" aria-label="变基" disabled={isBusy} onClick={() => void rebaseBranch()}><GitPullRequest size={15} /></button>
+              <button type="button" className="git-icon-button" title="储藏" aria-label="储藏" disabled={isBusy} onClick={() => void stashPush()}><Archive size={15} /></button>
             </div>
 
             <div className="git-section">
@@ -958,20 +959,20 @@ export function GitPanel({ rootPath, onOpenDiff }: Props) {
 
             <div className="git-section">
               <div className="git-section-title">
-                <span>Stash</span>
+                <span>储藏</span>
                 <span className="git-count">{stashes.length}</span>
               </div>
-              {stashes.length === 0 && <div className="panel-empty compact">没有 stash</div>}
+              {stashes.length === 0 && <div className="panel-empty compact">没有储藏</div>}
               {stashes.map(stash => (
                 <div className="git-stash-row" key={stash.ref} title={stash.message}>
                   <div className="git-stash-main">
                     <span>{stash.ref}</span>
                     <small>{stash.message}</small>
                   </div>
-                  <button type="button" className="git-icon-button" title={`应用 ${stash.ref}`} aria-label={`应用 ${stash.ref}`} disabled={isBusy} onClick={() => void runTool(`stash-apply-${stash.ref}`, () => window.rille.gitStashApply(rootPath!, stash.ref), `已应用 ${stash.ref}`)}><ArchiveRestore size={14} /></button>
-                  <button type="button" className="git-icon-button" title={`Pop ${stash.ref}`} aria-label={`Pop ${stash.ref}`} disabled={isBusy} onClick={() => void runTool(`stash-pop-${stash.ref}`, () => window.rille.gitStashPop(rootPath!, stash.ref), `已 pop ${stash.ref}`)}><PackageOpen size={14} /></button>
+                  <button type="button" className="git-icon-button" title={`应用 ${stash.ref}`} aria-label={`应用 ${stash.ref}`} disabled={isBusy} onClick={() => void runTool(`stash-apply-${stash.ref}`, () => window.rille.gitStashApply(rootPath!, stash.ref, workspace), `已应用 ${stash.ref}`)}><ArchiveRestore size={14} /></button>
+                  <button type="button" className="git-icon-button" title={`弹出 ${stash.ref}`} aria-label={`弹出 ${stash.ref}`} disabled={isBusy} onClick={() => void runTool(`stash-pop-${stash.ref}`, () => window.rille.gitStashPop(rootPath!, stash.ref, workspace), `已弹出 ${stash.ref}`)}><PackageOpen size={14} /></button>
                   <button type="button" className="git-icon-button danger" title={`删除 ${stash.ref}`} aria-label={`删除 ${stash.ref}`} disabled={isBusy} onClick={() => {
-                    if (window.confirm(`删除 ${stash.ref}？`)) void runTool(`stash-drop-${stash.ref}`, () => window.rille.gitStashDrop(rootPath!, stash.ref), `已删除 ${stash.ref}`)
+                    if (window.confirm(`删除 ${stash.ref}？`)) void runTool(`stash-drop-${stash.ref}`, () => window.rille.gitStashDrop(rootPath!, stash.ref, workspace), `已删除 ${stash.ref}`)
                   }}><Trash2 size={14} /></button>
                 </div>
               ))}

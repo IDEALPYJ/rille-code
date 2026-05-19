@@ -6,7 +6,7 @@ export type GitDiffTarget =
   | { id: string; type: 'commit'; commit: GitCommit }
 
 interface Props {
-  rootPath: string | null
+  workspace: WorkspaceLocation | null
   target: GitDiffTarget
 }
 
@@ -49,7 +49,8 @@ function statusTitle(status: string): string {
   return '修改'
 }
 
-export function GitDiffViewer({ rootPath, target }: Props) {
+export function GitDiffViewer({ workspace, target }: Props) {
+  const rootPath = workspace?.path ?? null
   const [commitFiles, setCommitFiles] = useState<GitCommitFile[]>([])
   const [selectedFile, setSelectedFile] = useState<GitCommitFile | null>(null)
   const [diff, setDiff] = useState<GitDiffResult | null>(null)
@@ -99,7 +100,7 @@ export function GitDiffViewer({ rootPath, target }: Props) {
     setIsFilesLoading(false)
     setIsDiffLoading(true)
 
-    window.rille.gitFileDiff(rootPath, target.filePath, target.kind)
+    window.rille.gitFileDiff(rootPath, target.filePath, target.kind, workspace)
       .then((result) => {
         if (isCancelled) return
         setDiff(result)
@@ -117,7 +118,7 @@ export function GitDiffViewer({ rootPath, target }: Props) {
     return () => {
       isCancelled = true
     }
-  }, [rootPath, target])
+  }, [rootPath, target, workspace])
 
   useEffect(() => {
     let isCancelled = false
@@ -133,7 +134,7 @@ export function GitDiffViewer({ rootPath, target }: Props) {
     setIsFilesLoading(true)
     setIsDiffLoading(false)
 
-    window.rille.gitCommitFiles(rootPath, target.commit.hash)
+    window.rille.gitCommitFiles(rootPath, target.commit.hash, workspace)
       .then((result) => {
         if (isCancelled) return
         if (!result.success) {
@@ -154,7 +155,7 @@ export function GitDiffViewer({ rootPath, target }: Props) {
     return () => {
       isCancelled = true
     }
-  }, [rootPath, target])
+  }, [rootPath, target, workspace])
 
   useEffect(() => {
     let isCancelled = false
@@ -167,7 +168,7 @@ export function GitDiffViewer({ rootPath, target }: Props) {
     setError(null)
     setIsDiffLoading(true)
 
-    window.rille.gitCommitFileDiff(rootPath, target.commit.hash, selectedFile.path, selectedFile.previousPath)
+    window.rille.gitCommitFileDiff(rootPath, target.commit.hash, selectedFile.path, selectedFile.previousPath, workspace)
       .then((result) => {
         if (isCancelled) return
         setDiff(result)
@@ -185,7 +186,7 @@ export function GitDiffViewer({ rootPath, target }: Props) {
     return () => {
       isCancelled = true
     }
-  }, [rootPath, selectedFile, target])
+  }, [rootPath, selectedFile, target, workspace])
 
   const title = target.type === 'commit'
     ? target.commit.subject || target.commit.shortHash

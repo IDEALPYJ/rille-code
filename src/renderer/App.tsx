@@ -1,14 +1,22 @@
-import { useState, useCallback, createContext, useContext, useEffect, useMemo, useRef } from 'react'
+import { useState, useCallback, createContext, useContext, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import type { editor as MonacoEditorApi } from 'monaco-editor'
 import {
+  ArrowUp,
   Box,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Files,
+  Folder,
   GitBranch,
+  Home,
+  RefreshCw,
   Search,
   Server,
+  MessageSquare,
+  PanelBottom,
+  PanelLeft,
+  PanelRight,
 } from 'lucide-react'
 import { FileTree } from './components/FileTree'
 import { Tabs } from './components/Tabs'
@@ -31,14 +39,14 @@ export interface OpenFile {
 }
 
 export interface AppState {
-  workspacePath: string | null
+  workspace: WorkspaceLocation | null
   fileTree: FileEntry[]
   openFiles: OpenFile[]
   activeFilePath: string | null
 }
 
 export interface AppContextType extends AppState {
-  setWorkspace: (path: string) => Promise<void>
+  setWorkspace: (workspace: WorkspaceLocation) => Promise<void>
   openFile: (path: string) => Promise<void>
   closeFile: (path: string) => void
   setActiveFile: (path: string) => void
@@ -53,6 +61,14 @@ type TerminalLaunchRequest = {
   id: number
   profileId?: string
   sshHost?: string
+}
+
+type RemoteFolderDialogState = {
+  connection: RemoteConnection
+  value: string
+  entries: FileEntry[]
+  isLoading: boolean
+  error?: string
 }
 
 type MenuActionItem = {
@@ -102,22 +118,48 @@ function fileNameFromPath(path: string): string {
   return path.split(/[/\\]/).pop() ?? path
 }
 
+function dirnameFromPath(path: string): string {
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
+  if (!normalized || normalized === '/') return '/'
+  const index = normalized.lastIndexOf('/')
+  if (index <= 0) return '/'
+  return normalized.slice(0, index)
+}
+
+function joinRemotePath(base: string, name: string): string {
+  const normalized = base.replace(/\\/g, '/').replace(/\/+$/, '')
+  if (!normalized || normalized === '/') return `/${name}`
+  return `${normalized}/${name}`
+}
+
 function isActionItem(item: MenuItem): item is MenuActionItem {
   return item.type !== 'separator'
+}
+
+function readStoredBoolean(key: string, fallback: boolean): boolean {
+  try {
+    const value = window.localStorage.getItem(key)
+    if (value === null) return fallback
+    return value === 'true'
+  } catch {
+    return fallback
+  }
 }
 
 // ── App Component ────────────────────────────────────────────
 
 export default function App() {
   const [state, setState] = useState<AppState>({
-    workspacePath: null,
+    workspace: null,
     fileTree: [],
     openFiles: [],
     activeFilePath: null,
   })
   const [activeSideView, setActiveSideView] = useState<SideView>('explorer')
   const [openMenu, setOpenMenu] = useState<string | null>(null)
-  const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(false)
+  const [isSidePanelVisible, setIsSidePanelVisible] = useState(() => readStoredBoolean('rille:side-panel-visible', true))
+  const [isRightPanelVisible, setIsRightPanelVisible] = useState(() => readStoredBoolean('rille:right-panel-visible', true))
+  const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(() => readStoredBoolean('rille:bottom-panel-visible:v2', false))
   const [activeBottomTab, setActiveBottomTab] = useState<BottomPanelTab>('terminal')
   const [terminalNewSignal, setTerminalNewSignal] = useState(0)
   const [terminalKillSignal, setTerminalKillSignal] = useState(0)
@@ -126,33 +168,124 @@ export default function App() {
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 })
   const [diagnostics, setDiagnostics] = useState<EditorDiagnostic[]>([])
   const [breakpoints, setBreakpoints] = useState<Record<string, number[]>>({})
-  const [sidebarWidth, setSidebarWidth] = useState(264)
+  const [sidebarWidth, setSidebarWidth] = useState(240)
+  const [rightPanelWidth, setRightPanelWidth] = useState(340)
+  const [remoteFolderConnection, setRemoteFolderConnection] = useState<RemoteConnection | null>(null)
+  const [remoteFolderDialog, setRemoteFolderDialog] = useState<RemoteFolderDialogState | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<MonacoEditorApi.IStandaloneCodeEditor | null>(null)
   const pendingRevealRef = useRef<{ path: string; line: number; column: number } | null>(null)
+  const workspacePath = state.workspace?.path ?? null
 
-  const setWorkspace = useCallback(async (path: string) => {
-    const tree = await window.rille.readDirectory(path)
+  const setWorkspace = useCallback(async (workspace: WorkspaceLocation) => {
+    const tree = await window.rille.readDirectory(workspace.path, workspace)
     editorRef.current = null
     pendingRevealRef.current = null
     setGitDiffTarget(null)
     setCursorPosition({ line: 1, column: 1 })
     setDiagnostics([])
     setBreakpoints({})
-    setState(prev => ({ ...prev, workspacePath: path, fileTree: tree, openFiles: [], activeFilePath: null }))
+    setState(prev => ({ ...prev, workspace, fileTree: tree, openFiles: [], activeFilePath: null }))
     setActiveSideView('explorer')
   }, [])
 
+  const resolveRemoteFolderConnection = useCallback(async (): Promise<RemoteConnection | null> => {
+    const connections = await window.rille.remoteListConnections()
+    if (remoteFolderConnection) {
+      const selected = connections.find(connection => connection.id === remoteFolderConnection.id)
+      if (selected) return selected
+    }
+    if (state.workspace?.kind !== 'local' && state.workspace?.connectionId) {
+      const current = connections.find(connection => connection.id === state.workspace?.connectionId)
+      if (current) return current
+    }
+    return connections.length === 1 ? connections[0] : null
+  }, [remoteFolderConnection, state.workspace])
+
+  const loadRemoteFolderEntries = useCallback(async (connection: RemoteConnection, path: string) => {
+    const nextPath = path.trim() || connection.home || '/'
+    const browsingWorkspace: WorkspaceLocation = {
+      kind: connection.kind,
+      path: nextPath,
+      label: `${connection.label}:${nextPath}`,
+      connectionId: connection.id,
+      targetId: connection.targetId,
+    }
+
+    setRemoteFolderDialog(prev => prev && prev.connection.id === connection.id
+      ? { ...prev, value: nextPath, entries: [], isLoading: true, error: undefined }
+      : prev)
+
+    try {
+      const entries = await window.rille.readDirectory(nextPath, browsingWorkspace)
+      setRemoteFolderDialog(prev => prev && prev.connection.id === connection.id && prev.value === nextPath
+        ? { ...prev, entries: entries.filter(entry => entry.isDirectory), isLoading: false }
+        : prev)
+    } catch (error) {
+      setRemoteFolderDialog(prev => prev && prev.connection.id === connection.id
+        ? {
+            ...prev,
+            value: nextPath,
+            entries: [],
+            isLoading: false,
+            error: error instanceof Error ? error.message : '读取远程目录失败。',
+          }
+        : prev)
+    }
+  }, [])
+
+  const openRemoteFolderDialog = useCallback((connection: RemoteConnection, path: string, error?: string) => {
+    const initialPath = path.trim() || connection.home || '/'
+    setRemoteFolderConnection(connection)
+    setRemoteFolderDialog({ connection, value: initialPath, entries: [], isLoading: true, error })
+    void loadRemoteFolderEntries(connection, initialPath)
+  }, [loadRemoteFolderEntries])
+
   const openWorkspace = useCallback(async () => {
+    const remoteConnection = await resolveRemoteFolderConnection()
+    if (remoteConnection) {
+      try {
+        const home = remoteConnection.home || await window.rille.remoteGetHome(remoteConnection.id)
+        const defaultPath = state.workspace?.kind !== 'local' && state.workspace?.connectionId === remoteConnection.id
+          ? state.workspace.path
+          : home
+        openRemoteFolderDialog(remoteConnection, defaultPath)
+      } catch (error) {
+        openRemoteFolderDialog(
+          remoteConnection,
+          remoteConnection.home || '/',
+          error instanceof Error ? error.message : '读取远程 home 失败。',
+        )
+      }
+      return
+    }
+
     const p = await window.rille.openFolder()
-    if (p) await setWorkspace(p)
-  }, [setWorkspace])
+    if (p) await setWorkspace({ kind: 'local', path: p, label: fileNameFromPath(p) || p })
+  }, [openRemoteFolderDialog, resolveRemoteFolderConnection, setWorkspace, state.workspace])
+
+  const submitRemoteFolderDialog = useCallback(async () => {
+    if (!remoteFolderDialog) return
+    const remotePath = remoteFolderDialog.value.trim()
+    if (!remotePath) {
+      setRemoteFolderDialog(prev => prev ? { ...prev, error: '请输入远程目录路径。' } : prev)
+      return
+    }
+    try {
+      const workspace = await window.rille.remoteOpenWorkspace(remoteFolderDialog.connection.id, remotePath)
+      setRemoteFolderConnection(remoteFolderDialog.connection)
+      setRemoteFolderDialog(null)
+      await setWorkspace(workspace)
+    } catch (error) {
+      setRemoteFolderDialog(prev => prev ? { ...prev, error: error instanceof Error ? error.message : '打开远程目录失败。' } : prev)
+    }
+  }, [remoteFolderDialog, setWorkspace])
 
   const refreshWorkspace = useCallback(async () => {
-    if (!state.workspacePath) return
-    const tree = await window.rille.readDirectory(state.workspacePath)
+    if (!state.workspace) return
+    const tree = await window.rille.readDirectory(state.workspace.path, state.workspace)
     setState(prev => ({ ...prev, fileTree: tree }))
-  }, [state.workspacePath])
+  }, [state.workspace])
 
   const openFile = useCallback(async (path: string) => {
     setGitDiffTarget(null)
@@ -161,7 +294,7 @@ export default function App() {
       setState(prev => ({ ...prev, activeFilePath: existing.path }))
       return
     }
-    const content = await window.rille.readFile(path)
+    const content = await window.rille.readFile(path, state.workspace)
     const name = fileNameFromPath(path)
     const openFile: OpenFile = { path, name, content, isDirty: false, originalContent: content }
     setState(prev => ({
@@ -169,12 +302,17 @@ export default function App() {
       openFiles: [...prev.openFiles, openFile],
       activeFilePath: path,
     }))
-  }, [state.openFiles])
+  }, [state.openFiles, state.workspace])
 
   const openFileFromDialog = useCallback(async () => {
+    if (state.workspace && state.workspace.kind !== 'local') {
+      const remotePath = window.prompt('远程文件路径：', `${state.workspace.path}/`)?.trim()
+      if (remotePath) await openFile(remotePath)
+      return
+    }
     const path = await window.rille.openFileDialog()
     if (path) await openFile(path)
-  }, [openFile])
+  }, [openFile, state.workspace])
 
   const closeFile = useCallback((path: string) => {
     setGitDiffTarget(null)
@@ -214,18 +352,18 @@ export default function App() {
   const saveFile = useCallback(async (path: string) => {
     const file = state.openFiles.find(f => f.path === path)
     if (!file) return
-    await window.rille.writeFile(path, file.content)
+    await window.rille.writeFile(path, file.content, state.workspace)
     setState(prev => ({
       ...prev,
       openFiles: prev.openFiles.map(f =>
         f.path === path ? { ...f, isDirty: false, originalContent: f.content } : f
       ),
     }))
-  }, [state.openFiles])
+  }, [state.openFiles, state.workspace])
 
   const saveAllFiles = useCallback(async () => {
     const dirtyFiles = state.openFiles.filter(file => file.isDirty)
-    await Promise.all(dirtyFiles.map(file => window.rille.writeFile(file.path, file.content)))
+    await Promise.all(dirtyFiles.map(file => window.rille.writeFile(file.path, file.content, state.workspace)))
     const savedPaths = new Set(dirtyFiles.map(file => file.path))
     setState(prev => ({
       ...prev,
@@ -233,19 +371,37 @@ export default function App() {
         savedPaths.has(file.path) ? { ...file, isDirty: false, originalContent: file.content } : file
       ),
     }))
-  }, [state.openFiles])
+  }, [state.openFiles, state.workspace])
 
   const selectedOpenFile = state.openFiles.find(f => f.path === state.activeFilePath)
   const activeFile = gitDiffTarget ? undefined : selectedOpenFile
-  const workspaceName = state.workspacePath?.split(/[/\\]/).pop() ?? 'RilleCode'
+  const workspaceName = state.workspace?.label || (workspacePath ? fileNameFromPath(workspacePath) : 'RilleCode')
   const workspaceTitle = workspaceName.toUpperCase()
+  const hasRemoteFolderContext = Boolean(remoteFolderConnection || (state.workspace?.kind !== 'local' && state.workspace?.connectionId))
+  const connectionStatusLabel = remoteFolderConnection?.label
+    ?? (state.workspace && state.workspace.kind !== 'local' ? state.workspace.label : '本地')
+  const isRemoteConnectionStatus = connectionStatusLabel !== '本地'
+
+  useEffect(() => {
+    window.localStorage.setItem('rille:side-panel-visible', String(isSidePanelVisible))
+  }, [isSidePanelVisible])
+
+  useEffect(() => {
+    window.localStorage.setItem('rille:right-panel-visible', String(isRightPanelVisible))
+  }, [isRightPanelVisible])
+
+  useEffect(() => {
+    window.localStorage.setItem('rille:bottom-panel-visible:v2', String(isBottomPanelVisible))
+  }, [isBottomPanelVisible])
 
   const saveFileAs = useCallback(async () => {
     if (!activeFile) return
-    const targetPath = await window.rille.saveFileDialog(activeFile.path)
+    const targetPath = state.workspace && state.workspace.kind !== 'local'
+      ? window.prompt('远程保存路径：', activeFile.path)?.trim() || null
+      : await window.rille.saveFileDialog(activeFile.path)
     if (!targetPath) return
 
-    await window.rille.writeFile(targetPath, activeFile.content)
+    await window.rille.writeFile(targetPath, activeFile.content, state.workspace)
     const targetName = fileNameFromPath(targetPath)
     const activePath = activeFile.path
     const savedContent = activeFile.content
@@ -259,7 +415,7 @@ export default function App() {
           : file),
       activeFilePath: targetPath,
     }))
-  }, [activeFile])
+  }, [activeFile, state.workspace])
 
   const revealEditorPosition = useCallback((editor: MonacoEditorApi.IStandaloneCodeEditor, target: { line: number; column: number }) => {
     const position = { lineNumber: target.line, column: target.column }
@@ -440,15 +596,15 @@ export default function App() {
 
   const renderSidebar = () => {
     if (activeSideView === 'search') {
-      return <SearchPanel rootPath={state.workspacePath} onOpenFile={openFile} />
+      return <SearchPanel workspace={state.workspace} onOpenFile={openFile} />
     }
 
     if (activeSideView === 'git') {
-      return <GitPanel rootPath={state.workspacePath} onOpenDiff={openGitDiff} />
+      return <GitPanel workspace={state.workspace} onOpenDiff={openGitDiff} />
     }
 
     if (activeSideView === 'remote') {
-      return <RemotePanel onOpenTerminal={openTerminalProfile} />
+      return <RemotePanel onOpenWorkspace={setWorkspace} onRemoteConnectionReady={setRemoteFolderConnection} />
     }
 
     return (
@@ -456,16 +612,17 @@ export default function App() {
         <div className="side-view-title-row explorer-title">
           <button type="button" className="workspace-root">
             <ChevronDown size={14} />
-            <span>{state.workspacePath ? workspaceTitle : '资源管理器'}</span>
+            <span>{state.workspace ? workspaceTitle : '资源管理器'}</span>
           </button>
-          <button type="button" className="side-action" onClick={state.workspacePath ? refreshWorkspace : openWorkspace}>
-            {state.workspacePath ? '刷新' : '打开'}
+          <button type="button" className="side-action" onClick={state.workspace && !hasRemoteFolderContext ? refreshWorkspace : openWorkspace}>
+            {state.workspace && !hasRemoteFolderContext ? '刷新' : '打开'}
           </button>
         </div>
-        {state.workspacePath ? (
+        {state.workspace ? (
           <>
             <FileTree
               entries={state.fileTree}
+              workspace={state.workspace}
               onSelectFile={openFile}
               activePath={state.activeFilePath}
             />
@@ -477,7 +634,32 @@ export default function App() {
     )
   }
 
-  const emptyTitle = !state.workspacePath
+  const renderSideToolbar = () => (
+    <div className="sidebar-activity-tabs" aria-label="侧边栏功能">
+      <button type="button" className={'sidebar-activity-item ' + (activeSideView === 'explorer' ? 'active' : '')} title="资源管理器" onClick={() => setActiveSideView('explorer')}><Files size={17} /></button>
+      <button type="button" className={'sidebar-activity-item ' + (activeSideView === 'search' ? 'active' : '')} title="搜索" onClick={() => setActiveSideView('search')}><Search size={17} /></button>
+      <button type="button" className={'sidebar-activity-item ' + (activeSideView === 'git' ? 'active' : '')} title="源代码管理" onClick={() => setActiveSideView('git')}><GitBranch size={17} /></button>
+      <button type="button" className={'sidebar-activity-item ' + (activeSideView === 'remote' ? 'active' : '')} title="远程" onClick={() => setActiveSideView('remote')}><Server size={17} /></button>
+    </div>
+  )
+
+  const renderAgentPanel = () => (
+    <aside className="agent-panel" aria-label="Agent">
+      <div className="agent-thread">
+        <div className="agent-empty-state">
+          <MessageSquare size={24} />
+          <strong>助手就绪</strong>
+          <span>{activeFile ? activeFile.name : gitDiffTarget ? 'Git 差异' : '暂无上下文'}</span>
+        </div>
+      </div>
+      <form className="agent-compose" onSubmit={event => event.preventDefault()}>
+        <input placeholder="询问 RilleCode" />
+        <button type="submit">发送</button>
+      </form>
+    </aside>
+  )
+
+  const emptyTitle = !state.workspace
     ? '打开文件夹或文件开始使用'
     : activeSideView === 'search'
       ? '在左侧搜索项目内容'
@@ -532,44 +714,75 @@ export default function App() {
           </div>
 
           <div className="chrome-center">
-            <button type="button" className="chrome-nav ghost" aria-label="Previous tab" onClick={() => cycleFile(-1)}><ChevronLeft size={14} /></button>
-            <button type="button" className="chrome-nav ghost" aria-label="Next tab" onClick={() => cycleFile(1)}><ChevronRight size={14} /></button>
+            <button type="button" className="chrome-nav ghost" aria-label="上一个标签" onClick={() => cycleFile(-1)}><ChevronLeft size={14} /></button>
+            <button type="button" className="chrome-nav ghost" aria-label="下一个标签" onClick={() => cycleFile(1)}><ChevronRight size={14} /></button>
             <span className="chrome-title">RilleCode</span>
           </div>
 
-          <div className="chrome-right" />
+          <div className="chrome-right">
+            <button
+              type="button"
+              className={'chrome-panel-toggle ' + (isSidePanelVisible ? 'active' : '')}
+              title={isSidePanelVisible ? '隐藏左侧栏' : '显示左侧栏'}
+              aria-label={isSidePanelVisible ? '隐藏左侧栏' : '显示左侧栏'}
+              onClick={() => setIsSidePanelVisible(value => !value)}
+            >
+              <PanelLeft size={14} />
+            </button>
+            <button
+              type="button"
+              className={'chrome-panel-toggle ' + (isBottomPanelVisible ? 'active' : '')}
+              title={isBottomPanelVisible ? '隐藏底部栏' : '显示底部栏'}
+              aria-label={isBottomPanelVisible ? '隐藏底部栏' : '显示底部栏'}
+              onClick={() => setIsBottomPanelVisible(value => !value)}
+            >
+              <PanelBottom size={14} />
+            </button>
+            <button
+              type="button"
+              className={'chrome-panel-toggle ' + (isRightPanelVisible ? 'active' : '')}
+              title={isRightPanelVisible ? '隐藏右侧栏' : '显示右侧栏'}
+              aria-label={isRightPanelVisible ? '隐藏右侧栏' : '显示右侧栏'}
+              onClick={() => setIsRightPanelVisible(value => !value)}
+            >
+              <PanelRight size={14} />
+            </button>
+          </div>
         </header>
 
-        <main className="workbench">
-          <aside className="activity-bar" aria-label="Activity bar">
-            <button type="button" className={'activity-item ' + (activeSideView === 'explorer' ? 'active' : '')} title="Explorer" onClick={() => setActiveSideView('explorer')}><Files size={18} /></button>
-            <button type="button" className={'activity-item ' + (activeSideView === 'search' ? 'active' : '')} title="Search" onClick={() => setActiveSideView('search')}><Search size={18} /></button>
-            <button type="button" className={'activity-item ' + (activeSideView === 'git' ? 'active' : '')} title="Source Control" onClick={() => setActiveSideView('git')}><GitBranch size={18} /></button>
-            <button type="button" className={'activity-item ' + (activeSideView === 'remote' ? 'active' : '')} title="Remote" onClick={() => setActiveSideView('remote')}><Server size={18} /></button>
-          </aside>
+        <main className={
+          'workbench ide-workbench '
+          + (!isSidePanelVisible ? 'left-collapsed ' : '')
+          + (!isRightPanelVisible ? 'right-collapsed ' : '')
+          + (!isBottomPanelVisible ? 'bottom-collapsed' : '')
+        } style={{ '--sidebar-width': `${sidebarWidth}px`, '--right-panel-width': `${rightPanelWidth}px` } as CSSProperties}>
+          {isSidePanelVisible && (
+            <>
+              <aside className="sidebar ide-sidebar" style={{ width: sidebarWidth }}>
+                {renderSideToolbar()}
+                {renderSidebar()}
+              </aside>
 
-          <aside className="sidebar" style={{ width: sidebarWidth }}>
-            {renderSidebar()}
-          </aside>
-
-          <div
-            className="sidebar-resize-handle"
-            onPointerDown={(e) => {
-              e.preventDefault()
-              const startX = e.clientX
-              const startWidth = sidebarWidth
-              const onMove = (ev: PointerEvent) => {
-                const delta = ev.clientX - startX
-                setSidebarWidth(Math.max(170, Math.min(500, startWidth + delta)))
-              }
-              const onUp = () => {
-                document.removeEventListener('pointermove', onMove)
-                document.removeEventListener('pointerup', onUp)
-              }
-              document.addEventListener('pointermove', onMove)
-              document.addEventListener('pointerup', onUp)
-            }}
-          />
+              <div
+                className="sidebar-resize-handle"
+                onPointerDown={(e) => {
+                  e.preventDefault()
+                  const startX = e.clientX
+                  const startWidth = sidebarWidth
+                  const onMove = (ev: PointerEvent) => {
+                    const delta = ev.clientX - startX
+                    setSidebarWidth(Math.max(200, Math.min(420, startWidth + delta)))
+                  }
+                  const onUp = () => {
+                    document.removeEventListener('pointermove', onMove)
+                    document.removeEventListener('pointerup', onUp)
+                  }
+                  document.addEventListener('pointermove', onMove)
+                  document.addEventListener('pointerup', onUp)
+                }}
+              />
+            </>
+          )}
 
           <section className="editor-area">
             {state.openFiles.length > 0 && (
@@ -581,10 +794,10 @@ export default function App() {
               />
             )}
             <div className="editor-container">
-              {gitDiffTarget && state.workspacePath ? (
+              {gitDiffTarget && state.workspace ? (
                 <GitDiffViewer
                   key={gitDiffTarget.id}
-                  rootPath={state.workspacePath}
+                  workspace={state.workspace}
                   target={gitDiffTarget}
                 />
               ) : activeFile ? (
@@ -608,14 +821,14 @@ export default function App() {
                 <div className="empty-editor">
                   <div className="empty-cube" aria-hidden="true"><Box size={78} /></div>
                   <div className="empty-message">{emptyTitle}</div>
-                  {!state.workspacePath && (
+                  {!state.workspace && (
                     <button type="button" className="empty-add-folder" onClick={openWorkspace}>打开文件夹</button>
                   )}
                 </div>
               )}
             </div>
             <TerminalPanel
-              cwd={state.workspacePath}
+              workspace={state.workspace}
               visible={isBottomPanelVisible}
               activeTab={activeBottomTab}
               diagnostics={visibleDiagnostics}
@@ -626,15 +839,115 @@ export default function App() {
               onActiveTabChange={(tab) => showBottomPanel(tab)}
               onSelectDiagnostic={openDiagnostic}
               onHide={() => setIsBottomPanelVisible(false)}
+              onTerminalSessionsEmpty={() => setIsBottomPanelVisible(false)}
             />
           </section>
+
+          {isRightPanelVisible && (
+            <>
+              <div
+                className="agent-resize-handle"
+                onPointerDown={(e) => {
+                  e.preventDefault()
+                  const startX = e.clientX
+                  const startWidth = rightPanelWidth
+                  const onMove = (ev: PointerEvent) => {
+                    const delta = startX - ev.clientX
+                    setRightPanelWidth(Math.max(260, Math.min(560, startWidth + delta)))
+                  }
+                  const onUp = () => {
+                    document.removeEventListener('pointermove', onMove)
+                    document.removeEventListener('pointerup', onUp)
+                  }
+                  document.addEventListener('pointermove', onMove)
+                  document.addEventListener('pointerup', onUp)
+                }}
+              />
+              {renderAgentPanel()}
+            </>
+          )}
         </main>
+
+        {remoteFolderDialog && (
+          <div className="remote-modal-overlay">
+            <div className="remote-config-dialog remote-folder-dialog">
+              <div className="remote-folder-header">
+                <div>
+                  <div className="remote-config-title">打开远程文件夹</div>
+                  <div className="remote-auth-prompt">{remoteFolderDialog.connection.label}</div>
+                </div>
+              </div>
+              <div className="remote-folder-toolbar">
+                <button
+                  type="button"
+                  title="主目录"
+                  onClick={() => void loadRemoteFolderEntries(remoteFolderDialog.connection, remoteFolderDialog.connection.home || '/')}
+                >
+                  <Home size={15} />
+                </button>
+                <button
+                  type="button"
+                  title="上一级"
+                  onClick={() => void loadRemoteFolderEntries(remoteFolderDialog.connection, dirnameFromPath(remoteFolderDialog.value))}
+                >
+                  <ArrowUp size={15} />
+                </button>
+                <button
+                  type="button"
+                  title="刷新"
+                  onClick={() => void loadRemoteFolderEntries(remoteFolderDialog.connection, remoteFolderDialog.value)}
+                >
+                  <RefreshCw size={15} />
+                </button>
+                <input
+                  autoFocus
+                  className="remote-folder-input"
+                  value={remoteFolderDialog.value}
+                  onChange={event => setRemoteFolderDialog(prev => prev ? { ...prev, value: event.target.value, error: undefined } : prev)}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter') void loadRemoteFolderEntries(remoteFolderDialog.connection, remoteFolderDialog.value)
+                    if (event.key === 'Escape') setRemoteFolderDialog(null)
+                  }}
+                />
+              </div>
+              {remoteFolderDialog.error && <pre className="panel-error">{remoteFolderDialog.error}</pre>}
+              <div className="remote-folder-list" role="listbox" aria-label="远程文件夹">
+                {remoteFolderDialog.isLoading ? (
+                  <div className="remote-folder-empty">正在读取目录...</div>
+                ) : remoteFolderDialog.entries.length === 0 ? (
+                  <div className="remote-folder-empty">没有子文件夹</div>
+                ) : (
+                  remoteFolderDialog.entries.map(entry => (
+                    <button
+                      key={entry.path}
+                      type="button"
+                      className="remote-folder-row"
+                      onClick={() => void loadRemoteFolderEntries(
+                        remoteFolderDialog.connection,
+                        entry.path || joinRemotePath(remoteFolderDialog.value, entry.name),
+                      )}
+                    >
+                      <Folder size={15} />
+                      <span>{entry.name}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="remote-config-actions">
+                <button type="button" onClick={() => void submitRemoteFolderDialog()}>打开</button>
+                <button type="button" onClick={() => setRemoteFolderDialog(null)}>取消</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <StatusBar
           diagnostics={visibleDiagnostics}
           cursorLine={cursorPosition.line}
           cursorColumn={cursorPosition.column}
           problemsActive={isBottomPanelVisible && activeBottomTab === 'problems'}
+          connectionLabel={connectionStatusLabel}
+          isRemoteConnection={isRemoteConnectionStatus}
           onOpenProblems={() => showBottomPanel('problems')}
         />
       </div>

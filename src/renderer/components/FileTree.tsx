@@ -17,6 +17,7 @@ import {
 
 interface Props {
   entries: FileEntry[]
+  workspace: WorkspaceLocation | null
   onSelectFile: (path: string) => void
   activePath: string | null
 }
@@ -45,9 +46,10 @@ function getFileIcon(fileName: string): { icon: LucideIcon; tone: string } {
   return map[ext ?? ''] ?? { icon: File, tone: 'slate' }
 }
 
-function TreeNode({ entry, depth, onSelect, activePath }: {
+function TreeNode({ entry, depth, workspace, onSelect, activePath }: {
   entry: FileEntry
   depth: number
+  workspace: WorkspaceLocation | null
   onSelect: (path: string) => void
   activePath: string | null
 }) {
@@ -61,7 +63,7 @@ function TreeNode({ entry, depth, onSelect, activePath }: {
 
     if (nextExpanded && children === undefined && !isLoading) {
       setIsLoading(true)
-      const loadedChildren = await window.rille.readDirectory(entry.path)
+      const loadedChildren = await window.rille.readDirectory(entry.path, workspace)
       setChildren(loadedChildren)
       setIsLoading(false)
     }
@@ -95,6 +97,7 @@ function TreeNode({ entry, depth, onSelect, activePath }: {
             key={child.path}
             entry={child}
             depth={depth + 1}
+            workspace={workspace}
             onSelect={onSelect}
             activePath={activePath}
           />
@@ -122,7 +125,7 @@ function TreeNode({ entry, depth, onSelect, activePath }: {
   )
 }
 
-export function FileTree({ entries, onSelectFile, activePath }: Props) {
+export function FileTree({ entries, workspace, onSelectFile, activePath }: Props) {
   if (entries.length === 0) {
     return <div className="file-tree-empty">No files</div>
   }
@@ -134,6 +137,7 @@ export function FileTree({ entries, onSelectFile, activePath }: Props) {
           key={entry.path}
           entry={entry}
           depth={0}
+          workspace={workspace}
           onSelect={onSelectFile}
           activePath={activePath}
         />

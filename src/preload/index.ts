@@ -6,46 +6,57 @@ export interface RilleAPI {
   saveFileDialog(defaultPath?: string): Promise<string | null>
   newWindow(): Promise<void>
   exitApp(): Promise<void>
-  readDirectory(dirPath: string): Promise<FileEntry[]>
-  readFile(filePath: string): Promise<string>
-  writeFile(filePath: string, content: string): Promise<boolean>
-  fileExists(filePath: string): Promise<boolean>
-  getFileInfo(filePath: string): Promise<{ size: number; modifiedTime: number } | null>
-  searchFiles(rootPath: string, query: string, options: SearchOptions): Promise<SearchResult[]>
-  gitStatus(rootPath: string): Promise<GitStatusResult>
-  gitStage(rootPath: string, filePath: string): Promise<GitCommandResult>
-  gitUnstage(rootPath: string, filePath: string): Promise<GitCommandResult>
-  gitCommit(rootPath: string, message: string): Promise<GitCommandResult>
-  gitFileDiff(rootPath: string, filePath: string, kind: GitFileDiffKind): Promise<GitDiffResult>
-  gitLog(rootPath: string, limit?: number, skip?: number): Promise<GitLogResult>
-  gitCommitFiles(rootPath: string, hash: string): Promise<GitCommitFilesResult>
-  gitCommitFileDiff(rootPath: string, hash: string, filePath: string, previousPath?: string): Promise<GitDiffResult>
-  gitCheckoutCommit(rootPath: string, hash: string): Promise<GitCommandResult>
-  gitCreateBranchFromCommit(rootPath: string, hash: string, branchName: string): Promise<GitCommandResult>
-  gitResetToCommit(rootPath: string, hash: string, mode: GitResetMode): Promise<GitCommandResult>
-  gitBranches(rootPath: string): Promise<GitBranchesResult>
-  gitSwitchBranch(rootPath: string, branchName: string, branchType: 'local' | 'remote', autoStash?: boolean): Promise<GitOperationResult>
-  gitCreateBranch(rootPath: string, branchName: string, startPoint?: string, checkout?: boolean): Promise<GitOperationResult>
-  gitDeleteBranch(rootPath: string, branchName: string): Promise<GitOperationResult>
-  gitFetch(rootPath: string): Promise<GitOperationResult>
-  gitPull(rootPath: string, autoStash?: boolean): Promise<GitOperationResult>
-  gitPush(rootPath: string): Promise<GitOperationResult>
-  gitMerge(rootPath: string, branchName: string, autoStash?: boolean): Promise<GitOperationResult>
-  gitRebase(rootPath: string, branchName: string, autoStash?: boolean): Promise<GitOperationResult>
-  gitAbortMerge(rootPath: string): Promise<GitOperationResult>
-  gitAbortRebase(rootPath: string): Promise<GitOperationResult>
-  gitStashList(rootPath: string): Promise<GitStashListResult>
-  gitStashPush(rootPath: string, message?: string): Promise<GitOperationResult>
-  gitStashApply(rootPath: string, stashRef: string): Promise<GitOperationResult>
-  gitStashPop(rootPath: string, stashRef: string): Promise<GitOperationResult>
-  gitStashDrop(rootPath: string, stashRef: string): Promise<GitOperationResult>
-  gitResolveCommitAvatars(rootPath: string, hashes: string[]): Promise<GitAvatarResult>
+  readDirectory(dirPath: string, workspace?: WorkspaceLocation | null): Promise<FileEntry[]>
+  readFile(filePath: string, workspace?: WorkspaceLocation | null): Promise<string>
+  writeFile(filePath: string, content: string, workspace?: WorkspaceLocation | null): Promise<boolean>
+  fileExists(filePath: string, workspace?: WorkspaceLocation | null): Promise<boolean>
+  getFileInfo(filePath: string, workspace?: WorkspaceLocation | null): Promise<{ size: number; modifiedTime: number } | null>
+  searchFiles(rootPath: string, query: string, options: SearchOptions, workspace?: WorkspaceLocation | null): Promise<SearchResult[]>
+  gitStatus(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitStatusResult>
+  gitStage(rootPath: string, filePath: string, workspace?: WorkspaceLocation | null): Promise<GitCommandResult>
+  gitUnstage(rootPath: string, filePath: string, workspace?: WorkspaceLocation | null): Promise<GitCommandResult>
+  gitCommit(rootPath: string, message: string, workspace?: WorkspaceLocation | null): Promise<GitCommandResult>
+  gitFileDiff(rootPath: string, filePath: string, kind: GitFileDiffKind, workspace?: WorkspaceLocation | null): Promise<GitDiffResult>
+  gitLog(rootPath: string, limit?: number, skip?: number, workspace?: WorkspaceLocation | null): Promise<GitLogResult>
+  gitCommitFiles(rootPath: string, hash: string, workspace?: WorkspaceLocation | null): Promise<GitCommitFilesResult>
+  gitCommitFileDiff(rootPath: string, hash: string, filePath: string, previousPath?: string, workspace?: WorkspaceLocation | null): Promise<GitDiffResult>
+  gitCheckoutCommit(rootPath: string, hash: string, workspace?: WorkspaceLocation | null): Promise<GitCommandResult>
+  gitCreateBranchFromCommit(rootPath: string, hash: string, branchName: string, workspace?: WorkspaceLocation | null): Promise<GitCommandResult>
+  gitResetToCommit(rootPath: string, hash: string, mode: GitResetMode, workspace?: WorkspaceLocation | null): Promise<GitCommandResult>
+  gitBranches(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitBranchesResult>
+  gitSwitchBranch(rootPath: string, branchName: string, branchType: 'local' | 'remote', autoStash?: boolean, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitCreateBranch(rootPath: string, branchName: string, startPoint?: string, checkout?: boolean, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitDeleteBranch(rootPath: string, branchName: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitFetch(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitPull(rootPath: string, autoStash?: boolean, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitPush(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitMerge(rootPath: string, branchName: string, autoStash?: boolean, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitRebase(rootPath: string, branchName: string, autoStash?: boolean, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitAbortMerge(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitAbortRebase(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitStashList(rootPath: string, workspace?: WorkspaceLocation | null): Promise<GitStashListResult>
+  gitStashPush(rootPath: string, message?: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitStashApply(rootPath: string, stashRef: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitStashPop(rootPath: string, stashRef: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitStashDrop(rootPath: string, stashRef: string, workspace?: WorkspaceLocation | null): Promise<GitOperationResult>
+  gitResolveCommitAvatars(rootPath: string, hashes: string[], workspace?: WorkspaceLocation | null): Promise<GitAvatarResult>
   outputList(): Promise<OutputEntry[]>
   outputClear(): Promise<void>
   onOutputEntry(callback: (entry: OutputEntry) => void): () => void
   onOutputCleared(callback: () => void): () => void
   terminalListProfiles(): Promise<TerminalProfile[]>
   remoteListTargets(): Promise<RemoteTarget[]>
+  remoteListSshConfigs(): Promise<SshTargetConfig[]>
+  remoteSaveSshConfig(config: Partial<SshTargetConfig>): Promise<SshTargetConfig>
+  remoteDeleteSshConfig(id: string): Promise<boolean>
+  remoteSelectIdentityFile(): Promise<string | null>
+  remoteRespondAuthPrompt(requestId: string, response: { value?: string; cancelled?: boolean }): Promise<boolean>
+  onRemoteAuthPrompt(callback: (request: RemoteAuthPromptRequest) => void): () => void
+  remoteConnect(targetId: string, sshHost?: string): Promise<RemoteConnection>
+  remoteDisconnect(connectionId: string): Promise<boolean>
+  remoteListConnections(): Promise<RemoteConnection[]>
+  remoteGetHome(connectionId: string): Promise<string>
+  remoteOpenWorkspace(connectionId: string, remotePath: string): Promise<WorkspaceLocation>
   terminalCreate(cwd?: string, cols?: number, rows?: number, launchOptions?: TerminalLaunchOptions): Promise<TerminalSession>
   terminalWrite(id: string, data: string): Promise<void>
   terminalResize(id: string, cols: number, rows: number): Promise<void>
@@ -221,9 +232,49 @@ export interface TerminalProfile {
   isDefault?: boolean
 }
 
+export interface WorkspaceLocation {
+  kind: 'local' | 'ssh' | 'wsl'
+  path: string
+  label: string
+  connectionId?: string
+  targetId?: string
+}
+
+export interface RemoteConnection {
+  id: string
+  targetId: string
+  kind: 'ssh' | 'wsl'
+  label: string
+  home: string
+  status: 'connecting' | 'connected' | 'error'
+  error?: string
+}
+
+export type SshAuthMethod = 'sshConfigOrAgent' | 'password' | 'identityFile' | 'identityFileWithPassphrase'
+
+export interface SshTargetConfig {
+  id: string
+  alias: string
+  hostName: string
+  user?: string
+  port?: number
+  authMethod: SshAuthMethod
+  identityFile?: string
+  proxyJump?: string
+  extraOptions?: string
+  defaultRemotePath?: string
+}
+
+export interface RemoteAuthPromptRequest {
+  requestId: string
+  prompt: string
+  kind: 'password' | 'confirmation' | 'text'
+}
+
 export interface TerminalLaunchOptions {
   profileId?: string
   sshHost?: string
+  workspace?: WorkspaceLocation | null
 }
 
 export interface RemoteTarget {
@@ -233,7 +284,10 @@ export interface RemoteTarget {
   profileId: string
   host?: string
   distro?: string
-  source: 'detected' | 'ssh-config' | 'wsl'
+  source: 'detected' | 'configured' | 'ssh-config' | 'wsl'
+  sshConfigId?: string
+  sshConfig?: SshTargetConfig
+  defaultRemotePath?: string
 }
 
 export interface TerminalSession {
@@ -242,6 +296,7 @@ export interface TerminalSession {
   shell: string
   profileId: string
   name: string
+  workspace?: WorkspaceLocation | null
 }
 
 export interface PortEntry {
@@ -297,46 +352,63 @@ export interface TerminalExitEvent {
   exitCode: number
 }
 
+
+type IpcResult<T> = { ok: true; value: T } | { ok: false; error: string }
+
+function isIpcResult<T>(value: unknown): value is IpcResult<T> {
+  return Boolean(value && typeof value === 'object' && 'ok' in value)
+}
+
+function unwrapIpcResult<T>(value: T | IpcResult<T>): T {
+  if (!isIpcResult<T>(value)) return value as T
+  if (value.ok) return value.value
+  throw new Error(value.error)
+}
+
+async function invokeRemote<T>(channel: string, ...args: unknown[]): Promise<T> {
+  return unwrapIpcResult<T>(await ipcRenderer.invoke(channel, ...args))
+}
+
 const api: RilleAPI = {
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   openFileDialog: () => ipcRenderer.invoke('dialog:openFile'),
   saveFileDialog: (defaultPath) => ipcRenderer.invoke('dialog:saveFile', defaultPath),
   newWindow: () => ipcRenderer.invoke('app:newWindow'),
   exitApp: () => ipcRenderer.invoke('app:exit'),
-  readDirectory: (path) => ipcRenderer.invoke('fs:readDirectory', path),
-  readFile: (path) => ipcRenderer.invoke('fs:readFile', path),
-  writeFile: (path, content) => ipcRenderer.invoke('fs:writeFile', path, content),
-  fileExists: (path) => ipcRenderer.invoke('fs:fileExists', path),
-  getFileInfo: (path) => ipcRenderer.invoke('fs:getFileInfo', path),
-  searchFiles: (rootPath, query, options) => ipcRenderer.invoke('search:files', rootPath, query, options),
-  gitStatus: (rootPath) => ipcRenderer.invoke('git:status', rootPath),
-  gitStage: (rootPath, filePath) => ipcRenderer.invoke('git:stage', rootPath, filePath),
-  gitUnstage: (rootPath, filePath) => ipcRenderer.invoke('git:unstage', rootPath, filePath),
-  gitCommit: (rootPath, message) => ipcRenderer.invoke('git:commit', rootPath, message),
-  gitFileDiff: (rootPath, filePath, kind) => ipcRenderer.invoke('git:fileDiff', rootPath, filePath, kind),
-  gitLog: (rootPath, limit, skip) => ipcRenderer.invoke('git:log', rootPath, limit, skip),
-  gitCommitFiles: (rootPath, hash) => ipcRenderer.invoke('git:commitFiles', rootPath, hash),
-  gitCommitFileDiff: (rootPath, hash, filePath, previousPath) => ipcRenderer.invoke('git:commitFileDiff', rootPath, hash, filePath, previousPath),
-  gitCheckoutCommit: (rootPath, hash) => ipcRenderer.invoke('git:checkoutCommit', rootPath, hash),
-  gitCreateBranchFromCommit: (rootPath, hash, branchName) => ipcRenderer.invoke('git:createBranchFromCommit', rootPath, hash, branchName),
-  gitResetToCommit: (rootPath, hash, mode) => ipcRenderer.invoke('git:resetToCommit', rootPath, hash, mode),
-  gitBranches: (rootPath) => ipcRenderer.invoke('git:branches', rootPath),
-  gitSwitchBranch: (rootPath, branchName, branchType, autoStash) => ipcRenderer.invoke('git:switchBranch', rootPath, branchName, branchType, autoStash),
-  gitCreateBranch: (rootPath, branchName, startPoint, checkout) => ipcRenderer.invoke('git:createBranch', rootPath, branchName, startPoint, checkout),
-  gitDeleteBranch: (rootPath, branchName) => ipcRenderer.invoke('git:deleteBranch', rootPath, branchName),
-  gitFetch: (rootPath) => ipcRenderer.invoke('git:fetch', rootPath),
-  gitPull: (rootPath, autoStash) => ipcRenderer.invoke('git:pull', rootPath, autoStash),
-  gitPush: (rootPath) => ipcRenderer.invoke('git:push', rootPath),
-  gitMerge: (rootPath, branchName, autoStash) => ipcRenderer.invoke('git:merge', rootPath, branchName, autoStash),
-  gitRebase: (rootPath, branchName, autoStash) => ipcRenderer.invoke('git:rebase', rootPath, branchName, autoStash),
-  gitAbortMerge: (rootPath) => ipcRenderer.invoke('git:abortMerge', rootPath),
-  gitAbortRebase: (rootPath) => ipcRenderer.invoke('git:abortRebase', rootPath),
-  gitStashList: (rootPath) => ipcRenderer.invoke('git:stashList', rootPath),
-  gitStashPush: (rootPath, message) => ipcRenderer.invoke('git:stashPush', rootPath, message),
-  gitStashApply: (rootPath, stashRef) => ipcRenderer.invoke('git:stashApply', rootPath, stashRef),
-  gitStashPop: (rootPath, stashRef) => ipcRenderer.invoke('git:stashPop', rootPath, stashRef),
-  gitStashDrop: (rootPath, stashRef) => ipcRenderer.invoke('git:stashDrop', rootPath, stashRef),
-  gitResolveCommitAvatars: (rootPath, hashes) => ipcRenderer.invoke('git:resolveCommitAvatars', rootPath, hashes),
+  readDirectory: (path, workspace) => ipcRenderer.invoke('fs:readDirectory', path, workspace),
+  readFile: (path, workspace) => ipcRenderer.invoke('fs:readFile', path, workspace),
+  writeFile: (path, content, workspace) => ipcRenderer.invoke('fs:writeFile', path, content, workspace),
+  fileExists: (path, workspace) => ipcRenderer.invoke('fs:fileExists', path, workspace),
+  getFileInfo: (path, workspace) => ipcRenderer.invoke('fs:getFileInfo', path, workspace),
+  searchFiles: (rootPath, query, options, workspace) => ipcRenderer.invoke('search:files', rootPath, query, options, workspace),
+  gitStatus: (rootPath, workspace) => ipcRenderer.invoke('git:status', rootPath, workspace),
+  gitStage: (rootPath, filePath, workspace) => ipcRenderer.invoke('git:stage', rootPath, filePath, workspace),
+  gitUnstage: (rootPath, filePath, workspace) => ipcRenderer.invoke('git:unstage', rootPath, filePath, workspace),
+  gitCommit: (rootPath, message, workspace) => ipcRenderer.invoke('git:commit', rootPath, message, workspace),
+  gitFileDiff: (rootPath, filePath, kind, workspace) => ipcRenderer.invoke('git:fileDiff', rootPath, filePath, kind, workspace),
+  gitLog: (rootPath, limit, skip, workspace) => ipcRenderer.invoke('git:log', rootPath, limit, skip, workspace),
+  gitCommitFiles: (rootPath, hash, workspace) => ipcRenderer.invoke('git:commitFiles', rootPath, hash, workspace),
+  gitCommitFileDiff: (rootPath, hash, filePath, previousPath, workspace) => ipcRenderer.invoke('git:commitFileDiff', rootPath, hash, filePath, previousPath, workspace),
+  gitCheckoutCommit: (rootPath, hash, workspace) => ipcRenderer.invoke('git:checkoutCommit', rootPath, hash, workspace),
+  gitCreateBranchFromCommit: (rootPath, hash, branchName, workspace) => ipcRenderer.invoke('git:createBranchFromCommit', rootPath, hash, branchName, workspace),
+  gitResetToCommit: (rootPath, hash, mode, workspace) => ipcRenderer.invoke('git:resetToCommit', rootPath, hash, mode, workspace),
+  gitBranches: (rootPath, workspace) => ipcRenderer.invoke('git:branches', rootPath, workspace),
+  gitSwitchBranch: (rootPath, branchName, branchType, autoStash, workspace) => ipcRenderer.invoke('git:switchBranch', rootPath, branchName, branchType, autoStash, workspace),
+  gitCreateBranch: (rootPath, branchName, startPoint, checkout, workspace) => ipcRenderer.invoke('git:createBranch', rootPath, branchName, startPoint, checkout, workspace),
+  gitDeleteBranch: (rootPath, branchName, workspace) => ipcRenderer.invoke('git:deleteBranch', rootPath, branchName, workspace),
+  gitFetch: (rootPath, workspace) => ipcRenderer.invoke('git:fetch', rootPath, workspace),
+  gitPull: (rootPath, autoStash, workspace) => ipcRenderer.invoke('git:pull', rootPath, autoStash, workspace),
+  gitPush: (rootPath, workspace) => ipcRenderer.invoke('git:push', rootPath, workspace),
+  gitMerge: (rootPath, branchName, autoStash, workspace) => ipcRenderer.invoke('git:merge', rootPath, branchName, autoStash, workspace),
+  gitRebase: (rootPath, branchName, autoStash, workspace) => ipcRenderer.invoke('git:rebase', rootPath, branchName, autoStash, workspace),
+  gitAbortMerge: (rootPath, workspace) => ipcRenderer.invoke('git:abortMerge', rootPath, workspace),
+  gitAbortRebase: (rootPath, workspace) => ipcRenderer.invoke('git:abortRebase', rootPath, workspace),
+  gitStashList: (rootPath, workspace) => ipcRenderer.invoke('git:stashList', rootPath, workspace),
+  gitStashPush: (rootPath, message, workspace) => ipcRenderer.invoke('git:stashPush', rootPath, message, workspace),
+  gitStashApply: (rootPath, stashRef, workspace) => ipcRenderer.invoke('git:stashApply', rootPath, stashRef, workspace),
+  gitStashPop: (rootPath, stashRef, workspace) => ipcRenderer.invoke('git:stashPop', rootPath, stashRef, workspace),
+  gitStashDrop: (rootPath, stashRef, workspace) => ipcRenderer.invoke('git:stashDrop', rootPath, stashRef, workspace),
+  gitResolveCommitAvatars: (rootPath, hashes, workspace) => ipcRenderer.invoke('git:resolveCommitAvatars', rootPath, hashes, workspace),
   outputList: () => ipcRenderer.invoke('output:list'),
   outputClear: () => ipcRenderer.invoke('output:clear'),
   onOutputEntry: (callback) => {
@@ -351,6 +423,21 @@ const api: RilleAPI = {
   },
   terminalListProfiles: () => ipcRenderer.invoke('terminal:listProfiles'),
   remoteListTargets: () => ipcRenderer.invoke('remote:listTargets'),
+  remoteListSshConfigs: () => ipcRenderer.invoke('remote:listSshConfigs'),
+  remoteSaveSshConfig: (config) => invokeRemote<SshTargetConfig>('remote:saveSshConfig', config),
+  remoteDeleteSshConfig: (id) => invokeRemote<boolean>('remote:deleteSshConfig', id),
+  remoteSelectIdentityFile: () => invokeRemote<string | null>('remote:selectIdentityFile'),
+  remoteRespondAuthPrompt: (requestId, response) => ipcRenderer.invoke('remote:respondAuthPrompt', requestId, response),
+  onRemoteAuthPrompt: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, request: RemoteAuthPromptRequest) => callback(request)
+    ipcRenderer.on('remote:authPrompt', listener)
+    return () => ipcRenderer.removeListener('remote:authPrompt', listener)
+  },
+  remoteConnect: (targetId, sshHost) => invokeRemote<RemoteConnection>('remote:connect', targetId, sshHost),
+  remoteDisconnect: (connectionId) => ipcRenderer.invoke('remote:disconnect', connectionId),
+  remoteListConnections: () => ipcRenderer.invoke('remote:listConnections'),
+  remoteGetHome: (connectionId) => invokeRemote<string>('remote:getHome', connectionId),
+  remoteOpenWorkspace: (connectionId, remotePath) => invokeRemote<WorkspaceLocation>('remote:openWorkspace', connectionId, remotePath),
   terminalCreate: (cwd, cols, rows, launchOptions) => ipcRenderer.invoke('terminal:create', cwd, cols, rows, launchOptions),
   terminalWrite: (id, data) => ipcRenderer.invoke('terminal:write', id, data),
   terminalResize: (id, cols, rows) => ipcRenderer.invoke('terminal:resize', id, cols, rows),

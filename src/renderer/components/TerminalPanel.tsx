@@ -26,7 +26,7 @@ import type { StatusDiagnostic } from './StatusBar'
 export type BottomPanelTab = 'problems' | 'output' | 'debug' | 'terminal' | 'ports'
 
 interface Props {
-  cwd: string | null
+  workspace: WorkspaceLocation | null
   visible: boolean
   activeTab: BottomPanelTab
   diagnostics: StatusDiagnostic[]
@@ -37,6 +37,7 @@ interface Props {
   onActiveTabChange: (tab: BottomPanelTab) => void
   onSelectDiagnostic: (diagnostic: StatusDiagnostic) => void | Promise<void>
   onHide: () => void
+  onTerminalSessionsEmpty?: () => void
 }
 
 interface TerminalLaunchRequest {
@@ -80,6 +81,21 @@ const PANEL_TABS: Array<{ id: BottomPanelTab; label: string }> = [
 
 const OUTPUT_CHANNELS: Array<'All' | OutputChannel> = ['All', 'Git', 'Terminal', 'Debug', 'Ports', 'System']
 
+const OUTPUT_CHANNEL_LABELS: Record<'All' | OutputChannel, string> = {
+  All: '全部',
+  Git: 'Git',
+  Terminal: '终端',
+  Debug: '调试',
+  Ports: '端口',
+  System: '系统',
+}
+
+const DEBUG_STATUS_LABELS: Record<string, string> = {
+  idle: '空闲',
+  running: '运行中',
+  stopped: '已停止',
+}
+
 function nextFrame(): Promise<void> {
   return new Promise(resolve => requestAnimationFrame(() => resolve()))
 }
@@ -94,6 +110,10 @@ function formatTime(iso: string): string {
   } catch {
     return iso
   }
+}
+
+function isRemoteWorkspace(workspace: WorkspaceLocation | null): boolean {
+  return Boolean(workspace && workspace.kind !== 'local')
 }
 
 function parseArgs(value: string): string[] {
@@ -163,7 +183,7 @@ function EmptyPanel({ children }: { children: string }) {
 }
 
 export function TerminalPanel({
-  cwd,
+  workspace,
   visible,
   activeTab,
   diagnostics,
@@ -174,6 +194,7 @@ export function TerminalPanel({
   onActiveTabChange,
   onSelectDiagnostic,
   onHide,
+  onTerminalSessionsEmpty,
 }: Props) {
   const panelRef = useRef<HTMLElement | null>(null)
   const terminalsRef = useRef<Map<string, Terminal>>(new Map())
@@ -195,7 +216,7 @@ export function TerminalPanel({
   const [portsError, setPortsError] = useState<string | null>(null)
   const [isPortsLoading, setIsPortsLoading] = useState(false)
   const [debugForm, setDebugForm] = useState<DebugFormState>({
-    name: 'Generic Debug',
+    name: '通用调试',
     adapterCommand: '',
     adapterArgs: '',
     launchJson: '{\n  "program": ""\n}',
@@ -204,13 +225,15 @@ export function TerminalPanel({
   const [debugConsole, setDebugConsole] = useState<DebugConsoleEntry[]>([])
   const [debugInput, setDebugInput] = useState('')
   const [debugError, setDebugError] = useState<string | null>(null)
+  const cwd = workspace?.path ?? null
+  const remoteWorkspaceActive = isRemoteWorkspace(workspace)
 
   const normalizedProfiles = useMemo<TerminalProfile[]>(() => {
     const safeProfiles = profiles.map(profile => ({ ...profile, kind: profile.kind || 'local' }))
     if (safeProfiles.length > 0) return safeProfiles
     return [{
       id: 'cmd',
-      label: 'Command Prompt',
+      label: '命令提示符',
       path: 'cmd.exe',
       source: 'fallback',
       kind: 'local',
@@ -247,9 +270,9 @@ export function TerminalPanel({
     let splitIndex = 1
     return groups.map(group => group.sessions.length > 1 ? { ...group, index: splitIndex++ } : group)
   }, [terminalSessions])
-  const profileGroups = useMemo(() => ([
+  const profileGroups = useMemo(() => (remoteWorkspaceActive ? [] : [
     { id: 'local', label: '本地', profiles: normalizedProfiles.filter(profile => profile.kind === 'local') },
-  ].filter(group => group.profiles.length > 0)), [normalizedProfiles])
+  ].filter(group => group.profiles.length > 0)), [normalizedProfiles, remoteWorkspaceActive])
   const filteredOutput = useMemo(
     () => outputChannel === 'All' ? outputEntries : outputEntries.filter(entry => entry.channel === outputChannel),
     [outputChannel, outputEntries],
@@ -296,11 +319,12 @@ export function TerminalPanel({
     setTerminalMessage(null)
     setIsProfileMenuOpen(false)
     try {
-      const targetProfileId = profileId ?? defaultProfile?.id
+      const targetProfileId = remoteWorkspaceActive ? undefined : (profileId ?? defaultProfile?.id)
       const splitGroupId = options.splitWithActive && activeTerminal ? activeTerminal.splitGroupId : crypto.randomUUID()
       const created = await window.rille.terminalCreate(cwd ?? undefined, 80, 24, {
         profileId: targetProfileId,
         sshHost: options.sshHost,
+        workspace,
       })
       const terminal = new Terminal({
         cursorBlink: true,
@@ -324,7 +348,7 @@ export function TerminalPanel({
     } catch (error) {
       setTerminalMessage(error instanceof Error ? error.message : '终端启动失败。')
     }
-  }, [activeTerminal, attachTerminal, cwd, defaultProfile?.id, fitTerminal, onActiveTabChange])
+  }, [activeTerminal, attachTerminal, cwd, defaultProfile?.id, fitTerminal, onActiveTabChange, remoteWorkspaceActive, workspace])
 
 
   const createTerminalFromProfile = useCallback(async (profile: TerminalProfile) => {
@@ -360,13 +384,14 @@ export function TerminalPanel({
     setTerminalSessions(prev => {
       const closing = prev.find(session => session.id === id)
       const next = prev.filter(session => session.id !== id)
+      if (next.length === 0) onTerminalSessionsEmpty?.()
       setActiveTerminalId(current => {
         if (current !== id) return current
         return next.find(session => session.splitGroupId === closing?.splitGroupId)?.id ?? next.at(-1)?.id ?? null
       })
       return next
     })
-  }, [activeTerminal?.id, disposeTerminal])
+  }, [activeTerminal?.id, disposeTerminal, onTerminalSessionsEmpty])
 
 
   const moveTerminalSession = useCallback((draggedId: string, targetId?: string, targetGroupId?: string, place: 'before' | 'after' | 'end' = 'before') => {
@@ -454,7 +479,7 @@ export function TerminalPanel({
     }
     try {
       const session = await window.rille.debugStart({
-        name: debugForm.name.trim() || 'Generic Debug',
+        name: debugForm.name.trim() || '通用调试',
         adapterCommand: debugForm.adapterCommand.trim(),
         adapterArgs: parseArgs(debugForm.adapterArgs),
         cwd: cwd ?? undefined,
@@ -462,7 +487,7 @@ export function TerminalPanel({
         breakpoints,
       })
       setDebugSession(session)
-      setDebugConsole(prev => [...prev, { id: crypto.randomUUID(), level: 'info', message: `Started ${session.name}` }])
+      setDebugConsole(prev => [...prev, { id: crypto.randomUUID(), level: 'info', message: `已启动 ${session.name}` }])
       localStorage.setItem(debugStorageKey, JSON.stringify(debugForm))
     } catch (error) {
       setDebugError(error instanceof Error ? error.message : '调试启动失败。')
@@ -538,9 +563,8 @@ export function TerminalPanel({
 
   useEffect(() => {
     if (!visible || activeTab !== 'terminal') return
-    if (terminalSessions.length === 0) void createTerminal()
-    else void fitTerminal()
-  }, [activeTab, createTerminal, fitTerminal, terminalSessions.length, visible])
+    if (terminalSessions.length > 0) void fitTerminal()
+  }, [activeTab, fitTerminal, terminalSessions.length, visible])
 
   useEffect(() => {
     if (!visible || activeTab !== 'ports' || ports.length > 0 || isPortsLoading) return
@@ -593,10 +617,10 @@ export function TerminalPanel({
           {activeTab === 'terminal' && (
             <div className="terminal-profile-wrap">
               <div className="terminal-create-group">
-                <button type="button" title={`新建 ${defaultProfile?.label || '终端'}`} onClick={() => void createTerminal(defaultProfile?.id)}><Plus size={14} /></button>
-                <button type="button" className="terminal-profile-chevron" title="选择终端类型" onClick={() => setIsProfileMenuOpen(value => !value)}><ChevronDown size={13} /></button>
+                <button type="button" title={`新建 ${remoteWorkspaceActive ? workspace?.label || '远程终端' : defaultProfile?.label || '终端'}`} onClick={() => void createTerminal(defaultProfile?.id)}><Plus size={14} /></button>
+                {!remoteWorkspaceActive && <button type="button" className="terminal-profile-chevron" title="选择终端类型" onClick={() => setIsProfileMenuOpen(value => !value)}><ChevronDown size={13} /></button>}
               </div>
-              {isProfileMenuOpen && (
+              {!remoteWorkspaceActive && isProfileMenuOpen && (
                 <div className="terminal-profile-menu">
                   {profileGroups.map(group => (
                     <div className="terminal-profile-section" key={group.id}>
@@ -644,13 +668,13 @@ export function TerminalPanel({
         <div className="bottom-panel-content output-panel">
           <div className="output-toolbar">
             {OUTPUT_CHANNELS.map(channel => (
-              <button type="button" key={channel} className={outputChannel === channel ? 'active' : ''} onClick={() => setOutputChannel(channel)}>{channel}</button>
+              <button type="button" key={channel} className={outputChannel === channel ? 'active' : ''} onClick={() => setOutputChannel(channel)}>{OUTPUT_CHANNEL_LABELS[channel]}</button>
             ))}
           </div>
           {filteredOutput.length === 0 ? <EmptyPanel>暂无输出</EmptyPanel> : filteredOutput.map(entry => (
             <div className={'output-row ' + entry.level} key={entry.id}>
               <span className="output-time">{formatTime(entry.timestamp)}</span>
-              <span className="output-channel">{entry.channel}</span>
+              <span className="output-channel">{OUTPUT_CHANNEL_LABELS[entry.channel]}</span>
               <span className="output-message">{entry.message}</span>
               {entry.details && <pre>{entry.details}</pre>}
             </div>
@@ -662,8 +686,8 @@ export function TerminalPanel({
         <div className="bottom-panel-content debug-panel">
           <div className="debug-config">
             <input value={debugForm.name} onChange={event => setDebugForm(prev => ({ ...prev, name: event.target.value }))} placeholder="配置名称" />
-            <input value={debugForm.adapterCommand} onChange={event => setDebugForm(prev => ({ ...prev, adapterCommand: event.target.value }))} placeholder="Debug adapter command" />
-            <input value={debugForm.adapterArgs} onChange={event => setDebugForm(prev => ({ ...prev, adapterArgs: event.target.value }))} placeholder="Adapter args" />
+            <input value={debugForm.adapterCommand} onChange={event => setDebugForm(prev => ({ ...prev, adapterCommand: event.target.value }))} placeholder="调试适配器命令" />
+            <input value={debugForm.adapterArgs} onChange={event => setDebugForm(prev => ({ ...prev, adapterArgs: event.target.value }))} placeholder="适配器参数" />
             <textarea value={debugForm.launchJson} onChange={event => setDebugForm(prev => ({ ...prev, launchJson: event.target.value }))} spellCheck={false} />
           </div>
           <div className="debug-controls">
@@ -673,7 +697,7 @@ export function TerminalPanel({
             <button type="button" onClick={() => void sendDebugCommand('continue')} disabled={!debugSession}><Play size={14} />继续</button>
             <button type="button" onClick={() => void sendDebugCommand('next')} disabled={!debugSession}><StepForward size={14} />单步</button>
             <button type="button" onClick={() => void sendDebugCommand('stepIn')} disabled={!debugSession}><CornerDownRight size={14} />进入</button>
-            <span className={'debug-state ' + (debugSession?.status || 'idle')}><Bug size={14} />{debugSession?.status || 'idle'}</span>
+            <span className={'debug-state ' + (debugSession?.status || 'idle')}><Bug size={14} />{DEBUG_STATUS_LABELS[debugSession?.status || 'idle'] ?? debugSession?.status ?? '空闲'}</span>
           </div>
           {debugError && <div className="debug-error">{debugError}</div>}
           <div className="debug-console">
@@ -684,7 +708,7 @@ export function TerminalPanel({
           <div className="debug-input-row">
             <input value={debugInput} onChange={event => setDebugInput(event.target.value)} onKeyDown={event => {
               if (event.key === 'Enter') void sendDebugEvaluate()
-            }} placeholder="Evaluate expression" disabled={!debugSession || debugSession.status === 'stopped'} />
+            }} placeholder="计算表达式" disabled={!debugSession || debugSession.status === 'stopped'} />
             <button type="button" onClick={() => void sendDebugEvaluate()} disabled={!debugInput.trim() || !debugSession}><Send size={14} /></button>
           </div>
         </div>

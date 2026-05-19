@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RilleCode Compact IDE</title>
+  <style>
+    :root {
+      --bg: #f7f7f8;
+      --surface: #fff;
+      --sidebar: #f4f5f6;
+      --hover: #eceef1;
+      --active: #e8eefb;
+      --text: #202124;
+      --muted: #6b7078;
+      --faint: #9aa0a6;
+      --line: rgba(0, 0, 0, .08);
+      --line-soft: rgba(0, 0, 0, .05);
+      --blue: #3b73d9;
+      --green: #4e9f67;
+      --danger: #c15c5c;
+      --font-ui: Inter, Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-code: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      --left: 240px;
+      --right: 340px;
+      --bottom: 220px;
+      --left-collapsed: 40px;
+      --right-collapsed: 40px;
+      --bottom-collapsed: 32px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font: 13px/20px var(--font-ui);
+      letter-spacing: 0;
+    }
+
+    button, input { font: inherit; }
+    button { border: 0; background: none; color: inherit; }
+
+    .app {
+      display: grid;
+      grid-template-columns: var(--left) minmax(0, 1fr) var(--right);
+      grid-template-rows: minmax(0, 1fr) var(--bottom);
+      height: 100vh;
+      background: var(--surface);
+    }
+
+    body.left-off .app { grid-template-columns: var(--left-collapsed) minmax(0, 1fr) var(--right); }
+    body.right-off .app { grid-template-columns: var(--left) minmax(0, 1fr) var(--right-collapsed); }
+    body.bottom-off .app { grid-template-rows: minmax(0, 1fr) var(--bottom-collapsed); }
+    body.left-off.right-off .app { grid-template-columns: var(--left-collapsed) minmax(0, 1fr) var(--right-collapsed); }
+
+    .left {
+      grid-column: 1;
+      grid-row: 1 / 3;
+      min-width: 0;
+      overflow: hidden;
+      border-right: 1px solid var(--line);
+      background: var(--sidebar);
+    }
+
+    .center {
+      grid-column: 2;
+      grid-row: 1;
+      display: grid;
+      grid-template-rows: 30px minmax(0, 1fr);
+      min-width: 0;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    .right {
+      grid-column: 3;
+      grid-row: 1 / 3;
+      display: grid;
+      grid-template-rows: 30px minmax(0, 1fr) 40px;
+      min-width: 0;
+      overflow: hidden;
+      border-left: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .bottom {
+      grid-column: 2;
+      grid-row: 2;
+      min-width: 0;
+      overflow: hidden;
+      border-top: 1px solid var(--line);
+      background: #fbfbfc;
+    }
+
+    body.right-off .bottom { grid-column: 2 / 4; }
+    body.left-off .bottom { grid-column: 2; }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      height: 30px;
+      padding: 0 6px;
+      border-bottom: 1px solid var(--line-soft);
+      color: var(--muted);
+      font-size: 12px;
+      user-select: none;
+    }
+
+    .panel-title {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--text);
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .icon-btn {
+      display: inline-grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 5px;
+      color: var(--muted);
+    }
+
+    .icon-btn:hover { background: var(--hover); color: var(--text); }
+
+    .left-body,
+    .right-body {
+      height: calc(100% - 30px);
+      overflow: auto;
+      padding: 4px 6px 6px;
+    }
+
+    body.left-off .left-body,
+    body.left-off .left .panel-title,
+    body.left-off .left .spacer,
+    body.right-off .right-body,
+    body.right-off .right-input,
+    body.right-off .right .panel-title,
+    body.right-off .right .spacer,
+    body.bottom-off .bottom-body {
+      display: none;
+    }
+
+    body.left-off .left .panel-head,
+    body.right-off .right .panel-head {
+      justify-content: center;
+      padding: 0;
+    }
+
+    .spacer { flex: 1; }
+
+    .section { margin-bottom: 6px; }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      height: 26px;
+      padding: 0 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      height: 22px;
+      min-width: 0;
+      padding: 0 5px;
+      border-radius: 4px;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .row:hover { background: var(--hover); }
+    .row.active { background: var(--active); color: var(--text); }
+
+    .indent-1 { padding-left: 17px; }
+    .indent-2 { padding-left: 29px; }
+    .muted { color: var(--muted); }
+    .faint { color: var(--faint); }
+    .ok { color: var(--green); }
+    .bad { color: var(--danger); }
+
+    .name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .count {
+      margin-left: auto;
+      color: var(--faint);
+      font-size: 11px;
+    }
+
+    .tabs {
+      display: flex;
+      align-items: end;
+      height: 30px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfbfc;
+    }
+
+    .tab {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      height: 28px;
+      max-width: 190px;
+      min-width: 92px;
+      padding: 0 8px;
+      border-right: 1px solid var(--line-soft);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .tab.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: inset 0 -2px 0 var(--blue);
+    }
+
+    .editor {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      overflow: auto;
+      background: var(--surface);
+      font: 13px/20px var(--font-code);
+    }
+
+    .gutter {
+      padding: 8px 8px 8px 0;
+      border-right: 1px solid var(--line-soft);
+      color: #b5bac1;
+      text-align: right;
+      user-select: none;
+    }
+
+    .code {
+      padding: 8px 12px;
+      min-width: 720px;
+      white-space: pre;
+    }
+
+    .kw { color: #3b5f9f; }
+    .str { color: #7a6336; }
+    .com { color: #8b929b; }
+    .fn { color: #2f6b58; }
+
+    .messages {
+      overflow: auto;
+      padding: 6px 8px;
+    }
+
+    .msg {
+      padding: 6px 4px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .msg.current {
+      margin: 2px 0;
+      padding: 6px 8px;
+      border: 0;
+      border-radius: 6px;
+      background: #f4f8f6;
+    }
+
+    .msg-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: 18px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 4px;
+      background: #edf3ee;
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .right-input {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      border-top: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .input {
+      flex: 1;
+      min-width: 0;
+      height: 28px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      outline: 0;
+    }
+
+    .input:focus {
+      border-color: rgba(59, 115, 217, .45);
+      box-shadow: 0 0 0 2px rgba(59, 115, 217, .12);
+    }
+
+    .btn {
+      height: 26px;
+      padding: 0 8px;
+      border-radius: 5px;
+      background: var(--blue);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .btn.secondary {
+      background: var(--hover);
+      color: var(--text);
+    }
+
+    .bottom-head {
+      display: flex;
+      align-items: center;
+      height: 32px;
+      padding: 0 6px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .bottom-tab {
+      display: inline-flex;
+      align-items: center;
+      height: 28px;
+      padding: 0 8px;
+      border-radius: 5px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .bottom-tab.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: inset 0 -2px 0 var(--blue);
+    }
+
+    .bottom-body {
+      height: calc(100% - 32px);
+      overflow: auto;
+      padding: 6px 8px;
+      font: 12px/18px var(--font-code);
+    }
+
+    .terminal-line { white-space: pre; }
+
+    .mini {
+      width: 14px;
+      text-align: center;
+      color: var(--faint);
+      font-size: 11px;
+      flex: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="left" aria-label="workspace">
+      <div class="panel-head">
+        <button class="icon-btn" data-toggle="left" title="Toggle left panel">‹</button>
+        <span class="panel-title">RilleCode</span>
+        <span class="spacer"></span>
+        <button class="icon-btn" title="New file">＋</button>
+      </div>
+      <div class="left-body">
+        <section class="section">
+          <div class="section-head"><span class="mini">⌄</span><span>Explorer</span></div>
+          <div class="row active"><span class="mini">⌄</span><span class="name">RilleCode</span></div>
+          <div class="row indent-1"><span class="mini">⌄</span><span class="name">src</span></div>
+          <div class="row indent-2"><span class="mini">◇</span><span class="name">main.tsx</span></div>
+          <div class="row indent-2"><span class="mini">◇</span><span class="name">App.tsx</span></div>
+          <div class="row indent-2"><span class="mini">◇</span><span class="name">workspace.css</span></div>
+          <div class="row indent-1"><span class="mini">◇</span><span class="name">Cargo.toml</span></div>
+          <div class="row indent-1"><span class="mini">◇</span><span class="name">README.md</span></div>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><span class="mini">⌄</span><span>Git</span><span class="count">main</span></div>
+          <div class="row"><span class="mini ok">M</span><span class="name">src/App.tsx</span></div>
+          <div class="row"><span class="mini ok">M</span><span class="name">src/workspace.css</span></div>
+          <div class="row"><span class="mini">U</span><span class="name">tests/design</span></div>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><span class="mini">⌄</span><span>Remotes</span></div>
+          <div class="row"><span class="mini">↥</span><span class="name">origin/main</span><span class="count ok">+2</span></div>
+          <div class="row"><span class="mini">↧</span><span class="name">upstream/main</span><span class="count">0</span></div>
+        </section>
+      </div>
+    </aside>
+
+    <main class="center">
+      <div class="tabs">
+        <div class="tab active"><span>Cargo.toml</span><span class="faint">×</span></div>
+        <div class="tab"><span>App.tsx</span><span class="faint">×</span></div>
+        <div class="tab"><span>workspace.css</span><span class="faint">×</span></div>
+      </div>
+      <div class="editor" aria-label="editor">
+        <pre class="gutter">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25</pre>
+        <pre class="code"><span class="com"># RilleCode compact IDE shell</span>
+[workspace]
+members = [
+  <span class="str">"crates/agent"</span>,
+  <span class="str">"crates/ui"</span>,
+  <span class="str">"crates/workspace"</span>,
+]
+
+[ui.layout]
+left_panel = <span class="str">"Explorer / Git / Remotes"</span>
+center = <span class="str">"Editor"</span>
+right_panel = <span class="str">"Agent"</span>
+bottom_panel = <span class="str">"Terminal / Problems / Output / Ports"</span>
+
+[ui.tokens]
+spacing = <span class="str">"4px"</span>
+panel_padding = <span class="str">"6px 8px"</span>
+button_height = <span class="str">"26px"</span>
+row_height = <span class="str">"22px"</span>
+accent = <span class="str">"#3b73d9"</span>
+
+<span class="kw">fn</span> <span class="fn">render_workspace</span>() {
+  keep_editor_primary();
+  avoid_large_cards();
+  preserve_panel_state();
+}</pre>
+      </div>
+    </main>
+
+    <aside class="right" aria-label="agent">
+      <div class="panel-head">
+        <button class="icon-btn" data-toggle="right" title="Toggle right panel">›</button>
+        <span class="panel-title">Agent</span>
+        <span class="spacer"></span>
+        <button class="icon-btn" title="New chat">＋</button>
+      </div>
+      <div class="right-body">
+        <div class="messages">
+          <div class="msg">
+            <div class="msg-head"><strong>User</strong><span>09:42</span></div>
+            <div>按照最新设计图修改主界面，压缩间距并减少边框。</div>
+          </div>
+          <div class="msg current">
+            <div class="msg-head"><strong>RilleCode</strong><span class="pill">Review</span></div>
+            <div>已切换为紧凑 IDE 结构：左侧资源、中央编辑器、右侧对话、底部工具栏。折叠状态会保存在 localStorage。</div>
+          </div>
+          <div class="msg">
+            <div class="msg-head"><strong>Plan</strong><span>2m</span></div>
+            <div>下一步检查真实组件入口，并把 tokens 下沉到生产样式。</div>
+          </div>
+        </div>
+      </div>
+      <div class="right-input">
+        <input class="input" placeholder="Ask RilleCode">
+        <button class="btn">Ask</button>
+      </div>
+    </aside>
+
+    <section class="bottom" aria-label="tools">
+      <div class="bottom-head">
+        <button class="icon-btn" data-toggle="bottom" title="Toggle bottom panel">⌄</button>
+        <button class="bottom-tab active" data-tab="terminal">Terminal</button>
+        <button class="bottom-tab" data-tab="problems">Problems</button>
+        <button class="bottom-tab" data-tab="output">Output</button>
+        <button class="bottom-tab" data-tab="ports">Ports</button>
+        <span class="spacer"></span>
+        <button class="icon-btn" title="New terminal">＋</button>
+        <button class="icon-btn" title="Clear">×</button>
+      </div>
+      <div class="bottom-body" id="bottomBody">
+        <div class="terminal-line">PS D:\Codefield\Python\RilleCode&gt; npm run dev</div>
+        <div class="terminal-line">  VITE ready in 438 ms</div>
+        <div class="terminal-line">  local:   http://localhost:5173/</div>
+        <div class="terminal-line">  status:  compact IDE preview active</div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const stateKey = "rillecode.compactIde.layout";
+    const defaultState = { left: true, right: true, bottom: true, tab: "terminal" };
+
+    function readState() {
+      try {
+        return { ...defaultState, ...JSON.parse(localStorage.getItem(stateKey) || "{}") };
+      } catch {
+        return defaultState;
+      }
+    }
+
+    function writeState(next) {
+      localStorage.setItem(stateKey, JSON.stringify(next));
+    }
+
+    function applyState(state) {
+      document.body.classList.toggle("left-off", !state.left);
+      document.body.classList.toggle("right-off", !state.right);
+      document.body.classList.toggle("bottom-off", !state.bottom);
+      document.querySelectorAll(".bottom-tab").forEach((tab) => {
+        tab.classList.toggle("active", tab.dataset.tab === state.tab);
+      });
+      const body = document.getElementById("bottomBody");
+      const content = {
+        terminal: [
+          "PS D:\\Codefield\\Python\\RilleCode> npm run dev",
+          "  VITE ready in 438 ms",
+          "  local:   http://localhost:5173/",
+          "  status:  compact IDE preview active"
+        ],
+        problems: [
+          "No problems detected",
+          "workspace.css: spacing tokens reviewed",
+          "App.tsx: layout state persisted"
+        ],
+        output: [
+          "[RilleCode] Explorer mounted",
+          "[RilleCode] Agent panel ready",
+          "[RilleCode] Terminal tab active"
+        ],
+        ports: [
+          "5173    Vite dev server    localhost",
+          "1420    App preview         localhost"
+        ]
+      };
+      body.innerHTML = content[state.tab].map((line) => `<div class="terminal-line">${line}</div>`).join("");
+    }
+
+    let state = readState();
+    applyState(state);
+
+    document.querySelectorAll("[data-toggle]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const key = button.dataset.toggle;
+        state = { ...state, [key]: !state[key] };
+        writeState(state);
+        applyState(state);
+      });
+    });
+
+    document.querySelectorAll(".bottom-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        state = { ...state, tab: tab.dataset.tab, bottom: true };
+        writeState(state);
+        applyState(state);
+      });
+    });
+  </script>
+</body>
+</html>

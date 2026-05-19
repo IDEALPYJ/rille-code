@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { Search } from 'lucide-react'
 
 interface Props {
-  rootPath: string | null
+  workspace: WorkspaceLocation | null
   onOpenFile: (path: string) => Promise<void>
 }
 
@@ -15,7 +15,8 @@ function compactPath(path: string): string {
   return parts.slice(-4).join(' / ') || path
 }
 
-export function SearchPanel({ rootPath, onOpenFile }: Props) {
+export function SearchPanel({ workspace, onOpenFile }: Props) {
+  const rootPath = workspace?.path ?? null
   const [query, setQuery] = useState('')
   const [caseSensitive, setCaseSensitive] = useState(false)
   const [includeDependencies, setIncludeDependencies] = useState(false)
@@ -32,14 +33,14 @@ export function SearchPanel({ rootPath, onOpenFile }: Props) {
     setIsSearching(true)
     setError(null)
     try {
-      const found = await window.rille.searchFiles(rootPath, query, { caseSensitive, includeDependencies })
+      const found = await window.rille.searchFiles(rootPath, query, { caseSensitive, includeDependencies }, workspace)
       setResults(found)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Search failed')
+      setError(err instanceof Error ? err.message : '搜索失败')
     } finally {
       setIsSearching(false)
     }
-  }, [caseSensitive, includeDependencies, query, rootPath])
+  }, [caseSensitive, includeDependencies, query, rootPath, workspace])
 
   return (
     <div className="side-view search-view">
@@ -64,7 +65,7 @@ export function SearchPanel({ rootPath, onOpenFile }: Props) {
       </label>
       <label className="option-row">
         <input type="checkbox" checked={includeDependencies} onChange={(event) => setIncludeDependencies(event.target.checked)} />
-        <span>Include dependencies</span>
+        <span>包含依赖目录</span>
       </label>
       {!rootPath && <div className="panel-empty">打开文件夹后可以搜索项目。</div>}
       {error && <div className="panel-error">{error}</div>}
