@@ -1,4 +1,21 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type {
+  AgentConfigSnapshot,
+  AgentConfigUpdate,
+  AgentContextSnapshot,
+  AgentEvent,
+  AgentIpcResult,
+  AgentModelProfile,
+  AgentModelProfileUpdate,
+  AgentModelStoreSnapshot,
+  AgentPermissionMode,
+  AgentSession,
+  AgentSessionSummary,
+  AgentTurn,
+  AgentWorkspaceLocation,
+  ApprovalDecision,
+  EditProposal,
+} from '../shared/agent/protocol'
 
 export interface RilleAPI {
   openFolder(): Promise<string | null>
@@ -70,6 +87,25 @@ export interface RilleAPI {
   debugSend(sessionId: string, command: string, args?: Record<string, unknown>): Promise<PortOperationResult>
   onDebugEvent(callback: (event: DebugEventPayload) => void): () => void
   openExternal(url: string): Promise<void>
+  agentCreateSession(workspace: AgentWorkspaceLocation | null, permissionMode?: AgentPermissionMode): Promise<AgentSession>
+  agentResumeSession(sessionId: string): Promise<AgentSession>
+  agentResumeLastSession(workspace: AgentWorkspaceLocation | null): Promise<AgentSession | null>
+  agentListSessions(): Promise<AgentSessionSummary[]>
+  agentSubmitTurn(sessionId: string, text: string, context: AgentContextSnapshot): Promise<AgentTurn>
+  agentInterruptTurn(sessionId: string, turnId: string): Promise<AgentSession | null>
+  agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>
+  agentUpdatePermission(sessionId: string, permissionMode: AgentPermissionMode): Promise<AgentSession | null>
+  agentApplyEdit(sessionId: string, proposalId: string): Promise<EditProposal>
+  agentRejectEdit(sessionId: string, proposalId: string, reason?: string): Promise<EditProposal | AgentSession | null>
+  agentRollbackEdit(sessionId: string, proposalId: string): Promise<EditProposal | AgentSession | null>
+  agentGetConfig(): Promise<AgentConfigSnapshot>
+  agentSaveConfig(update: AgentConfigUpdate): Promise<AgentConfigSnapshot>
+  agentListModelProfiles(): Promise<AgentModelStoreSnapshot>
+  agentSaveModelProfile(update: AgentModelProfileUpdate): Promise<AgentModelProfile>
+  agentSelectModelProfile(profileId: string): Promise<AgentConfigSnapshot>
+  agentDeleteModelProfile(profileId: string): Promise<AgentModelStoreSnapshot>
+  agentTestProvider(profileId?: string): Promise<{ success: boolean; message: string }>
+  onAgentEvent(callback: (event: AgentEvent) => void): () => void
 }
 
 export interface FileEntry {
@@ -369,6 +405,10 @@ async function invokeRemote<T>(channel: string, ...args: unknown[]): Promise<T> 
   return unwrapIpcResult<T>(await ipcRenderer.invoke(channel, ...args))
 }
 
+async function invokeAgent<T>(channel: string, ...args: unknown[]): Promise<T> {
+  return unwrapIpcResult<T>(await ipcRenderer.invoke(channel, ...args) as AgentIpcResult<T>)
+}
+
 const api: RilleAPI = {
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   openFileDialog: () => ipcRenderer.invoke('dialog:openFile'),
@@ -463,6 +503,29 @@ const api: RilleAPI = {
     return () => ipcRenderer.removeListener('debug:event', listener)
   },
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  agentCreateSession: (workspace, permissionMode) => invokeAgent<AgentSession>('agent:createSession', { type: 'session.create', workspace, permissionMode }),
+  agentResumeSession: (sessionId) => invokeAgent<AgentSession>('agent:resumeSession', { type: 'session.resume', sessionId }),
+  agentResumeLastSession: (workspace) => invokeAgent<AgentSession | null>('agent:resumeLastSession', { type: 'session.resumeLast', workspace }),
+  agentListSessions: () => invokeAgent<AgentSessionSummary[]>('agent:listSessions', { type: 'session.list' }),
+  agentSubmitTurn: (sessionId, text, context) => invokeAgent<AgentTurn>('agent:submitTurn', { type: 'turn.submit', sessionId, text, context }),
+  agentInterruptTurn: (sessionId, turnId) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'turn.interrupt', sessionId, turnId }),
+  agentRespondApproval: (requestId, decision) => invokeAgent<boolean>('agent:dispatch', { type: 'approval.respond', requestId, decision }),
+  agentUpdatePermission: (sessionId, permissionMode) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'permission.update', sessionId, permissionMode }),
+  agentApplyEdit: (sessionId, proposalId) => invokeAgent<EditProposal>('agent:dispatch', { type: 'edit.apply', sessionId, proposalId }),
+  agentRejectEdit: (sessionId, proposalId, reason) => invokeAgent<EditProposal | AgentSession | null>('agent:dispatch', { type: 'edit.reject', sessionId, proposalId, reason }),
+  agentRollbackEdit: (sessionId, proposalId) => invokeAgent<EditProposal | AgentSession | null>('agent:dispatch', { type: 'edit.rollback', sessionId, proposalId }),
+  agentGetConfig: () => invokeAgent<AgentConfigSnapshot>('agent:getConfig'),
+  agentSaveConfig: (update) => invokeAgent<AgentConfigSnapshot>('agent:saveConfig', update),
+  agentListModelProfiles: () => invokeAgent<AgentModelStoreSnapshot>('agent:listModelProfiles'),
+  agentSaveModelProfile: (update) => invokeAgent<AgentModelProfile>('agent:saveModelProfile', update),
+  agentSelectModelProfile: (profileId) => invokeAgent<AgentConfigSnapshot>('agent:selectModelProfile', profileId),
+  agentDeleteModelProfile: (profileId) => invokeAgent<AgentModelStoreSnapshot>('agent:deleteModelProfile', profileId),
+  agentTestProvider: (profileId) => invokeAgent<{ success: boolean; message: string }>('agent:testProvider', profileId),
+  onAgentEvent: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, event: AgentEvent) => callback(event)
+    ipcRenderer.on('agent:event', listener)
+    return () => ipcRenderer.removeListener('agent:event', listener)
+  },
 }
 
 contextBridge.exposeInMainWorld('rille', api)

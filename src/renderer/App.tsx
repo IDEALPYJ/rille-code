@@ -10,10 +10,12 @@ import {
   Folder,
   GitBranch,
   Home,
+  MessageSquare,
+  Plus,
   RefreshCw,
   Search,
   Server,
-  MessageSquare,
+  Settings,
   PanelBottom,
   PanelLeft,
   PanelRight,
@@ -27,6 +29,9 @@ import { GitPanel } from './components/GitPanel'
 import { GitDiffViewer, type GitDiffTarget } from './components/GitDiffViewer'
 import { TerminalPanel } from './components/TerminalPanel'
 import { RemotePanel } from './components/RemotePanel'
+import { AgentPanel } from './components/agent/AgentPanel'
+import { ModelSettingsDialog } from './components/ModelSettingsDialog'
+import type { AgentEvent, AgentSession, AgentSessionSummary } from '../shared/agent/protocol'
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -52,9 +57,10 @@ export interface AppContextType extends AppState {
   setActiveFile: (path: string) => void
   updateFileContent: (path: string, content: string) => void
   saveFile: (path: string) => Promise<void>
+  markFileApplied: (path: string, content: string) => void
 }
 
-type SideView = 'explorer' | 'search' | 'git' | 'remote'
+type SideView = 'explorer' | 'search' | 'git' | 'remote' | 'agent'
 type BottomPanelTab = 'problems' | 'output' | 'debug' | 'terminal' | 'ports'
 
 type TerminalLaunchRequest = {
@@ -132,6 +138,29 @@ function joinRemotePath(base: string, name: string): string {
   return `${normalized}/${name}`
 }
 
+function formatSessionTime(timestamp: number): string {
+  const date = new Date(timestamp)
+  const now = Date.now()
+  if (now - timestamp < 60_000) return '刚刚'
+  if (now - timestamp < 60 * 60_000) return `${Math.max(1, Math.floor((now - timestamp) / 60_000))}分钟前`
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function agentSessionStatusLabel(status: AgentSession['status']): string {
+  if (status === 'running') return '运行中'
+  if (status === 'waiting_approval') return '等待'
+  if (status === 'error') return '错误'
+  if (status === 'interrupted') return '已停止'
+  return ''
+}
+
+function agentVerificationLabel(session: AgentSessionSummary): string {
+  if (session.status !== 'idle' || !session.latestVerificationStatus) return agentSessionStatusLabel(session.status) || formatSessionTime(session.updatedAt)
+  if (session.latestVerificationStatus === 'passed') return '验证通过'
+  if (session.latestVerificationStatus === 'failed') return '验证失败'
+  return '未验证'
+}
+
 function isActionItem(item: MenuItem): item is MenuActionItem {
   return item.type !== 'separator'
 }
@@ -157,6 +186,7 @@ export default function App() {
   })
   const [activeSideView, setActiveSideView] = useState<SideView>('explorer')
   const [openMenu, setOpenMenu] = useState<string | null>(null)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isSidePanelVisible, setIsSidePanelVisible] = useState(() => readStoredBoolean('rille:side-panel-visible', true))
   const [isRightPanelVisible, setIsRightPanelVisible] = useState(() => readStoredBoolean('rille:right-panel-visible', true))
   const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(() => readStoredBoolean('rille:bottom-panel-visible:v2', false))
@@ -172,10 +202,37 @@ export default function App() {
   const [rightPanelWidth, setRightPanelWidth] = useState(340)
   const [remoteFolderConnection, setRemoteFolderConnection] = useState<RemoteConnection | null>(null)
   const [remoteFolderDialog, setRemoteFolderDialog] = useState<RemoteFolderDialogState | null>(null)
+  const [agentSessions, setAgentSessions] = useState<AgentSessionSummary[]>([])
+  const [selectedAgentSession, setSelectedAgentSession] = useState<AgentSession | null>(null)
+  const [isAgentSessionsLoading, setIsAgentSessionsLoading] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<MonacoEditorApi.IStandaloneCodeEditor | null>(null)
   const pendingRevealRef = useRef<{ path: string; line: number; column: number } | null>(null)
   const workspacePath = state.workspace?.path ?? null
+
+  const refreshAgentSessions = useCallback(async () => {
+    setIsAgentSessionsLoading(true)
+    try {
+      setAgentSessions(await window.rille.agentListSessions())
+    } finally {
+      setIsAgentSessionsLoading(false)
+    }
+  }, [])
+
+  const selectAgentSession = useCallback(async (sessionId: string) => {
+    const session = await window.rille.agentResumeSession(sessionId)
+    setSelectedAgentSession(session)
+    setIsRightPanelVisible(true)
+    void refreshAgentSessions()
+  }, [refreshAgentSessions])
+
+  const createAgentSessionForWorkspace = useCallback(async () => {
+    const session = await window.rille.agentCreateSession(state.workspace, 'ask')
+    setSelectedAgentSession(session)
+    setIsRightPanelVisible(true)
+    setActiveSideView('agent')
+    void refreshAgentSessions()
+  }, [refreshAgentSessions, state.workspace])
 
   const setWorkspace = useCallback(async (workspace: WorkspaceLocation) => {
     const tree = await window.rille.readDirectory(workspace.path, workspace)
@@ -361,6 +418,15 @@ export default function App() {
     }))
   }, [state.openFiles, state.workspace])
 
+  const markFileApplied = useCallback((path: string, content: string) => {
+    setState(prev => ({
+      ...prev,
+      openFiles: prev.openFiles.map(file =>
+        file.path === path ? { ...file, content, originalContent: content, isDirty: false } : file
+      ),
+    }))
+  }, [])
+
   const saveAllFiles = useCallback(async () => {
     const dirtyFiles = state.openFiles.filter(file => file.isDirty)
     await Promise.all(dirtyFiles.map(file => window.rille.writeFile(file.path, file.content, state.workspace)))
@@ -393,6 +459,61 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem('rille:bottom-panel-visible:v2', String(isBottomPanelVisible))
   }, [isBottomPanelVisible])
+
+  useEffect(() => {
+    void refreshAgentSessions()
+  }, [refreshAgentSessions])
+
+  useEffect(() => {
+    const unsubscribe = window.rille.onAgentEvent((event: AgentEvent) => {
+      if (event.type === 'session.created' || event.type === 'session.updated') {
+        setAgentSessions(prev => {
+          const summary: AgentSessionSummary = {
+            id: event.session.id,
+            title: event.session.title,
+            workspace: event.session.workspace,
+            createdAt: event.session.createdAt,
+            updatedAt: event.session.updatedAt,
+            status: event.session.status,
+            permissionMode: event.session.permissionMode,
+            lastMessage: prev.find(item => item.id === event.session.id)?.lastMessage,
+          }
+          const next = [summary, ...prev.filter(item => item.id !== event.session.id)]
+          return next.sort((a, b) => b.updatedAt - a.updatedAt)
+        })
+        setSelectedAgentSession(prev => prev?.id === event.session.id ? event.session : prev)
+        return
+      }
+      if (event.type === 'message.part.created' && event.part.type === 'text') {
+        const lastMessage = event.part.text.slice(0, 160)
+        setAgentSessions(prev => prev.map(item => item.id === event.sessionId
+          ? { ...item, lastMessage, updatedAt: Date.now() }
+          : item).sort((a, b) => b.updatedAt - a.updatedAt))
+      }
+    })
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    window.rille.agentResumeLastSession(state.workspace)
+      .then(async session => {
+        if (cancelled) return
+        if (session) {
+          setSelectedAgentSession(session)
+        } else {
+          const created = await window.rille.agentCreateSession(state.workspace, 'ask')
+          if (!cancelled) setSelectedAgentSession(created)
+        }
+        void refreshAgentSessions()
+      })
+      .catch(() => {
+        if (!cancelled) setSelectedAgentSession(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [refreshAgentSessions, state.workspace])
 
   const saveFileAs = useCallback(async () => {
     if (!activeFile) return
@@ -523,7 +644,7 @@ export default function App() {
 
   const ctx: AppContextType = {
     ...state,
-    setWorkspace, openFile, closeFile, setActiveFile, updateFileContent, saveFile,
+    setWorkspace, openFile, closeFile, setActiveFile, updateFileContent, saveFile, markFileApplied,
   }
 
   const menus = useMemo<MenuGroup[]>(() => [
@@ -607,6 +728,48 @@ export default function App() {
       return <RemotePanel onOpenWorkspace={setWorkspace} onRemoteConnectionReady={setRemoteFolderConnection} />
     }
 
+    if (activeSideView === 'agent') {
+      return (
+        <>
+          <div className="side-view-title-row explorer-title">
+            <button type="button" className="workspace-root">
+              <MessageSquare size={14} />
+              <span>对话</span>
+            </button>
+            <button type="button" className="side-action" onClick={() => void createAgentSessionForWorkspace()}>
+              新建
+            </button>
+          </div>
+          <div className="agent-session-list">
+            {isAgentSessionsLoading && agentSessions.length === 0 ? (
+              <div className="panel-empty">正在读取对话...</div>
+            ) : agentSessions.length === 0 ? (
+              <div className="panel-empty">还没有对话。</div>
+            ) : (
+              agentSessions.map(session => (
+                <button
+                  key={session.id}
+                  type="button"
+                  className={'agent-session-item ' + (selectedAgentSession?.id === session.id ? 'active ' : '') + session.status}
+                  onClick={() => void selectAgentSession(session.id)}
+                >
+                  <div>
+                    <strong>{session.title || 'Vibe Coding'}</strong>
+                    <span>{session.lastMessage || session.workspace?.label || '新对话'}</span>
+                  </div>
+                  <small>{agentVerificationLabel(session)}</small>
+                </button>
+              ))
+            )}
+            <button type="button" className="agent-session-new" onClick={() => void createAgentSessionForWorkspace()}>
+              <Plus size={14} />
+              <span>新建对话</span>
+            </button>
+          </div>
+        </>
+      )
+    }
+
     return (
       <>
         <div className="side-view-title-row explorer-title">
@@ -640,23 +803,22 @@ export default function App() {
       <button type="button" className={'sidebar-activity-item ' + (activeSideView === 'search' ? 'active' : '')} title="搜索" onClick={() => setActiveSideView('search')}><Search size={17} /></button>
       <button type="button" className={'sidebar-activity-item ' + (activeSideView === 'git' ? 'active' : '')} title="源代码管理" onClick={() => setActiveSideView('git')}><GitBranch size={17} /></button>
       <button type="button" className={'sidebar-activity-item ' + (activeSideView === 'remote' ? 'active' : '')} title="远程" onClick={() => setActiveSideView('remote')}><Server size={17} /></button>
+      <button type="button" className={'sidebar-activity-item ' + (activeSideView === 'agent' ? 'active' : '')} title="对话" onClick={() => setActiveSideView('agent')}><MessageSquare size={17} /></button>
     </div>
   )
 
   const renderAgentPanel = () => (
-    <aside className="agent-panel" aria-label="Agent">
-      <div className="agent-thread">
-        <div className="agent-empty-state">
-          <MessageSquare size={24} />
-          <strong>助手就绪</strong>
-          <span>{activeFile ? activeFile.name : gitDiffTarget ? 'Git 差异' : '暂无上下文'}</span>
-        </div>
-      </div>
-      <form className="agent-compose" onSubmit={event => event.preventDefault()}>
-        <input placeholder="询问 RilleCode" />
-        <button type="submit">发送</button>
-      </form>
-    </aside>
+    <AgentPanel
+      workspace={state.workspace}
+      activeFile={activeFile}
+      openFiles={state.openFiles}
+      diagnostics={visibleDiagnostics}
+      cursor={cursorPosition}
+      session={selectedAgentSession}
+      sessionId={selectedAgentSession?.id ?? null}
+      onSessionChange={setSelectedAgentSession}
+      onFileApplied={markFileApplied}
+    />
   )
 
   const emptyTitle = !state.workspace
@@ -667,7 +829,9 @@ export default function App() {
         ? '在左侧管理 Git 变更'
         : activeSideView === 'remote'
           ? '在左侧连接远程环境'
-          : '从资源管理器选择文件'
+          : activeSideView === 'agent'
+            ? '在左侧选择或新建对话'
+            : '从资源管理器选择文件'
 
   return (
     <AppContext.Provider value={ctx}>
@@ -720,6 +884,15 @@ export default function App() {
           </div>
 
           <div className="chrome-right">
+            <button
+              type="button"
+              className="chrome-panel-toggle"
+              title="设置"
+              aria-label="打开设置"
+              onClick={() => setIsSettingsOpen(true)}
+            >
+              <Settings size={14} />
+            </button>
             <button
               type="button"
               className={'chrome-panel-toggle ' + (isSidePanelVisible ? 'active' : '')}
@@ -867,6 +1040,8 @@ export default function App() {
             </>
           )}
         </main>
+
+        <ModelSettingsDialog open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
         {remoteFolderDialog && (
           <div className="remote-modal-overlay">

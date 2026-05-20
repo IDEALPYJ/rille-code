@@ -1,0 +1,90 @@
+import type { AgentSession } from '../../shared/agent/protocol'
+import type { AgentChatMessage } from './provider'
+import { createRuntimeToolCall, getModelVisibleToolDefinitions, type RuntimeToolCall } from './tools'
+
+export type ModelAction =
+  | { type: 'answer'; text: string }
+  | { type: 'tool_calls'; toolCalls: RuntimeToolCall[]; text?: string }
+
+export interface ModelAdapter {
+  buildMessages(input: { session: AgentSession; contextPrompt: string; userTask: string }): AgentChatMessage[]
+  parseAction(text: string): ModelAction
+}
+
+export function systemPrompt(session: AgentSession): string {
+  const tools = getModelVisibleToolDefinitions().map(tool => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    isReadOnly: tool.isReadOnly,
+  }))
+  return [
+    '你是 RilleCode IDE 内置的 coding agent。回答默认使用中文。',
+    '你必须通过工具探索代码；不要声称已经读取、修改或运行命令，除非工具结果显示已完成。',
+    '写文件必须先调用 propose_file_edit 生成 diff proposal；用户或 runtime 批准后才会应用。',
+    '命令只能通过 run_command 运行，并会经过权限策略或用户审批。',
+    '工具结果会包含 status、exitCode、timedOut、truncated、durationMs 等验证字段；命令失败、超时或诊断仍有错误时，必须继续修复或明确说明阻塞原因。',
+    `当前权限模式: ${session.permissionMode}。`,
+    '',
+    '可用工具 JSON:',
+    JSON.stringify(tools),
+    '',
+    '输出协议：',
+    '1. 如果需要调用工具，只返回 JSON：{"tool_calls":[{"name":"read_file","input":{"filePath":"..."}}],"text":"可选简短说明"}',
+    '2. 如果已完成或需要直接回答，只返回 JSON：{"answer":"..."}',
+    '3. 不要把 JSON 包在 Markdown 代码块里。',
+  ].join('\n')
+}
+
+export function extractJsonObject(text: string): unknown | null {
+  const trimmed = text.trim()
+  const unfenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```$/i)?.[1]?.trim() || trimmed
+  try {
+    return JSON.parse(unfenced)
+  } catch {
+    const start = unfenced.indexOf('{')
+    const end = unfenced.lastIndexOf('}')
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(unfenced.slice(start, end + 1))
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
+}
+
+export function parseTextJsonModelAction(text: string): ModelAction {
+  const parsed = extractJsonObject(text) as { answer?: unknown; text?: unknown; tool_calls?: unknown; toolCalls?: unknown } | null
+  if (!parsed) return { type: 'answer', text }
+  const rawCalls = Array.isArray(parsed.tool_calls) ? parsed.tool_calls : Array.isArray(parsed.toolCalls) ? parsed.toolCalls : null
+  if (rawCalls) {
+    const toolCalls = rawCalls
+      .map((item): RuntimeToolCall | null => {
+        const call = item as { id?: unknown; name?: unknown; input?: unknown }
+        if (typeof call.name !== 'string') return null
+        const input = call.input && typeof call.input === 'object' && !Array.isArray(call.input) ? call.input as Record<string, unknown> : {}
+        return createRuntimeToolCall(call.name, input, typeof call.id === 'string' ? call.id : undefined)
+      })
+      .filter((item): item is RuntimeToolCall => Boolean(item))
+    if (toolCalls.length > 0) return { type: 'tool_calls', toolCalls, text: typeof parsed.text === 'string' ? parsed.text : undefined }
+  }
+  if (typeof parsed.answer === 'string') return { type: 'answer', text: parsed.answer }
+  if (typeof parsed.text === 'string') return { type: 'answer', text: parsed.text }
+  return { type: 'answer', text }
+}
+
+export class TextJsonToolAdapter implements ModelAdapter {
+  buildMessages(input: { session: AgentSession; contextPrompt: string; userTask: string }): AgentChatMessage[] {
+    return [
+      { role: 'system', content: systemPrompt(input.session) },
+      { role: 'user', content: ['IDE context:', input.contextPrompt, '', 'User task:', input.userTask].join('\n') },
+    ]
+  }
+
+  parseAction(text: string): ModelAction {
+    return parseTextJsonModelAction(text)
+  }
+}
+

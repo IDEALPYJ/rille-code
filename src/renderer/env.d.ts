@@ -1,4 +1,20 @@
 /// <reference types="vite/client" />
+import type {
+  AgentConfigSnapshot,
+  AgentConfigUpdate,
+  AgentContextSnapshot,
+  AgentEvent,
+  AgentModelProfile,
+  AgentModelProfileUpdate,
+  AgentModelStoreSnapshot,
+  AgentPermissionMode,
+  AgentSession,
+  AgentSessionSummary,
+  AgentTurn,
+  AgentWorkspaceLocation,
+  ApprovalDecision,
+  EditProposal,
+} from '../shared/agent/protocol'
 
 export {}
 
@@ -353,6 +369,25 @@ declare global {
     debugSend(sessionId: string, command: string, args?: Record<string, unknown>): Promise<PortOperationResult>
     onDebugEvent(callback: (event: DebugEventPayload) => void): () => void
     openExternal(url: string): Promise<void>
+    agentCreateSession(workspace: AgentWorkspaceLocation | null, permissionMode?: AgentPermissionMode): Promise<AgentSession>
+    agentResumeSession(sessionId: string): Promise<AgentSession>
+    agentResumeLastSession(workspace: AgentWorkspaceLocation | null): Promise<AgentSession | null>
+    agentListSessions(): Promise<AgentSessionSummary[]>
+    agentSubmitTurn(sessionId: string, text: string, context: AgentContextSnapshot): Promise<AgentTurn>
+    agentInterruptTurn(sessionId: string, turnId: string): Promise<AgentSession | null>
+    agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>
+    agentUpdatePermission(sessionId: string, permissionMode: AgentPermissionMode): Promise<AgentSession | null>
+    agentApplyEdit(sessionId: string, proposalId: string): Promise<EditProposal>
+    agentRejectEdit(sessionId: string, proposalId: string, reason?: string): Promise<EditProposal | AgentSession | null>
+    agentRollbackEdit(sessionId: string, proposalId: string): Promise<EditProposal | AgentSession | null>
+    agentGetConfig(): Promise<AgentConfigSnapshot>
+    agentSaveConfig(update: AgentConfigUpdate): Promise<AgentConfigSnapshot>
+    agentListModelProfiles(): Promise<AgentModelStoreSnapshot>
+    agentSaveModelProfile(update: AgentModelProfileUpdate): Promise<AgentModelProfile>
+    agentSelectModelProfile(profileId: string): Promise<AgentConfigSnapshot>
+    agentDeleteModelProfile(profileId: string): Promise<AgentModelStoreSnapshot>
+    agentTestProvider(profileId?: string): Promise<{ success: boolean; message: string }>
+    onAgentEvent(callback: (event: AgentEvent) => void): () => void
   }
 
   interface Window {

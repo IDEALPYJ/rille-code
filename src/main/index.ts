@@ -11,6 +11,9 @@ import { basename, join, relative } from 'path'
 import { readdir, readFile, writeFile, stat } from 'fs/promises'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import * as pty from 'node-pty'
+import { checkAgentProvider, createAgentSession, dispatchAgentOp, getAgentConfig, getAgentModelProfiles, listAgentSessions, removeAgentModelProfile, resumeAgentSession, resumeLastAgentSession, setActiveAgentModelProfile, submitAgentTurn, updateAgentConfig, updateAgentModelProfile } from './agent'
+import { setAgentWorkspaceHost, type CommandRunInput } from './agent/workspace'
+import type { AgentModelProfileUpdate, AgentOp } from '../shared/agent/protocol'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -780,6 +783,40 @@ async function gitOperation(rootPath, kind, params) {
   throw new Error('Unknown git operation: ' + kind);
 }
 
+function runCommand(params) {
+  const commandLine = String(params.commandLine || '').trim();
+  if (!commandLine) return Promise.reject(new Error('命令为空。'));
+  const cwd = String(params.cwd || process.cwd());
+  const timeoutMs = Math.max(1000, Math.min(Number(params.timeoutMs || 120000), 600000));
+  const outputLimitBytes = Math.max(1024, Math.min(Number(params.outputLimitBytes || 51200), 524288));
+  const shellMode = params.shellMode !== false;
+  const startedAt = Date.now();
+  return new Promise(resolve => {
+    const child = childProcess.spawn(commandLine, { cwd, shell: shellMode });
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGTERM');
+      setTimeout(() => child.kill('SIGKILL'), 5000);
+    }, timeoutMs);
+    child.stdout.on('data', chunk => { stdout += chunk.toString(); });
+    child.stderr.on('data', chunk => { stderr += chunk.toString(); });
+    child.on('error', error => {
+      clearTimeout(timer);
+      resolve({ output: error.message, status: 'error', error: 'command_failed', exitCode: null, timedOut, durationMs: Date.now() - startedAt });
+    });
+    child.on('close', code => {
+      clearTimeout(timer);
+      const combined = [stdout.trimEnd(), stderr.trimEnd()].filter(Boolean).join('\n') || '(no output)';
+      const truncated = Buffer.byteLength(combined, 'utf8') > outputLimitBytes;
+      const output = truncated ? combined.slice(0, Math.floor(outputLimitBytes * 0.7)) + '\n\n...[output truncated]...\n\n' + combined.slice(-Math.floor(outputLimitBytes * 0.2)) : combined;
+      resolve({ output, truncated, status: timedOut ? 'timeout' : code === 0 ? 'ok' : 'error', error: timedOut ? 'command_timeout' : code === 0 ? undefined : 'command_failed', exitCode: code, timedOut, durationMs: Date.now() - startedAt, structured: { cwd, shellMode } });
+    });
+  });
+}
+
 async function dispatch(message) {
   const id = message && message.id;
   const method = message && message.method;
@@ -792,6 +829,7 @@ async function dispatch(message) {
   else if (method === 'fs.stat') { try { const s = await fs.stat(params.path); result = { exists: true, isDirectory: s.isDirectory(), size: s.size, modifiedTime: s.mtimeMs }; } catch { result = { exists: false, isDirectory: false }; } }
   else if (method === 'search.files') result = await searchFiles(params.rootPath, params.query || '', params.options || { caseSensitive: false, includeDependencies: false });
   else if (method === 'git.status') result = await gitStatus(params.rootPath);
+  else if (method === 'git.diff') { const repo = await resolveRepoRoot(params.rootPath); if (!repo.success) result = repo.error; else { const args = ['diff', '--']; if (params.filePath) args.push(toGitPath(repo.repoRoot, params.filePath)); const r = await runGit(repo.repoRoot, args); result = r.stdout || r.stderr || '没有 unstaged diff。'; } }
   else if (method === 'git.stage') { const repo = await resolveRepoRoot(params.rootPath); if (!repo.success) result = { success: false, error: repo.error }; else { const r = await runGit(repo.repoRoot, ['add', '--', toGitPath(repo.repoRoot, params.filePath)]); result = { success: r.success, error: r.error }; } }
   else if (method === 'git.unstage') { const repo = await resolveRepoRoot(params.rootPath); if (!repo.success) result = { success: false, error: repo.error }; else { const r = await runGit(repo.repoRoot, ['restore', '--staged', '--', toGitPath(repo.repoRoot, params.filePath)]); result = { success: r.success, error: r.error }; } }
   else if (method === 'git.commit') { const repo = await resolveRepoRoot(params.rootPath); if (!repo.success) result = { success: false, error: repo.error }; else { const r = await runGit(repo.repoRoot, ['commit', '-m', params.message || '']); result = { success: r.success, error: r.error }; } }
@@ -806,6 +844,7 @@ async function dispatch(message) {
   else if (method === 'git.stashList') result = await listGitStashes(params.rootPath);
   else if (method === 'git.resolveCommitAvatars') result = { success: true, avatars: {} };
   else if (method && method.startsWith('git.operation.')) result = await gitOperation(params.rootPath, method.slice('git.operation.'.length), params);
+  else if (method === 'command.run') result = await runCommand(params);
   else throw new Error('Unknown method: ' + method);
   sendResult(id, result);
 }
@@ -2883,6 +2922,52 @@ ipcMain.handle('app:exit', () => {
   app.quit()
 })
 
+setAgentWorkspaceHost({
+  readDirectory: (workspace, dirPath) => {
+    if (isRemoteWorkspace(workspace)) return remoteRequest<FileEntry[]>(workspace.connectionId, 'fs.readDirectory', { path: dirPath })
+    return readDirectory(dirPath)
+  },
+  readFile: (workspace, filePath) => {
+    if (isRemoteWorkspace(workspace)) return remoteRequest<string>(workspace.connectionId, 'fs.readFile', { path: filePath })
+    return readFile(filePath, 'utf8')
+  },
+  writeFile: async (workspace, filePath, content) => {
+    if (isRemoteWorkspace(workspace)) return remoteRequest<boolean>(workspace.connectionId, 'fs.writeFile', { path: filePath, content })
+    await writeFile(filePath, content, 'utf8')
+    return true
+  },
+  searchFiles: async (workspace, query) => {
+    if (isRemoteWorkspace(workspace)) {
+      const results = await remoteRequest<SearchResult[]>(workspace.connectionId, 'search.files', { rootPath: workspace.path, query, options: { caseSensitive: false, includeDependencies: false } })
+      return results.map(item => `${item.filePath}:${item.line}:${item.column} ${item.preview}`).join('\n') || '(无匹配)'
+    }
+    const results = await searchFiles(workspace.path, query, { caseSensitive: false, includeDependencies: false })
+    return results.map(item => `${item.filePath}:${item.line}:${item.column} ${item.preview}`).join('\n') || '(无匹配)'
+  },
+  gitStatus: async (workspace) => {
+    if (isRemoteWorkspace(workspace)) {
+      const status = await remoteRequest<GitStatusResult>(workspace.connectionId, 'git.status', { rootPath: workspace.path })
+      return status.error || `branch ${status.branch || '(unknown)'}\nstaged: ${status.staged.join(', ') || '-'}\nunstaged: ${status.unstaged.join(', ') || '-'}\nuntracked: ${status.untracked.join(', ') || '-'}`
+    }
+    const status = await getGitStatus(workspace.path)
+    return status.error || `branch ${status.branch || '(unknown)'}\nstaged: ${status.staged.join(', ') || '-'}\nunstaged: ${status.unstaged.join(', ') || '-'}\nuntracked: ${status.untracked.join(', ') || '-'}`
+  },
+  gitDiff: async (workspace, filePath) => {
+    if (isRemoteWorkspace(workspace)) return remoteRequest<string>(workspace.connectionId, 'git.diff', { rootPath: workspace.path, filePath })
+    const repo = await resolveRepoRoot(workspace.path)
+    if (!repo.success) return repo.error || '不是 Git 仓库。'
+    const args = ['diff', '--', ...(filePath ? [toGitPath(repo.repoRoot, filePath)] : [])]
+    const diff = await runGit(repo.repoRoot, args)
+    return diff.stdout || diff.stderr || '没有 unstaged diff。'
+  },
+  runCommand: (workspace, input: CommandRunInput) => {
+    if (isRemoteWorkspace(workspace)) {
+      return remoteRequest(workspace.connectionId, 'command.run', input as unknown as Record<string, unknown>, (input.timeoutMs || 120_000) + 10_000)
+    }
+    throw new Error('Local command execution should use the agent local executor.')
+  },
+})
+
 ipcMain.handle('fs:readDirectory', async (_event, dirPath: string, workspace?: WorkspaceLocation | null) => {
   if (isRemoteWorkspace(workspace)) return remoteRequest<FileEntry[]>(workspace.connectionId, 'fs.readDirectory', { path: dirPath })
   return readDirectory(dirPath)
@@ -3239,6 +3324,58 @@ ipcMain.handle('debug:send', (_event, sessionId: string, command: string, args?:
 
 ipcMain.handle('shell:openExternal', async (_event, url: string) => {
   await shell.openExternal(url)
+})
+
+ipcMain.handle('agent:createSession', (event, op: Extract<AgentOp, { type: 'session.create' }>) => {
+  return createAgentSession(event.sender, op)
+})
+
+ipcMain.handle('agent:resumeSession', (event, op: Extract<AgentOp, { type: 'session.resume' }>) => {
+  return resumeAgentSession(event.sender, op)
+})
+
+ipcMain.handle('agent:resumeLastSession', (event, op: Extract<AgentOp, { type: 'session.resumeLast' }>) => {
+  return resumeLastAgentSession(event.sender, op)
+})
+
+ipcMain.handle('agent:listSessions', () => {
+  return listAgentSessions()
+})
+
+ipcMain.handle('agent:submitTurn', async (_event, op: Extract<AgentOp, { type: 'turn.submit' }>) => {
+  return submitAgentTurn(op)
+})
+
+ipcMain.handle('agent:dispatch', async (_event, op: AgentOp) => {
+  return dispatchAgentOp(op)
+})
+
+ipcMain.handle('agent:getConfig', () => {
+  return getAgentConfig()
+})
+
+ipcMain.handle('agent:saveConfig', (_event, update) => {
+  return updateAgentConfig(update)
+})
+
+ipcMain.handle('agent:listModelProfiles', () => {
+  return getAgentModelProfiles()
+})
+
+ipcMain.handle('agent:saveModelProfile', (_event, update: AgentModelProfileUpdate) => {
+  return updateAgentModelProfile(update)
+})
+
+ipcMain.handle('agent:selectModelProfile', (_event, profileId: string) => {
+  return setActiveAgentModelProfile(profileId)
+})
+
+ipcMain.handle('agent:deleteModelProfile', (_event, profileId: string) => {
+  return removeAgentModelProfile(profileId)
+})
+
+ipcMain.handle('agent:testProvider', async (_event, profileId?: string) => {
+  return checkAgentProvider(profileId)
 })
 
 // ── App Lifecycle ────────────────────────────────────────────

@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RilleCode — Vibe Coding</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   RilleCode — Vibe Coding Design
+   Dark cyberpunk/neon theme for the AI-powered code editor
+   ============================================================ */
+
+:root {
+  /* Deep base */
+  --bg-root: #0a0e17;
+  --bg-chrome: #0d1117;
+  --bg-sidebar: #0d1117;
+  --bg-editor: #0f1419;
+  --bg-terminal: #0a0f14;
+  --bg-statusbar: #0d1117;
+  --bg-card: #161b22;
+  --bg-hover: #1c2333;
+  --bg-input: #0d1117;
+
+  /* Neon accents */
+  --accent: #638aff;
+  --accent-purple: #8b5cf6;
+  --accent-cyan: #22d3ee;
+  --accent-pink: #ec4899;
+  --accent-soft: rgba(99, 138, 255, 0.12);
+
+  /* Text */
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #484f58;
+
+  /* Borders */
+  --border: rgba(255, 255, 255, 0.06);
+  --border-accent: rgba(99, 138, 255, 0.15);
+
+  /* Status */
+  --success: #3fb950;
+  --warning: #d29922;
+  --error: #f85149;
+
+  /* Layout (mirrors original) */
+  --chrome-height: 32px;
+  --activity-bar-width: 40px;
+  --sidebar-width: 240px;
+  --agent-panel-width: 340px;
+  --statusbar-height: 22px;
+  --terminal-height: 200px;
+  --tab-height: 30px;
+
+  /* Typography */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, SFMono-Regular, monospace;
+  --font-size: 12px;
+  --font-size-editor: 13px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg-root);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--font-size);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   Particle Canvas
+   ============================================================ */
+#particles {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+}
+
+/* ============================================================
+   App Shell
+   ============================================================ */
+.app {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background: var(--bg-root);
+}
+
+/* ---- Top Chrome ---- */
+.top-chrome {
+  display: flex;
+  align-items: center;
+  height: var(--chrome-height);
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border);
+  padding: 0 8px;
+  flex-shrink: 0;
+  gap: 4px;
+}
+.chrome-left {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.chrome-logo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  height: 100%;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.chrome-logo svg { width: 16px; height: 16px; }
+.chrome-menu-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.chrome-menu-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.chrome-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.chrome-title {
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+.chrome-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.chrome-nav-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.chrome-nav-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.chrome-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.chrome-toggle {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.chrome-toggle:hover { color: var(--text-primary); background: var(--bg-hover); }
+.chrome-toggle.active { color: var(--accent); }
+
+/* ---- Workbench Grid ---- */
+.workbench {
+  display: grid;
+  grid-template-columns: var(--activity-bar-width) var(--sidebar-width) 4px 1fr 4px var(--agent-panel-width);
+  grid-template-rows: 1fr;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---- Activity Bar ---- */
+.activity-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-chrome);
+  border-right: 1px solid var(--border);
+  padding: 6px 0;
+  gap: 2px;
+  z-index: 3;
+}
+.activity-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.2s ease;
+}
+.activity-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.activity-btn.active { color: var(--accent); }
+.activity-btn.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 6px; bottom: 6px;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 8px rgba(99, 138, 255, 0.5);
+}
+.activity-spacer { flex: 1; }
+.activity-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+/* ---- Sidebar ---- */
+.sidebar {
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 2;
+}
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  height: 28px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+.sidebar-header-actions {
+  display: flex;
+  gap: 2px;
+}
+.sidebar-header-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.sidebar-header-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+.sidebar-body::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-body::-webkit-scrollbar-thumb {
+  background: var(--bg-hover);
+  border-radius: 3px;
+}
+.sidebar-body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* File Tree */
+.file-tree-item {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  padding-left: calc(8px + var(--depth, 0) * 14px);
+  cursor: pointer;
+  transition: all 0.1s ease;
+  gap: 4px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.file-tree-item:hover { background: var(--bg-hover); }
+.file-tree-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.file-tree-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+}
+.file-tree-icon.folder { color: var(--accent-cyan); }
+.file-tree-icon.folder-open { color: var(--accent-cyan); }
+.file-tree-icon.ts { color: #3178c6; }
+.file-tree-icon.tsx { color: #3178c6; }
+.file-tree-icon.css { color: #a855f7; }
+.file-tree-icon.json { color: #facc15; }
+.file-tree-icon.html { color: #e34c26; }
+.file-tree-icon.py { color: #3b82f6; }
+.file-tree-icon.md { color: var(--text-secondary); }
+.file-tree-icon.git { color: #f85149; }
+.file-tree-name {
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Resize Handles ---- */
+.resize-handle {
+  background: transparent;
+  cursor: col-resize;
+  transition: background 0.15s ease;
+  z-index: 4;
+}
+.resize-handle:hover { background: var(--accent); opacity: 0.6; }
+
+/* ---- Editor Area ---- */
+.editor-area {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-editor);
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Tabs */
+.tabs-bar {
+  display: flex;
+  align-items: center;
+  height: var(--tab-height);
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.tabs-bar::-webkit-scrollbar { height: 2px; }
+.tabs-bar::-webkit-scrollbar-thumb { background: var(--bg-hover); }
+.tab {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  gap: 6px;
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 96px;
+  max-width: 180px;
+  transition: all 0.15s ease;
+  position: relative;
+  flex-shrink: 0;
+}
+.tab:hover { color: var(--text-primary); background: var(--bg-hover); }
+.tab.active {
+  color: var(--text-primary);
+  background: var(--bg-editor);
+}
+.tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(99, 138, 255, 0.5);
+}
+.tab-dirty {
+  width: 7px; height: 7px;
+  background: var(--warning);
+  border-radius: 50%;
+  box-shadow: 0 0 4px rgba(210, 153, 34, 0.5);
+}
+.tab-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  width: 16px; height: 16px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  transition: all 0.15s ease;
+  opacity: 0;
+}
+.tab:hover .tab-close, .tab.active .tab-close { opacity: 1; }
+.tab-close:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+/* Editor Body */
+.editor-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+  position: relative;
+}
+.editor-gutter {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 8px 8px 8px 12px;
+  background: var(--bg-editor);
+  border-right: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-editor);
+  color: var(--text-muted);
+  line-height: 1.65;
+  user-select: none;
+  min-width: 40px;
+}
+.editor-gutter span {
+  height: 21.45px;
+  display: flex;
+  align-items: center;
+}
+.editor-content {
+  flex: 1;
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-editor);
+  line-height: 1.65;
+  overflow: auto;
+  position: relative;
+}
+.editor-content::-webkit-scrollbar {
+  width: 8px; height: 8px;
+}
+.editor-content::-webkit-scrollbar-track { background: transparent; }
+.editor-content::-webkit-scrollbar-thumb {
+  background: var(--bg-hover);
+  border-radius: 4px;
+}
+.editor-content::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+.editor-line {
+  height: 21.45px;
+  display: flex;
+  align-items: center;
+  white-space: pre;
+}
+.editor-line .kw { color: #c678dd; }
+.editor-line .fn { color: #61afef; }
+.editor-line .str { color: #98c379; }
+.editor-line .num { color: #d19a66; }
+.editor-line .cm { color: #5c6370; font-style: italic; }
+.editor-line .type { color: #e5c07b; }
+.editor-line .op { color: #abb2bf; }
+.editor-line .var { color: #e06c75; }
+.editor-line .tag { color: #e06c75; }
+.editor-line .attr { color: #d19a66; }
+
+/* Cursor */
+.editor-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 17px;
+  background: var(--accent);
+  vertical-align: middle;
+  margin-left: -2px;
+  animation: cursor-blink 1s step-end infinite;
+  box-shadow: 0 0 6px rgba(99, 138, 255, 0.6);
+}
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ---- Bottom Terminal ---- */
+.terminal-panel {
+  height: var(--terminal-height);
+  background: var(--bg-terminal);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.terminal-tabs {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border);
+  padding: 0 8px;
+  gap: 2px;
+}
+.terminal-tab {
+  padding: 2px 10px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.terminal-tab:hover { color: var(--text-primary); }
+.terminal-tab.active {
+  color: var(--accent-cyan);
+  background: var(--bg-hover);
+}
+.terminal-body {
+  flex: 1;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-y: auto;
+  color: var(--text-secondary);
+}
+.terminal-body::-webkit-scrollbar { width: 6px; }
+.terminal-body::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 3px; }
+.terminal-prompt { color: var(--success); }
+.terminal-cmd { color: var(--text-primary); }
+.terminal-output { color: var(--text-secondary); }
+.terminal-accent { color: var(--accent-cyan); }
+
+/* ---- Agent Panel ---- */
+.agent-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+  z-index: 2;
+}
+.agent-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(99, 138, 255, 0.08), rgba(139, 92, 246, 0.08));
+  position: relative;
+  overflow: hidden;
+}
+.agent-header::before {
+  content: '';
+  position: absolute;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 40%,
+    rgba(99, 138, 255, 0.06) 45%,
+    rgba(139, 92, 246, 0.06) 50%,
+    transparent 55%
+  );
+  animation: shimmer 4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% { transform: translateX(-100%) translateY(-100%); }
+  100% { transform: translateX(100%) translateY(100%); }
+}
+.agent-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  position: relative;
+  z-index: 1;
+}
+.agent-title-gradient {
+  background: linear-gradient(135deg, var(--accent), var(--accent-purple), var(--accent-cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.agent-subtitle {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  position: relative;
+  z-index: 1;
+}
+.agent-thread {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.agent-thread::-webkit-scrollbar { width: 6px; }
+.agent-thread::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 3px; }
+.agent-thread::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Agent Message Cards */
+.agent-msg {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.55;
+  position: relative;
+  animation: msg-in 0.3s ease-out;
+}
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.agent-msg.user {
+  background: var(--accent-soft);
+  border: 1px solid var(--border-accent);
+  color: var(--text-primary);
+  align-self: flex-end;
+  max-width: 90%;
+}
+.agent-msg.assistant {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  max-width: 95%;
+}
+.agent-msg.assistant::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 8px; bottom: 8px;
+  width: 3px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-purple));
+  border-radius: 0 3px 3px 0;
+}
+.agent-msg-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-weight: 600;
+  font-size: 10px;
+}
+.agent-msg.user .agent-msg-header { color: var(--accent); }
+.agent-msg.assistant .agent-msg-header { color: var(--accent-purple); }
+
+/* Thinking Animation */
+.agent-thinking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.thinking-dots {
+  display: flex;
+  gap: 3px;
+}
+.thinking-dot {
+  width: 5px; height: 5px;
+  background: var(--accent-purple);
+  border-radius: 50%;
+  animation: dot-pulse 1.2s ease-in-out infinite;
+  box-shadow: 0 0 6px rgba(139, 92, 246, 0.5);
+}
+.thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot-pulse {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+  40% { transform: scale(1.3); opacity: 1; }
+}
+
+/* Tool call card */
+.agent-tool-call {
+  background: rgba(34, 211, 238, 0.06);
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent-cyan);
+  margin: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.agent-tool-call .tool-icon {
+  width: 14px; height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Diff preview card */
+.agent-diff {
+  background: #0d1117;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  margin: 4px 0;
+  overflow-x: auto;
+}
+.agent-diff .diff-add { color: var(--success); }
+.agent-diff .diff-rem { color: var(--error); }
+.agent-diff .diff-hdr { color: var(--accent); }
+
+/* Agent status */
+.agent-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 10px;
+  color: var(--success);
+  font-weight: 500;
+  animation: neon-pulse 2s ease-in-out infinite;
+}
+@keyframes neon-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+.agent-status-dot {
+  width: 6px; height: 6px;
+  background: var(--success);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(63, 185, 80, 0.6);
+}
+
+/* Agent compose */
+.agent-compose {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 6px;
+  background: var(--bg-card);
+}
+.agent-input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--text-primary);
+  outline: none;
+  resize: none;
+  transition: all 0.2s ease;
+  line-height: 1.4;
+}
+.agent-input::placeholder { color: var(--text-muted); }
+.agent-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(99, 138, 255, 0.15), 0 0 12px rgba(99, 138, 255, 0.1);
+}
+.agent-send {
+  background: linear-gradient(135deg, var(--accent), var(--accent-purple));
+  border: none;
+  color: white;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-end;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.agent-send:hover {
+  box-shadow: 0 0 16px rgba(99, 138, 255, 0.4);
+  transform: scale(1.05);
+}
+
+/* ---- Status Bar ---- */
+.status-bar {
+  display: flex;
+  align-items: center;
+  height: var(--statusbar-height);
+  background: var(--bg-statusbar);
+  border-top: 1px solid var(--border);
+  padding: 0 10px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  gap: 12px;
+  flex-shrink: 0;
+}
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.status-item:hover { color: var(--text-primary); }
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 4px rgba(63, 185, 80, 0.5);
+}
+.status-dot.remote {
+  background: var(--accent-cyan);
+  box-shadow: 0 0 4px rgba(34, 211, 238, 0.5);
+}
+.status-spacer { flex: 1; }
+.status-errors { color: var(--error); }
+.status-warnings { color: var(--warning); }
+
+/* ============================================================
+   Code block in editor
+   ============================================================ */
+.code-sample {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-editor);
+  line-height: 1.65;
+  color: var(--text-primary);
+}
+</style>
+</head>
+<body>
+
+<!-- Particle Background -->
+<canvas id="particles"></canvas>
+
+<!-- App Shell -->
+<div class="app">
+
+  <!-- ============================================================ -->
+  <!-- Top Chrome                                                      -->
+  <!-- ============================================================ -->
+  <div class="top-chrome">
+    <div class="chrome-left">
+      <div class="chrome-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="8" height="8" rx="1.5" stroke="#638aff"/>
+          <rect x="13" y="3" width="8" height="8" rx="1.5" stroke="#8b5cf6"/>
+          <rect x="3" y="13" width="8" height="8" rx="1.5" stroke="#22d3ee"/>
+          <rect x="13" y="13" width="8" height="8" rx="1.5" stroke="#ec4899"/>
+        </svg>
+        RilleCode
+      </div>
+      <button class="chrome-menu-btn">文件</button>
+      <button class="chrome-menu-btn">编辑</button>
+      <button class="chrome-menu-btn">视图</button>
+      <button class="chrome-menu-btn">转到</button>
+      <button class="chrome-menu-btn">终端</button>
+      <button class="chrome-menu-btn">帮助</button>
+    </div>
+    <div class="chrome-center">
+      <div class="chrome-nav">
+        <button class="chrome-nav-btn" title="后退">&#x2039;</button>
+        <button class="chrome-nav-btn" title="前进">&#x203A;</button>
+      </div>
+      <span class="chrome-title">RilleCode — Vibe Coding</span>
+    </div>
+    <div class="chrome-right">
+      <button class="chrome-toggle active" title="侧边栏">☰</button>
+      <button class="chrome-toggle active" title="底部面板">▬</button>
+      <button class="chrome-toggle active" title="AI 助手">◫</button>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- Workbench                                                       -->
+  <!-- ============================================================ -->
+  <div class="workbench">
+
+    <!-- Activity Bar -->
+    <div class="activity-bar">
+      <button class="activity-btn active" title="资源管理器">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+        </svg>
+      </button>
+      <button class="activity-btn" title="搜索">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+        </svg>
+      </button>
+      <button class="activity-btn" title="源代码管理">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v1a2 2 0 01-2 2H8"/>
+        </svg>
+      </button>
+      <button class="activity-btn" title="远程连接">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="18" r="1" fill="currentColor"/>
+        </svg>
+      </button>
+      <div class="activity-spacer"></div>
+      <div class="activity-bottom">
+        <button class="activity-btn" title="设置">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Sidebar — File Explorer -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <span>资源管理器</span>
+        <div class="sidebar-header-actions">
+          <button class="sidebar-header-btn" title="新建文件">+</button>
+          <button class="sidebar-header-btn" title="刷新">↻</button>
+        </div>
+      </div>
+      <div class="sidebar-body">
+        <!-- Root folder -->
+        <div class="file-tree-item" style="--depth:0">
+          <span class="file-tree-icon folder-open">▾</span>
+          <span class="file-tree-name">rillecode</span>
+        </div>
+        <div class="file-tree-item" style="--depth:1">
+          <span class="file-tree-icon folder">▸</span>
+          <span class="file-tree-name">src</span>
+        </div>
+        <div class="file-tree-item" style="--depth:2">
+          <span class="file-tree-icon folder">▸</span>
+          <span class="file-tree-name">main</span>
+        </div>
+        <div class="file-tree-item" style="--depth:2">
+          <span class="file-tree-icon folder">▸</span>
+          <span class="file-tree-name">preload</span>
+        </div>
+        <div class="file-tree-item" style="--depth:3">
+          <span class="file-tree-icon ts">TS</span>
+          <span class="file-tree-name">index.ts</span>
+        </div>
+        <div class="file-tree-item" style="--depth:2">
+          <span class="file-tree-icon folder-open">▾</span>
+          <span class="file-tree-name">renderer</span>
+        </div>
+        <div class="file-tree-item active" style="--depth:3">
+          <span class="file-tree-icon tsx">TSX</span>
+          <span class="file-tree-name">App.tsx</span>
+        </div>
+        <div class="file-tree-item" style="--depth:3">
+          <span class="file-tree-icon css">CSS</span>
+          <span class="file-tree-name">App.css</span>
+        </div>
+        <div class="file-tree-item" style="--depth:3">
+          <span class="file-tree-icon tsx">TSX</span>
+          <span class="file-tree-name">main.tsx</span>
+        </div>
+        <div class="file-tree-item" style="--depth:3">
+          <span class="file-tree-icon html">HTML</span>
+          <span class="file-tree-name">index.html</span>
+        </div>
+        <div class="file-tree-item" style="--depth:3">
+          <span class="file-tree-icon folder">▸</span>
+          <span class="file-tree-name">components</span>
+        </div>
+        <div class="file-tree-item" style="--depth:1">
+          <span class="file-tree-icon json">{ }</span>
+          <span class="file-tree-name">package.json</span>
+        </div>
+        <div class="file-tree-item" style="--depth:1">
+          <span class="file-tree-icon ts">TS</span>
+          <span class="file-tree-name">electron.vite.config.ts</span>
+        </div>
+        <div class="file-tree-item" style="--depth:1">
+          <span class="file-tree-icon md">MD</span>
+          <span class="file-tree-name">Plan.md</span>
+        </div>
+        <div class="file-tree-item" style="--depth:1">
+          <span class="file-tree-icon git">GIT</span>
+          <span class="file-tree-name">.gitignore</span>
+        </div>
+        <div class="file-tree-item" style="--depth:1">
+          <span class="file-tree-icon folder">▸</span>
+          <span class="file-tree-name">tests</span>
+        </div>
+        <div class="file-tree-item" style="--depth:2">
+          <span class="file-tree-icon html">HTML</span>
+          <span class="file-tree-name">index.html</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resize Handle -->
+    <div class="resize-handle"></div>
+
+    <!-- Editor Area -->
+    <div class="editor-area">
+
+      <!-- Tabs -->
+      <div class="tabs-bar">
+        <div class="tab active">
+          <span>App.tsx</span>
+          <span class="tab-dirty"></span>
+          <button class="tab-close">✕</button>
+        </div>
+        <div class="tab">
+          <span>App.css</span>
+          <button class="tab-close">✕</button>
+        </div>
+        <div class="tab">
+          <span>package.json</span>
+          <button class="tab-close">✕</button>
+        </div>
+        <div class="tab">
+          <span>index.html</span>
+          <span class="tab-dirty"></span>
+          <button class="tab-close">✕</button>
+        </div>
+      </div>
+
+      <!-- Editor Body -->
+      <div class="editor-body">
+        <div class="editor-gutter">
+          <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
+          <span>6</span><span>7</span><span>8</span><span>9</span><span>10</span>
+          <span>11</span><span>12</span><span>13</span><span>14</span><span>15</span>
+          <span>16</span><span>17</span><span>18</span><span>19</span><span>20</span>
+          <span>21</span><span>22</span><span>23</span><span>24</span><span>25</span>
+        </div>
+        <div class="editor-content">
+          <div class="editor-line"><span class="kw">import</span> <span class="op">{</span> <span class="var">useState</span><span class="op">,</span> <span class="var">useEffect</span> <span class="op">}</span> <span class="kw">from</span> <span class="str">'react'</span></div>
+          <div class="editor-line"><span class="kw">import</span> <span class="op">{</span> <span class="var">Editor</span> <span class="op">}</span> <span class="kw">from</span> <span class="str">'./components/Editor'</span></div>
+          <div class="editor-line"><span class="kw">import</span> <span class="op">{</span> <span class="var">FileTree</span> <span class="op">}</span> <span class="kw">from</span> <span class="str">'./components/FileTree'</span></div>
+          <div class="editor-line"><span class="kw">import</span> <span class="str">'./App.css'</span></div>
+          <div class="editor-line"></div>
+          <div class="editor-line"><span class="cm">// RilleCode — AI-powered code editor</span></div>
+          <div class="editor-line"><span class="kw">export function</span> <span class="fn">App</span>() {</div>
+          <div class="editor-line">  <span class="kw">const</span> [<span class="var">theme</span>, <span class="var">setTheme</span>] = <span class="fn">useState</span>&lt;<span class="type">Theme</span>&gt;(<span class="str">'dark'</span>)</div>
+          <div class="editor-line">  <span class="kw">const</span> [<span class="var">workspace</span>, <span class="var">setWorkspace</span>] = <span class="fn">useState</span>&lt;<span class="type">string</span> | <span class="kw">null</span>&gt;(<span class="kw">null</span>)</div>
+          <div class="editor-line"></div>
+          <div class="editor-line">  <span class="fn">useEffect</span>(() <span class="op">=></span> {</div>
+          <div class="editor-line">    <span class="kw">const</span> <span class="var">saved</span> = <span class="fn">localStorage</span>.<span class="fn">getItem</span>(<span class="str">'rille:theme'</span>)</div>
+          <div class="editor-line">    <span class="kw">if</span> (<span class="var">saved</span>) <span class="fn">setTheme</span>(<span class="var">saved</span> <span class="kw">as</span> <span class="type">Theme</span>)</div>
+          <div class="editor-line">  }, [])</div>
+          <div class="editor-line"></div>
+          <div class="editor-line">  <span class="kw">const</span> <span class="fn">toggleTheme</span> = () <span class="op">=></span> {</div>
+          <div class="editor-line">    <span class="kw">const</span> <span class="var">next</span> = <span class="var">theme</span> <span class="op">===</span> <span class="str">'dark'</span> ? <span class="str">'light'</span> : <span class="str">'dark'</span></div>
+          <div class="editor-line">    <span class="fn">setTheme</span>(<span class="var">next</span>)</div>
+          <div class="editor-line">    <span class="fn">localStorage</span>.<span class="fn">setItem</span>(<span class="str">'rille:theme'</span>, <span class="var">next</span>)</div>
+          <div class="editor-line">  }</div>
+          <div class="editor-line"></div>
+          <div class="editor-line">  <span class="kw">return</span> (</div>
+          <div class="editor-line">    <span class="op">&lt;</span><span class="tag">div</span> <span class="attr">className</span>=<span class="str">"app"</span><span class="op">&gt;</span></div>
+          <div class="editor-line">      <span class="op">&lt;</span><span class="tag">TopChrome</span> <span class="op">/&gt;</span></div>
+          <div class="editor-line">      <span class="op">&lt;</span><span class="tag">Workbench</span> <span class="op">/&gt;</span></div>
+          <div class="editor-line">      <span class="op">&lt;</span><span class="tag">StatusBar</span> <span class="attr">theme</span>=<span class="op">{</span><span class="var">theme</span><span class="op">}</span> <span class="op">/&gt;</span><span class="cm">  </span><span class="editor-cursor"></span></div>
+          <div class="editor-line">    <span class="op">&lt;/</span><span class="tag">div</span><span class="op">&gt;</span></div>
+          <div class="editor-line">  )</div>
+          <div class="editor-line">}</div>
+        </div>
+      </div>
+
+      <!-- Bottom Terminal -->
+      <div class="terminal-panel">
+        <div class="terminal-tabs">
+          <span class="terminal-tab">问题</span>
+          <span class="terminal-tab">输出</span>
+          <span class="terminal-tab">调试控制台</span>
+          <span class="terminal-tab active">终端</span>
+          <span class="terminal-tab">端口</span>
+        </div>
+        <div class="terminal-body">
+          <div><span class="terminal-prompt">➜</span> <span class="terminal-accent">rillecode</span> <span class="terminal-prompt">git:(main)</span></div>
+          <div><span class="terminal-cmd">$ npm run dev</span></div>
+          <div><span class="terminal-output">&gt; rillecode@0.1.0 dev</span></div>
+          <div><span class="terminal-output">&gt; electron-vite dev</span></div>
+          <div style="color:var(--success)">vite v6.x.x building for development...</div>
+          <div style="color:var(--success)">✓ main built in 420ms</div>
+          <div style="color:var(--success)">✓ preload built in 55ms</div>
+          <div style="color:var(--success)">✓ renderer built in 1.2s</div>
+          <div style="color:var(--accent-cyan)">🚀 Electron app ready on http://localhost:5173</div>
+          <div>&nbsp;</div>
+          <div><span class="terminal-prompt">➜</span> <span class="terminal-accent">rillecode</span> <span class="terminal-prompt">git:(main)</span> <span class="terminal-cursor-blink">▌</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resize Handle -->
+    <div class="resize-handle"></div>
+
+    <!-- ============================================================ -->
+    <!-- Agent Panel — Vibe Coding HERO                                 -->
+    <!-- ============================================================ -->
+    <div class="agent-panel">
+      <div class="agent-header">
+        <div class="agent-title">
+          <span class="agent-title-gradient">⚡ Vibe Coding</span>
+        </div>
+        <div class="agent-subtitle">AI 编码助手 — Claude Opus 4.7</div>
+      </div>
+
+      <div class="agent-thread" id="agentThread">
+        <!-- User message -->
+        <div class="agent-msg user">
+          <div class="agent-msg-header">👤 You</div>
+          给项目添加一个深色模式切换开关
+        </div>
+
+        <!-- Agent thinking -->
+        <div class="agent-thinking" id="thinking1">
+          <div class="thinking-dots">
+            <div class="thinking-dot"></div>
+            <div class="thinking-dot"></div>
+            <div class="thinking-dot"></div>
+          </div>
+          <span>正在分析项目结构...</span>
+        </div>
+
+        <!-- Agent response 1 -->
+        <div class="agent-msg assistant" style="animation-delay: 0.5s">
+          <div class="agent-msg-header">🤖 RilleCode Agent</div>
+          让我先了解一下当前的代码结构，看看主题相关的实现。
+        </div>
+
+        <!-- Tool calls -->
+        <div class="agent-tool-call">
+          <span class="tool-icon">📄</span>
+          read_file: src/renderer/App.tsx
+        </div>
+        <div class="agent-tool-call">
+          <span class="tool-icon">🎨</span>
+          read_file: src/renderer/App.css
+        </div>
+        <div class="agent-tool-call">
+          <span class="tool-icon">📦</span>
+          read_file: package.json
+        </div>
+
+        <!-- Agent response 2 -->
+        <div class="agent-msg assistant" style="animation-delay: 0.8s">
+          <div class="agent-msg-header">🤖 RilleCode Agent</div>
+          我已经了解了项目结构。当前 <code style="background:var(--accent-soft);padding:1px 4px;border-radius:3px;font-family:var(--font-mono);font-size:10px">App.css</code> 只定义了浅色主题的 CSS 变量，需要添加深色主题支持。以下是我的方案：
+          <br><br>
+          <b>📋 改动计划：</b><br>
+          1. <code style="background:var(--accent-soft);padding:1px 4px;border-radius:3px;font-family:var(--font-mono);font-size:10px">App.tsx</code> — 添加 <code style="background:var(--accent-soft);padding:1px 4px;border-radius:3px;font-family:var(--font-mono);font-size:10px">theme</code> state 和切换逻辑<br>
+          2. <code style="background:var(--accent-soft);padding:1px 4px;border-radius:3px;font-family:var(--font-mono);font-size:10px">App.css</code> — 添加深色主题 CSS 变量<br>
+          3. <code style="background:var(--accent-soft);padding:1px 4px;border-radius:3px;font-family:var(--font-mono);font-size:10px">StatusBar.tsx</code> — 添加主题切换按钮
+        </div>
+
+        <!-- Diff preview -->
+        <div class="agent-diff">
+          <div class="diff-hdr">@@ App.tsx @@</div>
+          <div class="diff-add">+ const [theme, setTheme] = useState&lt;'light' | 'dark'&gt;('dark')</div>
+          <div class="diff-add">+ const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')</div>
+          <div style="color:var(--text-secondary)">  ...</div>
+          <div class="diff-add">+ &lt;StatusBar theme={theme} onToggleTheme={toggleTheme} /&gt;</div>
+        </div>
+
+        <!-- Agent done -->
+        <div class="agent-status">
+          <span class="agent-status-dot"></span>
+          ✅ 已应用更改 — 3 个文件已修改
+        </div>
+      </div>
+
+      <!-- Agent Input -->
+      <div class="agent-compose">
+        <textarea class="agent-input" placeholder="用自然语言描述你想做的事情...&#10;例如：优化终端性能、添加 Git 图形历史、修复文件树拖拽" rows="1" id="agentInput"></textarea>
+        <button class="agent-send" title="发送" id="agentSend">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- Status Bar                                                       -->
+  <!-- ============================================================ -->
+  <div class="status-bar">
+    <span class="status-item">
+      <span class="status-dot"></span>
+      本地
+    </span>
+    <span class="status-item">main</span>
+    <span class="status-item status-errors">ⓧ 0</span>
+    <span class="status-item status-warnings">⚠ 2</span>
+    <span class="status-spacer"></span>
+    <span class="status-item">行 25, 列 68</span>
+    <span class="status-item">空格: 2</span>
+    <span class="status-item">UTF-8</span>
+    <span class="status-item">TypeScript React</span>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- Scripts                                                          -->
+<!-- ============================================================ -->
+<script>
+// Particle System
+(function() {
+  const canvas = document.getElementById('particles');
+  const ctx = canvas.getContext('2d');
+  let particles = [];
+  let animationId;
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+
+  class Particle {
+    constructor() {
+      this.reset();
+      this.y = Math.random() * canvas.height;
+    }
+    reset() {
+      this.x = Math.random() * canvas.width;
+      this.y = -4;
+      this.size = Math.random() * 1.5 + 0.5;
+      this.speedY = Math.random() * 0.3 + 0.1;
+      this.speedX = (Math.random() - 0.5) * 0.3;
+      this.opacity = Math.random() * 0.4 + 0.1;
+      this.hue = [99, 138, 255, 139, 92, 246, 34, 211, 238, 236, 72, 153][Math.floor(Math.random() * 4) * 3];
+    }
+    update() {
+      this.y += this.speedY;
+      this.x += this.speedX;
+      if (this.y > canvas.height + 4) this.reset();
+      if (this.x < -4) this.x = canvas.width + 4;
+      if (this.x > canvas.width + 4) this.x = -4;
+    }
+    draw(ctx) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${this.hue}, ${this.opacity})`;
+      ctx.fill();
+    }
+  }
+
+  function init() {
+    resize();
+    const count = Math.min(60, Math.floor((canvas.width * canvas.height) / 18000));
+    particles = Array.from({ length: count }, () => new Particle());
+  }
+
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particles.forEach(p => { p.update(); p.draw(ctx); });
+    animationId = requestAnimationFrame(animate);
+  }
+
+  window.addEventListener('resize', () => {
+    resize();
+    const count = Math.min(60, Math.floor((canvas.width * canvas.height) / 18000));
+    while (particles.length < count) particles.push(new Particle());
+    particles.length = count;
+  });
+
+  init();
+  animate();
+})();
+
+// Agent input auto-resize & send
+(function() {
+  const input = document.getElementById('agentInput');
+  const sendBtn = document.getElementById('agentSend');
+  const thread = document.getElementById('agentThread');
+
+  function autoResize() {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 100) + 'px';
+  }
+
+  function sendMessage() {
+    const text = input.value.trim();
+    if (!text) return;
+
+    const msg = document.createElement('div');
+    msg.className = 'agent-msg user';
+    msg.innerHTML = `<div class="agent-msg-header">👤 You</div>${text}`;
+    thread.appendChild(msg);
+    thread.scrollTop = thread.scrollHeight;
+
+    input.value = '';
+    autoResize();
+
+    // Show thinking
+    const thinking = document.createElement('div');
+    thinking.className = 'agent-thinking';
+    thinking.innerHTML = `
+      <div class="thinking-dots">
+        <div class="thinking-dot"></div><div class="thinking-dot"></div><div class="thinking-dot"></div>
+      </div>
+      <span>思考中...</span>
+    `;
+    thread.appendChild(thinking);
+    thread.scrollTop = thread.scrollHeight;
+
+    // Simulate response after delay
+    setTimeout(() => {
+      thinking.remove();
+      const reply = document.createElement('div');
+      reply.className = 'agent-msg assistant';
+      reply.innerHTML = `
+        <div class="agent-msg-header">🤖 RilleCode Agent</div>
+        收到！让我来处理 <b>"${text}"</b>。我会先分析代码库，然后给出具体的实现方案。你可以随时在左侧编辑器中预览和应用更改。
+      `;
+      thread.appendChild(reply);
+      thread.scrollTop = thread.scrollHeight;
+    }, 1800 + Math.random() * 1200);
+  }
+
+  input.addEventListener('input', autoResize);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+  sendBtn.addEventListener('click', sendMessage);
+})();
+
+// Activity bar switching
+(function() {
+  const btns = document.querySelectorAll('.activity-btn');
+  btns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      btns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+})();
+
+// Tab switching in editor
+(function() {
+  const tabs = document.querySelectorAll('.tabs-bar .tab');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', function(e) {
+      if (e.target.closest('.tab-close')) return;
+      tabs.forEach(t => t.classList.remove('active'));
+      this.classList.add('active');
+    });
+  });
+})();
+
+// Terminal tab switching
+(function() {
+  const termTabs = document.querySelectorAll('.terminal-tab');
+  termTabs.forEach(tab => {
+    tab.addEventListener('click', function() {
+      termTabs.forEach(t => t.classList.remove('active'));
+      this.classList.add('active');
+    });
+  });
+})();
+
+// Panel toggle buttons
+(function() {
+  const toggles = document.querySelectorAll('.chrome-toggle');
+  toggles.forEach(btn => {
+    btn.addEventListener('click', function() {
+      this.classList.toggle('active');
+    });
+  });
+})();
+
+console.log('%c🚀 RilleCode — Vibe Coding %cready',
+  'color:#638aff;font-size:16px;font-weight:bold;',
+  'color:#8b949e;');
+console.log('%cAI-powered code editor | Dark cyberpunk theme',
+  'color:#8b5cf6;font-size:11px;');
+</script>
+</body>
+</html>
