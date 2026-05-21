@@ -4,17 +4,15 @@ import {
   ArrowUp,
   Box,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Files,
   Folder,
   GitBranch,
+  Globe,
   Home,
   MessageSquare,
   Plus,
   RefreshCw,
   Search,
-  Server,
   Settings,
   PanelBottom,
   PanelLeft,
@@ -28,7 +26,6 @@ import { SearchPanel } from './components/SearchPanel'
 import { GitPanel } from './components/GitPanel'
 import { GitDiffViewer, type GitDiffTarget } from './components/GitDiffViewer'
 import { TerminalPanel } from './components/TerminalPanel'
-import { RemotePanel } from './components/RemotePanel'
 import { AgentPanel } from './components/agent/AgentPanel'
 import { ModelSettingsDialog } from './components/ModelSettingsDialog'
 import type { AgentEvent, AgentSession, AgentSessionSummary } from '../shared/agent/protocol'
@@ -60,8 +57,10 @@ export interface AppContextType extends AppState {
   markFileApplied: (path: string, content: string) => void
 }
 
-type SideView = 'explorer' | 'search' | 'git' | 'remote' | 'agent'
 type BottomPanelTab = 'problems' | 'output' | 'debug' | 'terminal' | 'ports'
+type RightTool = 'launcher' | 'files' | 'review' | 'search' | 'browser'
+
+type GitMeta = Pick<GitStatusResult, 'isRepo' | 'repoRoot' | 'branch' | 'remoteName' | 'error'>
 
 type TerminalLaunchRequest = {
   id: number
@@ -124,6 +123,21 @@ function fileNameFromPath(path: string): string {
   return path.split(/[/\\]/).pop() ?? path
 }
 
+function workspaceKey(workspace: WorkspaceLocation | null): string {
+  if (!workspace) return 'none'
+  return `${workspace.kind}:${workspace.path}`
+}
+
+function sessionTimeLabel(timestamp: number): string {
+  const diff = Math.max(0, Date.now() - timestamp)
+  const minute = 60_000
+  const hour = 60 * minute
+  const day = 24 * hour
+  if (diff < hour) return `${Math.max(1, Math.floor(diff / minute))} 分`
+  if (diff < day) return `${Math.floor(diff / hour)} 小时`
+  return `${Math.floor(diff / day)} 天`
+}
+
 function dirnameFromPath(path: string): string {
   const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
   if (!normalized || normalized === '/') return '/'
@@ -184,13 +198,14 @@ export default function App() {
     openFiles: [],
     activeFilePath: null,
   })
-  const [activeSideView, setActiveSideView] = useState<SideView>('explorer')
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isSidePanelVisible, setIsSidePanelVisible] = useState(() => readStoredBoolean('rille:side-panel-visible', true))
-  const [isRightPanelVisible, setIsRightPanelVisible] = useState(() => readStoredBoolean('rille:right-panel-visible', true))
-  const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(() => readStoredBoolean('rille:bottom-panel-visible:v2', false))
+  const [isRightPanelVisible, setIsRightPanelVisible] = useState(() => readStoredBoolean('rille:file-panel-visible:v2', false))
+  const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(() => readStoredBoolean('rille:bottom-panel-visible:v3', false))
   const [activeBottomTab, setActiveBottomTab] = useState<BottomPanelTab>('terminal')
+  const [activeRightTool, setActiveRightTool] = useState<RightTool>('launcher')
+  const [isRightPanelDetailExpanded, setIsRightPanelDetailExpanded] = useState(false)
   const [terminalNewSignal, setTerminalNewSignal] = useState(0)
   const [terminalKillSignal, setTerminalKillSignal] = useState(0)
   const [terminalLaunchRequest, setTerminalLaunchRequest] = useState<TerminalLaunchRequest | null>(null)
@@ -199,12 +214,14 @@ export default function App() {
   const [diagnostics, setDiagnostics] = useState<EditorDiagnostic[]>([])
   const [breakpoints, setBreakpoints] = useState<Record<string, number[]>>({})
   const [sidebarWidth, setSidebarWidth] = useState(240)
-  const [rightPanelWidth, setRightPanelWidth] = useState(340)
+  const [rightPanelWidth, setRightPanelWidth] = useState(520)
   const [remoteFolderConnection, setRemoteFolderConnection] = useState<RemoteConnection | null>(null)
   const [remoteFolderDialog, setRemoteFolderDialog] = useState<RemoteFolderDialogState | null>(null)
   const [agentSessions, setAgentSessions] = useState<AgentSessionSummary[]>([])
   const [selectedAgentSession, setSelectedAgentSession] = useState<AgentSession | null>(null)
   const [isAgentSessionsLoading, setIsAgentSessionsLoading] = useState(false)
+  const [gitMeta, setGitMeta] = useState<GitMeta | null>(null)
+  const [collapsedProjectKeys, setCollapsedProjectKeys] = useState<Set<string>>(() => new Set())
   const menuRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<MonacoEditorApi.IStandaloneCodeEditor | null>(null)
   const pendingRevealRef = useRef<{ path: string; line: number; column: number } | null>(null)
@@ -219,32 +236,45 @@ export default function App() {
     }
   }, [])
 
-  const selectAgentSession = useCallback(async (sessionId: string) => {
-    const session = await window.rille.agentResumeSession(sessionId)
-    setSelectedAgentSession(session)
-    setIsRightPanelVisible(true)
-    void refreshAgentSessions()
-  }, [refreshAgentSessions])
-
-  const createAgentSessionForWorkspace = useCallback(async () => {
-    const session = await window.rille.agentCreateSession(state.workspace, 'ask')
-    setSelectedAgentSession(session)
-    setIsRightPanelVisible(true)
-    setActiveSideView('agent')
-    void refreshAgentSessions()
-  }, [refreshAgentSessions, state.workspace])
-
-  const setWorkspace = useCallback(async (workspace: WorkspaceLocation) => {
-    const tree = await window.rille.readDirectory(workspace.path, workspace)
+  const loadWorkspaceContext = useCallback(async (workspace: WorkspaceLocation | null) => {
     editorRef.current = null
     pendingRevealRef.current = null
     setGitDiffTarget(null)
     setCursorPosition({ line: 1, column: 1 })
     setDiagnostics([])
     setBreakpoints({})
+    setGitMeta(null)
+    setActiveRightTool('launcher')
+    setIsRightPanelDetailExpanded(false)
+
+    if (!workspace) {
+      setState(prev => ({ ...prev, workspace: null, fileTree: [], openFiles: [], activeFilePath: null }))
+      return
+    }
+
+    const tree = await window.rille.readDirectory(workspace.path, workspace)
     setState(prev => ({ ...prev, workspace, fileTree: tree, openFiles: [], activeFilePath: null }))
-    setActiveSideView('explorer')
   }, [])
+
+  const selectAgentSession = useCallback(async (sessionId: string) => {
+    const session = await window.rille.agentResumeSession(sessionId)
+    setSelectedAgentSession(session)
+    await loadWorkspaceContext(session.workspace)
+    void refreshAgentSessions()
+  }, [loadWorkspaceContext, refreshAgentSessions])
+
+  const createAgentSessionForWorkspace = useCallback(async () => {
+    const workspace = selectedAgentSession ? selectedAgentSession.workspace : state.workspace
+    const session = await window.rille.agentCreateSession(workspace, 'ask')
+    setSelectedAgentSession(session)
+    await loadWorkspaceContext(session.workspace)
+    void refreshAgentSessions()
+  }, [loadWorkspaceContext, refreshAgentSessions, selectedAgentSession, state.workspace])
+
+  const setWorkspace = useCallback(async (workspace: WorkspaceLocation) => {
+    setSelectedAgentSession(null)
+    await loadWorkspaceContext(workspace)
+  }, [loadWorkspaceContext])
 
   const resolveRemoteFolderConnection = useCallback(async (): Promise<RemoteConnection | null> => {
     const connections = await window.rille.remoteListConnections()
@@ -346,6 +376,9 @@ export default function App() {
 
   const openFile = useCallback(async (path: string) => {
     setGitDiffTarget(null)
+    setActiveRightTool('files')
+    setIsRightPanelDetailExpanded(true)
+    setIsRightPanelVisible(true)
     const existing = state.openFiles.find(f => normalizePath(f.path) === normalizePath(path))
     if (existing) {
       setState(prev => ({ ...prev, activeFilePath: existing.path }))
@@ -440,7 +473,7 @@ export default function App() {
   }, [state.openFiles, state.workspace])
 
   const selectedOpenFile = state.openFiles.find(f => f.path === state.activeFilePath)
-  const activeFile = gitDiffTarget ? undefined : selectedOpenFile
+  const activeFile = selectedOpenFile
   const workspaceName = state.workspace?.label || (workspacePath ? fileNameFromPath(workspacePath) : 'RilleCode')
   const workspaceTitle = workspaceName.toUpperCase()
   const hasRemoteFolderContext = Boolean(remoteFolderConnection || (state.workspace?.kind !== 'local' && state.workspace?.connectionId))
@@ -453,11 +486,11 @@ export default function App() {
   }, [isSidePanelVisible])
 
   useEffect(() => {
-    window.localStorage.setItem('rille:right-panel-visible', String(isRightPanelVisible))
+    window.localStorage.setItem('rille:file-panel-visible:v2', String(isRightPanelVisible))
   }, [isRightPanelVisible])
 
   useEffect(() => {
-    window.localStorage.setItem('rille:bottom-panel-visible:v2', String(isBottomPanelVisible))
+    window.localStorage.setItem('rille:bottom-panel-visible:v3', String(isBottomPanelVisible))
   }, [isBottomPanelVisible])
 
   useEffect(() => {
@@ -496,14 +529,12 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false
-    window.rille.agentResumeLastSession(state.workspace)
+    window.rille.agentResumeLastSession(null)
       .then(async session => {
         if (cancelled) return
         if (session) {
           setSelectedAgentSession(session)
-        } else {
-          const created = await window.rille.agentCreateSession(state.workspace, 'ask')
-          if (!cancelled) setSelectedAgentSession(created)
+          await loadWorkspaceContext(session.workspace)
         }
         void refreshAgentSessions()
       })
@@ -513,7 +544,32 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [refreshAgentSessions, state.workspace])
+  }, [loadWorkspaceContext, refreshAgentSessions])
+
+  useEffect(() => {
+    let cancelled = false
+    const workspace = state.workspace
+    if (!workspace) {
+      setGitMeta(null)
+      return
+    }
+    window.rille.gitStatus(workspace.path, workspace)
+      .then(status => {
+        if (!cancelled) setGitMeta({
+          isRepo: status.isRepo,
+          repoRoot: status.repoRoot,
+          branch: status.branch,
+          remoteName: status.remoteName,
+          error: status.error,
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setGitMeta({ isRepo: false, repoRoot: '', branch: '' })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [state.workspace])
 
   const saveFileAs = useCallback(async () => {
     if (!activeFile) return
@@ -640,6 +696,9 @@ export default function App() {
     pendingRevealRef.current = null
     setCursorPosition({ line: 1, column: 1 })
     setGitDiffTarget(target)
+    setActiveRightTool('review')
+    setIsRightPanelDetailExpanded(true)
+    setIsRightPanelVisible(true)
   }, [])
 
   const ctx: AppContextType = {
@@ -683,9 +742,9 @@ export default function App() {
     {
       label: '查看(V)',
       items: [
-        { label: '资源管理器', action: () => setActiveSideView('explorer') },
-        { label: '搜索', action: () => setActiveSideView('search') },
-        { label: '源代码管理', action: () => setActiveSideView('git') },
+        { label: '文件', action: () => { setIsRightPanelVisible(true); setActiveRightTool('files') } },
+        { label: '搜索', action: () => { setIsRightPanelVisible(true); setActiveRightTool('search') } },
+        { label: '审查', action: () => { setIsRightPanelVisible(true); setActiveRightTool('review') } },
       ],
     },
     {
@@ -715,101 +774,111 @@ export default function App() {
     },
   ], [activeBottomTab, activeFile, closeAllFiles, closeFile, closeTerminal, cycleFile, isBottomPanelVisible, newTerminal, openFileFromDialog, openWorkspace, runEditorCommand, saveAllFiles, saveFile, saveFileAs, showBottomPanel, state.openFiles])
 
-  const renderSidebar = () => {
-    if (activeSideView === 'search') {
-      return <SearchPanel workspace={state.workspace} onOpenFile={openFile} />
+  const projectSessionGroups = useMemo(() => {
+    const groups = new Map<string, { workspace: WorkspaceLocation; sessions: AgentSessionSummary[] }>()
+    for (const session of agentSessions) {
+      if (!session.workspace) continue
+      const key = workspaceKey(session.workspace)
+      const existing = groups.get(key)
+      if (existing) {
+        existing.sessions.push(session)
+      } else {
+        groups.set(key, { workspace: session.workspace, sessions: [session] })
+      }
     }
+    return [...groups.values()].sort((a, b) => {
+      const latestA = Math.max(...a.sessions.map(session => session.updatedAt))
+      const latestB = Math.max(...b.sessions.map(session => session.updatedAt))
+      return latestB - latestA
+    })
+  }, [agentSessions])
 
-    if (activeSideView === 'git') {
-      return <GitPanel workspace={state.workspace} onOpenDiff={openGitDiff} />
-    }
+  const plainSessions = useMemo(
+    () => agentSessions.filter(session => !session.workspace),
+    [agentSessions],
+  )
 
-    if (activeSideView === 'remote') {
-      return <RemotePanel onOpenWorkspace={setWorkspace} onRemoteConnectionReady={setRemoteFolderConnection} />
-    }
+  const toggleProjectGroup = useCallback((key: string) => {
+    setCollapsedProjectKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }, [])
 
-    if (activeSideView === 'agent') {
-      return (
-        <>
-          <div className="side-view-title-row explorer-title">
-            <button type="button" className="workspace-root">
-              <MessageSquare size={14} />
-              <span>对话</span>
-            </button>
-            <button type="button" className="side-action" onClick={() => void createAgentSessionForWorkspace()}>
-              新建
-            </button>
-          </div>
-          <div className="agent-session-list">
-            {isAgentSessionsLoading && agentSessions.length === 0 ? (
-              <div className="panel-empty">正在读取对话...</div>
-            ) : agentSessions.length === 0 ? (
-              <div className="panel-empty">还没有对话。</div>
-            ) : (
-              agentSessions.map(session => (
-                <button
-                  key={session.id}
-                  type="button"
-                  className={'agent-session-item ' + (selectedAgentSession?.id === session.id ? 'active ' : '') + session.status}
-                  onClick={() => void selectAgentSession(session.id)}
-                >
-                  <div>
-                    <strong>{session.title || 'Vibe Coding'}</strong>
-                    <span>{session.lastMessage || session.workspace?.label || '新对话'}</span>
-                  </div>
-                  <small>{agentVerificationLabel(session)}</small>
-                </button>
-              ))
-            )}
-            <button type="button" className="agent-session-new" onClick={() => void createAgentSessionForWorkspace()}>
-              <Plus size={14} />
-              <span>新建对话</span>
-            </button>
-          </div>
-        </>
-      )
-    }
+  const renderSessionItem = (session: AgentSessionSummary) => (
+    <button
+      key={session.id}
+      type="button"
+      className={'agent-session-item ' + (selectedAgentSession?.id === session.id ? 'active ' : '') + session.status}
+      onClick={() => void selectAgentSession(session.id)}
+    >
+      <span className="agent-session-label">{session.lastMessage || session.title || '新对话'}</span>
+      <span className="agent-session-time">{sessionTimeLabel(session.updatedAt)}</span>
+    </button>
+  )
 
-    return (
-      <>
-        <div className="side-view-title-row explorer-title">
-          <button type="button" className="workspace-root">
-            <ChevronDown size={14} />
-            <span>{state.workspace ? workspaceTitle : '资源管理器'}</span>
-          </button>
-          <button type="button" className="side-action" onClick={state.workspace && !hasRemoteFolderContext ? refreshWorkspace : openWorkspace}>
-            {state.workspace && !hasRemoteFolderContext ? '刷新' : '打开'}
-          </button>
-        </div>
-        {state.workspace ? (
-          <>
-            <FileTree
-              entries={state.fileTree}
-              workspace={state.workspace}
-              onSelectFile={openFile}
-              activePath={state.activeFilePath}
-            />
-          </>
-        ) : (
-          <div className="panel-empty">打开文件夹后可以浏览文件。</div>
-        )}
-      </>
-    )
-  }
+  const renderSidebar = () => (
+    <div className="conversation-sidebar">
+      <button type="button" className="conversation-new-button" onClick={() => void createAgentSessionForWorkspace()}>
+        <Plus size={15} />
+        <span>新对话</span>
+      </button>
 
-  const renderSideToolbar = () => (
-    <div className="sidebar-activity-tabs" aria-label="侧边栏功能">
-      <button type="button" className={'sidebar-activity-item ' + (activeSideView === 'explorer' ? 'active' : '')} title="资源管理器" onClick={() => setActiveSideView('explorer')}><Files size={17} /></button>
-      <button type="button" className={'sidebar-activity-item ' + (activeSideView === 'search' ? 'active' : '')} title="搜索" onClick={() => setActiveSideView('search')}><Search size={17} /></button>
-      <button type="button" className={'sidebar-activity-item ' + (activeSideView === 'git' ? 'active' : '')} title="源代码管理" onClick={() => setActiveSideView('git')}><GitBranch size={17} /></button>
-      <button type="button" className={'sidebar-activity-item ' + (activeSideView === 'remote' ? 'active' : '')} title="远程" onClick={() => setActiveSideView('remote')}><Server size={17} /></button>
-      <button type="button" className={'sidebar-activity-item ' + (activeSideView === 'agent' ? 'active' : '')} title="对话" onClick={() => setActiveSideView('agent')}><MessageSquare size={17} /></button>
+      <div className="conversation-sidebar-scroll">
+        <section className="conversation-sidebar-section">
+          <div className="conversation-sidebar-heading">项目</div>
+          {isAgentSessionsLoading && agentSessions.length === 0 ? (
+            <div className="conversation-empty">正在读取对话...</div>
+          ) : projectSessionGroups.length === 0 ? (
+            <div className="conversation-empty">暂无项目</div>
+          ) : (
+            projectSessionGroups.map(group => {
+              const key = workspaceKey(group.workspace)
+              const isExpanded = !collapsedProjectKeys.has(key)
+              return (
+                <div className={'project-session-group ' + (isExpanded ? 'expanded' : 'collapsed')} key={key}>
+                  <button
+                    type="button"
+                    className="project-session-title"
+                    aria-expanded={isExpanded}
+                    onClick={() => toggleProjectGroup(key)}
+                  >
+                    <ChevronDown size={13} className="project-session-chevron" />
+                    <Folder size={15} />
+                    <span>{group.workspace.label || fileNameFromPath(group.workspace.path)}</span>
+                  </button>
+                  {isExpanded && (
+                    <div className="project-session-list">
+                      {group.sessions.map(renderSessionItem)}
+                    </div>
+                  )}
+                </div>
+              )
+            })
+          )}
+        </section>
+
+        <section className="conversation-sidebar-section plain">
+          <div className="conversation-sidebar-heading">对话</div>
+          {plainSessions.length === 0 ? (
+            <div className="conversation-empty">暂无聊天</div>
+          ) : (
+            plainSessions.map(renderSessionItem)
+          )}
+        </section>
+      </div>
     </div>
   )
 
   const renderAgentPanel = () => (
     <AgentPanel
       workspace={state.workspace}
+      gitMeta={gitMeta}
       activeFile={activeFile}
       openFiles={state.openFiles}
       diagnostics={visibleDiagnostics}
@@ -821,17 +890,203 @@ export default function App() {
     />
   )
 
-  const emptyTitle = !state.workspace
-    ? '打开文件夹或文件开始使用'
-    : activeSideView === 'search'
-      ? '在左侧搜索项目内容'
-      : activeSideView === 'git'
-        ? '在左侧管理 Git 变更'
-        : activeSideView === 'remote'
-          ? '在左侧连接远程环境'
-          : activeSideView === 'agent'
-            ? '在左侧选择或新建对话'
-            : '从资源管理器选择文件'
+  const renderFileWorkspacePanel = () => {
+    const hasEditor = Boolean(activeFile)
+    const hasDiff = Boolean(gitDiffTarget && state.workspace)
+    const hasProject = Boolean(state.workspace)
+    const hasGit = Boolean(gitMeta?.isRepo)
+    const workspaceLabel = state.workspace?.label || (state.workspace ? fileNameFromPath(state.workspace.path) : '')
+    const activePathLabel = activeFile?.name || workspaceLabel || '项目'
+
+    const toolButtons: Array<{ tool: RightTool; label: string; description: string; icon: typeof Files; disabled?: boolean }> = [
+      ...(hasProject ? [{ tool: 'files' as const, label: '文件', description: '浏览项目文件', icon: Files }] : []),
+      ...(hasProject && hasGit ? [{ tool: 'review' as const, label: '审查', description: '查看代码更改', icon: GitBranch }] : []),
+      ...(hasProject ? [{ tool: 'search' as const, label: '搜索', description: '搜索项目内容', icon: Search }] : []),
+      { tool: 'browser', label: '浏览器', description: '打开网站', icon: Globe, disabled: true },
+    ]
+
+    const renderToolLauncher = () => (
+      <div className="right-tool-launcher" aria-label="项目工具">
+        {toolButtons.map(item => {
+          const Icon = item.icon
+          return (
+            <button
+              type="button"
+              key={item.tool}
+              className={'right-tool-card ' + (activeRightTool === item.tool ? 'active' : '')}
+              disabled={item.disabled}
+              onClick={() => {
+                setActiveRightTool(item.tool)
+                setIsRightPanelDetailExpanded(false)
+              }}
+            >
+              <Icon size={25} />
+              <strong>{item.label}</strong>
+              <span>{item.description}</span>
+            </button>
+          )
+        })}
+      </div>
+    )
+
+    return (
+      <aside className={'file-workspace-panel right-tool-panel ' + (isRightPanelDetailExpanded ? 'detail-expanded' : '')} aria-label="项目工具">
+        {activeRightTool === 'files' && state.workspace && (
+          <div className="right-workspace-pathbar">
+            <span>{workspaceLabel}</span>
+            {activeFile && (
+              <>
+                <ChevronDown size={13} className="path-separator" />
+                <strong>{activePathLabel}</strong>
+              </>
+            )}
+          </div>
+        )}
+        <div className="file-workspace-body">
+          {activeRightTool === 'launcher' && renderToolLauncher()}
+
+          {activeRightTool === 'browser' && (
+            <div className="file-panel-empty browser-placeholder">
+              <Globe size={34} />
+              <span>浏览器功能暂未实现</span>
+            </div>
+          )}
+
+          {activeRightTool === 'files' && (
+            <section className="file-workspace-section file-panel-tree" aria-label="文件">
+              <div className="side-view-title-row explorer-title">
+                <button type="button" className="workspace-root">
+                  <ChevronDown size={14} />
+                  <span>{state.workspace ? workspaceTitle : '资源管理器'}</span>
+                </button>
+                <button type="button" className="side-action" onClick={state.workspace && !hasRemoteFolderContext ? refreshWorkspace : openWorkspace}>
+                  {state.workspace && !hasRemoteFolderContext ? '刷新' : '打开'}
+                </button>
+              </div>
+              {state.workspace ? (
+                <FileTree
+                  entries={state.fileTree}
+                  workspace={state.workspace}
+                  onSelectFile={openFile}
+                  activePath={state.activeFilePath}
+                />
+              ) : (
+                <div className="panel-empty">打开文件夹后可以浏览文件。</div>
+              )}
+            </section>
+          )}
+
+          {activeRightTool === 'files' && hasEditor && isRightPanelDetailExpanded && (
+            <section className="file-workspace-section file-panel-editor" aria-label="编辑器">
+              {state.openFiles.length > 0 && (
+                <Tabs
+                  files={state.openFiles}
+                  activePath={state.activeFilePath}
+                  onSelect={(path) => {
+                    setActiveRightTool('files')
+                    setIsRightPanelDetailExpanded(true)
+                    setActiveFile(path)
+                  }}
+                  onClose={closeFile}
+                />
+              )}
+              <div className="editor-container">
+                {activeFile ? (
+                  <Editor
+                    key={activeFile.path}
+                    path={activeFile.path}
+                    language={getLanguage(activeFile.name)}
+                    value={activeFile.content}
+                    onChange={(v) => updateFileContent(activeFile.path, v ?? '')}
+                    onSave={() => saveFile(activeFile.path)}
+                    onEditorMount={(editor) => {
+                      editorRef.current = editor
+                      revealPendingPosition(editor, activeFile.path)
+                    }}
+                    onCursorPositionChange={setCursorPosition}
+                    onDiagnosticsChange={setDiagnostics}
+                    breakpointLines={breakpoints[activeFile.path] || []}
+                    onBreakpointToggle={(line) => toggleBreakpoint(activeFile.path, line)}
+                  />
+                ) : (
+                  <div className="file-panel-empty">
+                    <Files size={34} />
+                    <span>从文件树选择文件</span>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {activeRightTool === 'review' && (
+            <section className="file-workspace-section review-panel-section" aria-label="审查">
+              <GitPanel workspace={state.workspace} onOpenDiff={openGitDiff} />
+            </section>
+          )}
+
+          {activeRightTool === 'review' && hasDiff && isRightPanelDetailExpanded && (
+            <section className="file-workspace-section file-panel-diff" aria-label="Diff">
+              {gitDiffTarget && state.workspace ? (
+                <GitDiffViewer
+                  key={gitDiffTarget.id}
+                  workspace={state.workspace}
+                  target={gitDiffTarget}
+                />
+              ) : (
+                <div className="file-panel-empty">
+                  <GitBranch size={34} />
+                  <span>从 Git 面板选择一个 diff</span>
+                </div>
+              )}
+            </section>
+          )}
+
+          {activeRightTool === 'search' && (
+            <section className="file-workspace-section search-panel-section" aria-label="搜索">
+              <SearchPanel workspace={state.workspace} onOpenFile={openFile} />
+            </section>
+          )}
+
+          {activeRightTool === 'search' && hasEditor && isRightPanelDetailExpanded && (
+            <section className="file-workspace-section file-panel-editor" aria-label="编辑器">
+              {state.openFiles.length > 0 && (
+                <Tabs
+                  files={state.openFiles}
+                  activePath={state.activeFilePath}
+                  onSelect={(path) => {
+                    setActiveRightTool('search')
+                    setIsRightPanelDetailExpanded(true)
+                    setActiveFile(path)
+                  }}
+                  onClose={closeFile}
+                />
+              )}
+              <div className="editor-container">
+                {activeFile && (
+                  <Editor
+                    key={activeFile.path}
+                    path={activeFile.path}
+                    language={getLanguage(activeFile.name)}
+                    value={activeFile.content}
+                    onChange={(v) => updateFileContent(activeFile.path, v ?? '')}
+                    onSave={() => saveFile(activeFile.path)}
+                    onEditorMount={(editor) => {
+                      editorRef.current = editor
+                      revealPendingPosition(editor, activeFile.path)
+                    }}
+                    onCursorPositionChange={setCursorPosition}
+                    onDiagnosticsChange={setDiagnostics}
+                    breakpointLines={breakpoints[activeFile.path] || []}
+                    onBreakpointToggle={(line) => toggleBreakpoint(activeFile.path, line)}
+                  />
+                )}
+              </div>
+            </section>
+          )}
+        </div>
+      </aside>
+    )
+  }
 
   return (
     <AppContext.Provider value={ctx}>
@@ -878,9 +1133,6 @@ export default function App() {
           </div>
 
           <div className="chrome-center">
-            <button type="button" className="chrome-nav ghost" aria-label="上一个标签" onClick={() => cycleFile(-1)}><ChevronLeft size={14} /></button>
-            <button type="button" className="chrome-nav ghost" aria-label="下一个标签" onClick={() => cycleFile(1)}><ChevronRight size={14} /></button>
-            <span className="chrome-title">RilleCode</span>
           </div>
 
           <div className="chrome-right">
@@ -914,9 +1166,18 @@ export default function App() {
             <button
               type="button"
               className={'chrome-panel-toggle ' + (isRightPanelVisible ? 'active' : '')}
-              title={isRightPanelVisible ? '隐藏右侧栏' : '显示右侧栏'}
-              aria-label={isRightPanelVisible ? '隐藏右侧栏' : '显示右侧栏'}
-              onClick={() => setIsRightPanelVisible(value => !value)}
+              title={isRightPanelVisible ? '隐藏文件栏' : '显示文件栏'}
+              aria-label={isRightPanelVisible ? '隐藏文件栏' : '显示文件栏'}
+              onClick={() => {
+                setIsRightPanelVisible(value => {
+                  const next = !value
+                  if (!next) {
+                    setActiveRightTool('launcher')
+                    setIsRightPanelDetailExpanded(false)
+                  }
+                  return next
+                })
+              }}
             >
               <PanelRight size={14} />
             </button>
@@ -928,11 +1189,13 @@ export default function App() {
           + (!isSidePanelVisible ? 'left-collapsed ' : '')
           + (!isRightPanelVisible ? 'right-collapsed ' : '')
           + (!isBottomPanelVisible ? 'bottom-collapsed' : '')
-        } style={{ '--sidebar-width': `${sidebarWidth}px`, '--right-panel-width': `${rightPanelWidth}px` } as CSSProperties}>
+        } style={{
+          '--sidebar-width': `${sidebarWidth}px`,
+          '--right-panel-width': `${rightPanelWidth}px`,
+        } as CSSProperties}>
           {isSidePanelVisible && (
             <>
               <aside className="sidebar ide-sidebar" style={{ width: sidebarWidth }}>
-                {renderSideToolbar()}
                 {renderSidebar()}
               </aside>
 
@@ -957,48 +1220,9 @@ export default function App() {
             </>
           )}
 
-          <section className="editor-area">
-            {state.openFiles.length > 0 && (
-              <Tabs
-                files={state.openFiles}
-                activePath={gitDiffTarget ? null : state.activeFilePath}
-                onSelect={setActiveFile}
-                onClose={closeFile}
-              />
-            )}
-            <div className="editor-container">
-              {gitDiffTarget && state.workspace ? (
-                <GitDiffViewer
-                  key={gitDiffTarget.id}
-                  workspace={state.workspace}
-                  target={gitDiffTarget}
-                />
-              ) : activeFile ? (
-                <Editor
-                  key={activeFile.path}
-                  path={activeFile.path}
-                  language={getLanguage(activeFile.name)}
-                  value={activeFile.content}
-                  onChange={(v) => updateFileContent(activeFile.path, v ?? '')}
-                  onSave={() => saveFile(activeFile.path)}
-                  onEditorMount={(editor) => {
-                    editorRef.current = editor
-                    revealPendingPosition(editor, activeFile.path)
-                  }}
-                  onCursorPositionChange={setCursorPosition}
-                  onDiagnosticsChange={setDiagnostics}
-                  breakpointLines={breakpoints[activeFile.path] || []}
-                  onBreakpointToggle={(line) => toggleBreakpoint(activeFile.path, line)}
-                />
-              ) : (
-                <div className="empty-editor">
-                  <div className="empty-cube" aria-hidden="true"><Box size={78} /></div>
-                  <div className="empty-message">{emptyTitle}</div>
-                  {!state.workspace && (
-                    <button type="button" className="empty-add-folder" onClick={openWorkspace}>打开文件夹</button>
-                  )}
-                </div>
-              )}
+          <section className="editor-area conversation-area">
+            <div className="conversation-panel-shell">
+              {renderAgentPanel()}
             </div>
             <TerminalPanel
               workspace={state.workspace}
@@ -1026,7 +1250,7 @@ export default function App() {
                   const startWidth = rightPanelWidth
                   const onMove = (ev: PointerEvent) => {
                     const delta = startX - ev.clientX
-                    setRightPanelWidth(Math.max(260, Math.min(560, startWidth + delta)))
+                    setRightPanelWidth(Math.max(300, Math.min(900, startWidth + delta)))
                   }
                   const onUp = () => {
                     document.removeEventListener('pointermove', onMove)
@@ -1036,7 +1260,7 @@ export default function App() {
                   document.addEventListener('pointerup', onUp)
                 }}
               />
-              {renderAgentPanel()}
+              {renderFileWorkspacePanel()}
             </>
           )}
         </main>

@@ -42,6 +42,7 @@ declare global {
     isRepo: boolean
     repoRoot: string
     branch: string
+    remoteName?: string
     staged: string[]
     unstaged: string[]
     untracked: string[]

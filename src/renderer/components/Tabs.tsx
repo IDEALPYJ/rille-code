@@ -1,5 +1,5 @@
 import type { OpenFile } from '../App'
-import { X } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 
 interface Props {
   files: OpenFile[]
@@ -13,28 +13,33 @@ export function Tabs({ files, activePath, onSelect, onClose }: Props) {
 
   return (
     <div className="tabs-bar">
-      {files.map(file => (
-        <div
-          key={file.path}
-          className={'tab ' + (activePath === file.path ? 'active' : '')}
-          onClick={() => onSelect(file.path)}
-          title={file.path}
-        >
-          {file.isDirty && <span className="dirty-indicator" />}
-          <span className="tab-name">{file.name}</span>
-          <button
-            type="button"
-            className="tab-close"
-            aria-label={'Close ' + file.name}
-            onClick={(e) => {
-              e.stopPropagation()
-              onClose(file.path)
-            }}
+      <div className="tabs-scroll">
+        {files.map(file => (
+          <div
+            key={file.path}
+            className={'tab ' + (activePath === file.path ? 'active' : '')}
+            onClick={() => onSelect(file.path)}
+            title={file.path}
           >
-            <X size={12} />
-          </button>
-        </div>
-      ))}
+            {file.isDirty && <span className="dirty-indicator" />}
+            <span className="tab-name">{file.name}</span>
+            <button
+              type="button"
+              className="tab-close"
+              aria-label={'Close ' + file.name}
+              onClick={(e) => {
+                e.stopPropagation()
+                onClose(file.path)
+              }}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button type="button" className="tab-add" aria-label="新建标签" disabled>
+        <Plus size={15} />
+      </button>
     </div>
   )
 }

@@ -40,6 +40,7 @@ interface GitStatusResult {
   isRepo: boolean
   repoRoot: string
   branch: string
+  remoteName?: string
   staged: string[]
   unstaged: string[]
   untracked: string[]
@@ -582,12 +583,25 @@ function normalizeGitLimit(limit) {
   return Math.max(1, Math.min(200, Math.floor(value)));
 }
 
+function repoNameFromRemote(remoteUrl: string): string | undefined {
+  const raw = remoteUrl.trim()
+  if (!raw) return undefined
+  const cleaned = raw.replace(/\.git$/, '').replace(/[\/:]+$/, '')
+  const name = cleaned.split(/[/:]/).filter(Boolean).pop()
+  return name || undefined
+}
+
 async function gitStatus(rootPath) {
   const repo = await resolveRepoRoot(rootPath);
   if (!repo.success) return { isRepo: false, repoRoot: '', branch: '', staged: [], unstaged: [], untracked: [], error: repo.error };
   const branchResult = await runGit(repo.repoRoot, ['branch', '--show-current']);
   const fallbackBranch = await runGit(repo.repoRoot, ['rev-parse', '--short', 'HEAD']);
   const statusResult = await runGit(repo.repoRoot, ['status', '--porcelain=v1', '-z']);
+  const remoteResult = await runGit(repo.repoRoot, ['remote', 'get-url', 'origin']);
+  const remoteListResult = remoteResult.success ? remoteResult : await runGit(repo.repoRoot, ['remote']);
+  const remoteName = remoteResult.success
+    ? repoNameFromRemote(remoteResult.stdout)
+    : (remoteListResult.stdout.split(/\r?\n/).map(item => item.trim()).filter(Boolean)[0] || undefined);
   const staged = new Set();
   const unstaged = new Set();
   const untracked = new Set();
@@ -608,7 +622,7 @@ async function gitStatus(rootPath) {
       if (y !== ' ' && y !== '?') unstaged.add(filePath);
     }
   }
-  return { isRepo: true, repoRoot: repo.repoRoot, branch: branchResult.stdout.trim() || fallbackBranch.stdout.trim() || 'HEAD', staged: Array.from(staged).sort(), unstaged: Array.from(unstaged).sort(), untracked: Array.from(untracked).sort(), operationState: await getGitOperationState(repo.repoRoot), error: statusResult.success ? undefined : statusResult.error };
+  return { isRepo: true, repoRoot: repo.repoRoot, branch: branchResult.stdout.trim() || fallbackBranch.stdout.trim() || 'HEAD', remoteName, staged: Array.from(staged).sort(), unstaged: Array.from(unstaged).sort(), untracked: Array.from(untracked).sort(), operationState: await getGitOperationState(repo.repoRoot), error: statusResult.success ? undefined : statusResult.error };
 }
 
 async function gitFileDiff(rootPath, filePath, kind) {
@@ -1119,6 +1133,14 @@ function parseGitHubRemote(remoteUrl: string): { owner: string; repo: string } |
   return { owner: match[1], repo: match[2] }
 }
 
+function repoNameFromRemote(remoteUrl: string): string | undefined {
+  const raw = remoteUrl.trim()
+  if (!raw) return undefined
+  const cleaned = raw.replace(/\.git$/, '').replace(/[\/:]+$/, '')
+  const name = cleaned.split(/[/:]/).filter(Boolean).pop()
+  return name || undefined
+}
+
 async function getGitHubRepo(repoRoot: string): Promise<{ owner: string; repo: string } | null> {
   const remotes = await runGit(repoRoot, ['remote', '-v'])
   if (!remotes.success) return null
@@ -1202,6 +1224,11 @@ async function getGitStatus(rootPath: string): Promise<GitStatusResult> {
   const branchResult = await runGit(repo.repoRoot, ['branch', '--show-current'])
   const fallbackBranch = await runGit(repo.repoRoot, ['rev-parse', '--short', 'HEAD'])
   const statusResult = await runGit(repo.repoRoot, ['status', '--porcelain=v1', '-z'])
+  const remoteResult = await runGit(repo.repoRoot, ['remote', 'get-url', 'origin'])
+  const remoteListResult = remoteResult.success ? remoteResult : await runGit(repo.repoRoot, ['remote'])
+  const remoteName = remoteResult.success
+    ? repoNameFromRemote(remoteResult.stdout)
+    : remoteListResult.stdout.split(/\r?\n/).map(item => item.trim()).filter(Boolean)[0]
 
   const staged = new Set<string>()
   const unstaged = new Set<string>()
@@ -1234,6 +1261,7 @@ async function getGitStatus(rootPath: string): Promise<GitStatusResult> {
     isRepo: true,
     repoRoot: repo.repoRoot,
     branch: branchResult.stdout.trim() || fallbackBranch.stdout.trim() || 'HEAD',
+    remoteName,
     staged: [...staged].sort(),
     unstaged: [...unstaged].sort(),
     untracked: [...untracked].sort(),

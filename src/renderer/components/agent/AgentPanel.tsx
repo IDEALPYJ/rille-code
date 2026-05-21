@@ -4,7 +4,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   AlertCircle,
-  Bot,
+  ArrowUp,
+  Check,
   CheckCircle2,
   ChevronDown,
   Circle,
@@ -14,7 +15,6 @@ import {
   Pencil,
   RotateCcw,
   Search,
-  Send,
   Square,
   Terminal,
   Wrench,
@@ -35,6 +35,7 @@ import type { EditorDiagnostic } from '../Editor'
 
 interface Props {
   workspace: WorkspaceLocation | null
+  gitMeta?: Pick<GitStatusResult, 'isRepo' | 'branch' | 'remoteName'> | null
   activeFile?: OpenFile
   openFiles: OpenFile[]
   diagnostics: EditorDiagnostic[]
@@ -48,11 +49,20 @@ interface Props {
 const permissionModes: Array<{ value: AgentPermissionMode; label: string }> = [
   { value: 'ask', label: 'Ask' },
   { value: 'plan', label: 'Plan' },
-  { value: 'accept_edits', label: 'Edit' },
+  { value: 'accept_edits', label: 'Execute' },
 ]
 
 function fileNameFromPath(filePath: string): string {
   return filePath.split(/[/\\]/).pop() ?? filePath
+}
+
+function shortModelLabel(model?: string): string {
+  const raw = (model || '模型').trim()
+  const base = raw.split('/').pop() || raw
+  const lower = base.toLowerCase()
+  if (lower.includes('gpt-5.5')) return 'GPT-5.5'
+  if (lower.includes('gpt-5')) return 'GPT-5'
+  return base
 }
 
 function MarkdownMessage({ text }: { text: string }) {
@@ -565,7 +575,9 @@ export function AgentPanel(props: Props) {
   const [draft, setDraft] = useState('')
   const [activeTurn, setActiveTurn] = useState<AgentTurn | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [openComposeMenu, setOpenComposeMenu] = useState<'mode' | 'model' | null>(null)
   const threadRef = useRef<HTMLDivElement | null>(null)
+  const composeRef = useRef<HTMLFormElement | null>(null)
   const session = props.session
 
   useEffect(() => {
@@ -639,6 +651,17 @@ export function AgentPanel(props: Props) {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
   }, [parts.length, activeTurn])
 
+  useEffect(() => {
+    if (!openComposeMenu) return
+    const closeMenu = (event: PointerEvent) => {
+      if (!composeRef.current?.contains(event.target as Node)) {
+        setOpenComposeMenu(null)
+      }
+    }
+    window.addEventListener('pointerdown', closeMenu)
+    return () => window.removeEventListener('pointerdown', closeMenu)
+  }, [openComposeMenu])
+
   const contextLine = useMemo(() => {
     const file = props.activeFile?.name ?? '无当前文件'
     const dirty = props.openFiles.filter(item => item.isDirty).length
@@ -674,6 +697,20 @@ export function AgentPanel(props: Props) {
   }, [parts])
 
   const pendingProposals = useMemo(() => Object.values(proposals).filter(proposal => proposal.state === 'pending'), [proposals])
+  const selectedMode = session?.permissionMode ?? 'ask'
+  const selectedModeLabel = permissionModes.find(mode => mode.value === selectedMode)?.label ?? 'Ask'
+  const modelProfiles = modelStore?.profiles ?? []
+  const activeModelProfile = modelProfiles.find(profile => profile.id === modelStore?.activeProfileId) ?? modelProfiles[0]
+  const activeModelLabel = activeModelProfile
+    ? shortModelLabel(activeModelProfile.model)
+    : '模型'
+  const projectContextLabel = useMemo(() => {
+    if (!props.workspace) return null
+    const folder = props.workspace.label || fileNameFromPath(props.workspace.path)
+    if (!props.gitMeta?.isRepo) return folder
+    const gitLabel = [props.gitMeta.remoteName, props.gitMeta.branch].filter(Boolean).join(' · ')
+    return gitLabel ? `${folder} · ${gitLabel}` : folder
+  }, [props.gitMeta?.branch, props.gitMeta?.isRepo, props.gitMeta?.remoteName, props.workspace])
 
   const submit = useCallback(async () => {
     const text = draft.trim()
@@ -734,11 +771,7 @@ export function AgentPanel(props: Props) {
 
       <div className="agent-thread" ref={threadRef}>
         {parts.length === 0 ? (
-          <div className="agent-empty-state">
-            <Bot size={24} />
-            <strong>助手就绪</strong>
-            <span>{props.activeFile ? props.activeFile.name : '打开文件后上下文会自动带入'}</span>
-          </div>
+          <div className="agent-empty-state" aria-hidden="true" />
         ) : (
           timelineItems.map(item => (
             item.type === 'tool-group' ? (
@@ -771,6 +804,7 @@ export function AgentPanel(props: Props) {
 
       <form
         className="agent-compose"
+        ref={composeRef}
         onSubmit={(event) => {
           event.preventDefault()
           void submit()
@@ -779,7 +813,7 @@ export function AgentPanel(props: Props) {
         <textarea
           value={draft}
           rows={2}
-          placeholder="描述你想让 Agent 做什么..."
+          placeholder=""
           onChange={event => setDraft(event.target.value)}
           onKeyDown={event => {
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -789,35 +823,89 @@ export function AgentPanel(props: Props) {
           }}
         />
         <div className="agent-compose-actions">
-          <select
-            value={session?.permissionMode ?? 'ask'}
-            aria-label="Agent 模式"
-            disabled={!session || session.status === 'running'}
-            onChange={event => void updateMode(event.target.value as AgentPermissionMode)}
-          >
-            {permissionModes.map(mode => (
-              <option key={mode.value} value={mode.value}>{mode.label}</option>
-            ))}
-          </select>
+          <div className="agent-compose-menu-wrap mode-menu">
+            <button
+              type="button"
+              className="agent-compose-menu-trigger"
+              aria-label="Agent 模式"
+              aria-expanded={openComposeMenu === 'mode'}
+              disabled={!session || session.status === 'running'}
+              onClick={() => setOpenComposeMenu(openComposeMenu === 'mode' ? null : 'mode')}
+            >
+              <span>{selectedModeLabel}</span>
+              <ChevronDown size={14} />
+            </button>
+            {openComposeMenu === 'mode' && (
+              <div className="agent-compose-menu mode" role="menu">
+                <div className="agent-compose-menu-label">权限</div>
+                {permissionModes.map(mode => (
+                  <button
+                    type="button"
+                    key={mode.value}
+                    className={mode.value === selectedMode ? 'selected' : ''}
+                    role="menuitemradio"
+                    aria-checked={mode.value === selectedMode}
+                    onClick={() => {
+                      setOpenComposeMenu(null)
+                      void updateMode(mode.value)
+                    }}
+                  >
+                    <span>{mode.label}</span>
+                    {mode.value === selectedMode && <Check size={16} />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {projectContextLabel && (
+            <div className="agent-compose-context" title={projectContextLabel}>
+              <span>{projectContextLabel}</span>
+            </div>
+          )}
+          <div className="agent-compose-menu-wrap model-menu">
+            <button
+              type="button"
+              className="agent-compose-menu-trigger agent-model-trigger"
+              aria-label="选择模型"
+              aria-expanded={openComposeMenu === 'model'}
+              disabled={!modelStore || modelProfiles.length === 0}
+              onMouseDown={() => void refreshModels()}
+              onClick={() => setOpenComposeMenu(openComposeMenu === 'model' ? null : 'model')}
+            >
+              <span>{activeModelLabel}</span>
+              <ChevronDown size={14} />
+            </button>
+            {openComposeMenu === 'model' && (
+              <div className="agent-compose-menu model" role="menu">
+                <div className="agent-compose-menu-label">模型</div>
+                {modelProfiles.map(profile => {
+                  const label = shortModelLabel(profile.model)
+                  const selected = profile.id === modelStore?.activeProfileId
+                  return (
+                    <button
+                      type="button"
+                      key={profile.id}
+                      className={selected ? 'selected' : ''}
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      onClick={() => {
+                        setOpenComposeMenu(null)
+                        void selectModelProfile(profile.id)
+                      }}
+                    >
+                      <span>{label}</span>
+                      {selected && <Check size={16} />}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
           {session?.status === 'running' && activeTurn ? (
             <button type="button" title="停止" aria-label="停止" onClick={() => void interrupt()}><Square size={14} /></button>
           ) : (
-            <button type="submit" title="发送" aria-label="发送" disabled={!draft.trim() || !session}><Send size={14} /></button>
+            <button type="submit" title="发送" aria-label="发送" disabled={!draft.trim() || !session}><ArrowUp size={16} /></button>
           )}
-          <select
-            className="agent-model-select"
-            value={modelStore?.activeProfileId ?? ''}
-            aria-label="选择模型"
-            onMouseDown={() => void refreshModels()}
-            onChange={event => void selectModelProfile(event.target.value)}
-            disabled={!modelStore || modelStore.profiles.length === 0}
-          >
-            {modelStore?.profiles.map(profile => (
-              <option key={profile.id} value={profile.id}>
-                {profile.name || `${profile.providerId} ${profile.model}`}
-              </option>
-            ))}
-          </select>
         </div>
       </form>
       {reviewProposal && session && (
