@@ -374,6 +374,8 @@ declare global {
     agentResumeSession(sessionId: string): Promise<AgentSession>
     agentResumeLastSession(workspace: AgentWorkspaceLocation | null): Promise<AgentSession | null>
     agentListSessions(): Promise<AgentSessionSummary[]>
+    agentRenameSession(sessionId: string, title: string): Promise<AgentSession | null>
+    agentDeleteSession(sessionId: string): Promise<boolean>
     agentSubmitTurn(sessionId: string, text: string, context: AgentContextSnapshot): Promise<AgentTurn>
     agentInterruptTurn(sessionId: string, turnId: string): Promise<AgentSession | null>
     agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>

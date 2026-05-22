@@ -16,6 +16,7 @@ import type {
 import { applyEditProposal, createRollbackProposal, rejectEditProposal } from './editStore'
 import { AgentLoop } from './runtime'
 import { appendSessionEvent, readSessionEvents, saveSessionMeta } from './sessionStore'
+import { createInitialPlanItems, createInitialTaskContract } from './taskContract'
 import { VerifierRunner } from './verifier'
 
 function now(): number {
@@ -59,6 +60,12 @@ export class AgentThread {
   }
 
   get view(): AgentSession {
+    return this.session
+  }
+
+  rename(title: string): AgentSession {
+    this.session = { ...this.session, title: title.trim() || '新对话', updatedAt: now() }
+    this.emit({ type: 'session.updated', session: this.session })
     return this.session
   }
 
@@ -179,11 +186,46 @@ export class AgentThread {
     })
 
     try {
+      const contract = createInitialTaskContract({ session: this.session, turn, text, context })
+      const planItems = createInitialPlanItems(contract)
+      const contractMessageId = createMessageId('system')
+      const planMessageId = createMessageId('system')
+      const planPartId = createPartId()
+
+      this.emit({ type: 'task_contract.created', sessionId: this.session.id, turnId: turn.id, contract })
+      this.emitPart(turn.id, {
+        id: createPartId(),
+        messageId: contractMessageId,
+        type: 'task_contract',
+        contract,
+        createdAt: now(),
+      })
+      this.emit({
+        type: 'plan.updated',
+        sessionId: this.session.id,
+        turnId: turn.id,
+        items: planItems,
+        reason: 'runtime 初始化任务计划',
+        source: 'runtime',
+        createdAt: now(),
+      })
+      this.emitPart(turn.id, {
+        id: planPartId,
+        messageId: planMessageId,
+        type: 'plan',
+        items: planItems,
+        reason: 'runtime 初始化任务计划',
+        createdAt: now(),
+      })
+
       const reason = await new AgentLoop({
         session: this.session,
         turn,
         text,
         context,
+        taskContract: contract,
+        planItems,
+        planPart: { id: planPartId, messageId: planMessageId },
         signal: this.abortController.signal,
         emit: event => this.emit(event),
         requestApproval: request => this.requestApproval(request),

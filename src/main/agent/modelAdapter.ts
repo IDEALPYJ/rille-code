@@ -1,4 +1,4 @@
-import type { AgentSession } from '../../shared/agent/protocol'
+import type { AgentPlanItem, AgentSession, TaskContract } from '../../shared/agent/protocol'
 import type { AgentChatMessage } from './provider'
 import { createRuntimeToolCall, getModelVisibleToolDefinitions, type RuntimeToolCall } from './tools'
 
@@ -7,7 +7,7 @@ export type ModelAction =
   | { type: 'tool_calls'; toolCalls: RuntimeToolCall[]; text?: string }
 
 export interface ModelAdapter {
-  buildMessages(input: { session: AgentSession; contextPrompt: string; userTask: string }): AgentChatMessage[]
+  buildMessages(input: { session: AgentSession; contextPrompt: string; userTask: string; taskContract?: TaskContract; planItems?: AgentPlanItem[] }): AgentChatMessage[]
   parseAction(text: string): ModelAction
 }
 
@@ -23,6 +23,8 @@ export function systemPrompt(session: AgentSession): string {
     '你必须通过工具探索代码；不要声称已经读取、修改或运行命令，除非工具结果显示已完成。',
     '写文件必须先调用 propose_file_edit 生成 diff proposal；用户或 runtime 批准后才会应用。',
     '命令只能通过 run_command 运行，并会经过权限策略或用户审批。',
+    '当前任务合同是行动边界：不得扩大 scope，不得执行 nonGoals，最终 answer 必须逐条回到 acceptanceCriteria。',
+    '你必须通过 update_plan 工具维护结构化计划；不要只在自然语言里声称计划状态已变化。',
     '工具结果会包含 status、exitCode、timedOut、truncated、durationMs 等验证字段；命令失败、超时或诊断仍有错误时，必须继续修复或明确说明阻塞原因。',
     `当前权限模式: ${session.permissionMode}。`,
     '',
@@ -33,6 +35,39 @@ export function systemPrompt(session: AgentSession): string {
     '1. 如果需要调用工具，只返回 JSON：{"tool_calls":[{"name":"read_file","input":{"filePath":"..."}}],"text":"可选简短说明"}',
     '2. 如果已完成或需要直接回答，只返回 JSON：{"answer":"..."}',
     '3. 不要把 JSON 包在 Markdown 代码块里。',
+  ].join('\n')
+}
+
+function taskContractPrompt(contract?: TaskContract): string {
+  if (!contract) return 'Task Contract: none'
+  return [
+    'Task Contract JSON:',
+    JSON.stringify({
+      id: contract.id,
+      goal: contract.goal,
+      scope: contract.scope,
+      nonGoals: contract.nonGoals,
+      constraints: contract.constraints,
+      acceptanceCriteria: contract.acceptanceCriteria,
+      verificationPlan: contract.verificationPlan,
+      riskPoints: contract.riskPoints,
+      assumptions: contract.assumptions,
+      status: contract.status,
+    }, null, 2),
+  ].join('\n')
+}
+
+function planPrompt(items?: AgentPlanItem[]): string {
+  if (!items || items.length === 0) return 'Structured Plan: none'
+  return [
+    'Structured Plan JSON:',
+    JSON.stringify(items.map(item => ({
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      status: item.status,
+      evidence: item.evidence,
+    })), null, 2),
   ].join('\n')
 }
 
@@ -76,10 +111,23 @@ export function parseTextJsonModelAction(text: string): ModelAction {
 }
 
 export class TextJsonToolAdapter implements ModelAdapter {
-  buildMessages(input: { session: AgentSession; contextPrompt: string; userTask: string }): AgentChatMessage[] {
+  buildMessages(input: { session: AgentSession; contextPrompt: string; userTask: string; taskContract?: TaskContract; planItems?: AgentPlanItem[] }): AgentChatMessage[] {
     return [
       { role: 'system', content: systemPrompt(input.session) },
-      { role: 'user', content: ['IDE context:', input.contextPrompt, '', 'User task:', input.userTask].join('\n') },
+      {
+        role: 'user',
+        content: [
+          taskContractPrompt(input.taskContract),
+          '',
+          planPrompt(input.planItems),
+          '',
+          'IDE context:',
+          input.contextPrompt,
+          '',
+          'User task:',
+          input.userTask,
+        ].join('\n'),
+      },
     ]
   }
 
@@ -87,4 +135,3 @@ export class TextJsonToolAdapter implements ModelAdapter {
     return parseTextJsonModelAction(text)
   }
 }
-

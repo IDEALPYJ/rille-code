@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import type {
   AgentContextSnapshot,
   AgentEvent,
+  AgentPlanItem,
   AgentRunStage,
   AgentSession,
   AgentToolResult,
@@ -9,6 +10,7 @@ import type {
   ApprovalDecision,
   ApprovalRequest,
   MessagePart,
+  TaskContract,
   ToolCallView,
   ToolResultView,
   TurnStopReason,
@@ -25,6 +27,9 @@ interface RuntimeOptions {
   turn: AgentTurn
   text: string
   context: AgentContextSnapshot
+  taskContract?: TaskContract
+  planItems?: AgentPlanItem[]
+  planPart?: { id: string; messageId: string }
   signal: AbortSignal
   emit: (event: AgentEvent) => void
   requestApproval: (request: ApprovalRequest) => Promise<ApprovalDecision>
@@ -74,8 +79,11 @@ function hasVerificationFailure(results: Array<{ call: RuntimeToolCall; result: 
 
 export class AgentLoop {
   private readonly adapter = new TextJsonToolAdapter()
+  private planItems: AgentPlanItem[]
 
-  constructor(private readonly options: RuntimeOptions) {}
+  constructor(private readonly options: RuntimeOptions) {
+    this.planItems = [...(options.planItems ?? [])]
+  }
 
   async run(): Promise<TurnStopReason> {
     const assistantMessageId = createMessageId('assistant')
@@ -128,6 +136,8 @@ export class AgentLoop {
       session: this.options.session,
       contextPrompt,
       userTask: this.options.text,
+      taskContract: this.options.taskContract,
+      planItems: this.planItems,
     })
     const denialTracker = new DenialTracker()
 
@@ -202,6 +212,8 @@ export class AgentLoop {
           session: this.options.session,
           turn: this.options.turn,
           context: this.options.context,
+          taskContract: this.options.taskContract,
+          planItems: this.planItems,
           emitProposal: proposal => {
             this.options.emit({ type: 'edit.proposed', sessionId: this.options.session.id, turnId: this.options.turn.id, proposal })
             this.emitPart({
@@ -214,6 +226,7 @@ export class AgentLoop {
               createdAt: now(),
             })
           },
+          updatePlan: (items, reason) => this.updatePlan(items, reason),
         })
         results.push({ call, result })
         this.completeToolPart(toolPart, runningCall, result)
@@ -250,6 +263,31 @@ export class AgentLoop {
 
   private updatePart(part: MessagePart): void {
     this.options.emit({ type: 'message.part.updated', sessionId: this.options.session.id, turnId: this.options.turn.id, part })
+  }
+
+  private updatePlan(items: AgentPlanItem[], reason?: string): AgentPlanItem[] {
+    this.planItems = items
+    const createdAt = now()
+    this.options.emit({
+      type: 'plan.updated',
+      sessionId: this.options.session.id,
+      turnId: this.options.turn.id,
+      items,
+      reason,
+      source: 'model',
+      createdAt,
+    })
+    if (this.options.planPart) {
+      this.updatePart({
+        id: this.options.planPart.id,
+        messageId: this.options.planPart.messageId,
+        type: 'plan',
+        items,
+        reason,
+        createdAt,
+      })
+    }
+    return this.planItems
   }
 
   private emitStage(messageId: string, stage: AgentRunStage, detail?: string): void {

@@ -23,12 +23,14 @@ import type {
   AgentContextSnapshot,
   AgentEvent,
   AgentModelStoreSnapshot,
+  AgentPlanItem,
   AgentPermissionMode,
   AgentSession,
   AgentTurn,
   ApprovalRequest,
   EditProposal,
   MessagePart,
+  TaskContract,
 } from '../../../shared/agent/protocol'
 import type { OpenFile } from '../../App'
 import type { EditorDiagnostic } from '../Editor'
@@ -280,6 +282,101 @@ function VerificationPart({ part }: { part: Extract<MessagePart, { type: 'verifi
   )
 }
 
+function riskText(risk: TaskContract['riskPoints'][number]['risk']): string {
+  if (risk === 'critical') return '严重'
+  if (risk === 'high') return '高'
+  if (risk === 'medium') return '中'
+  return '低'
+}
+
+function scopeText(scope: TaskContract['scope'][number]): string {
+  const kindLabels: Record<typeof scope.kind, string> = {
+    file: '文件',
+    module: '模块',
+    behavior: '行为',
+    ui: '界面',
+    test: '测试',
+    doc: '文档',
+    workspace: '工作区',
+    unknown: '待确认',
+  }
+  return `${kindLabels[scope.kind]}: ${scope.value}`
+}
+
+function TaskContractPart({ part }: { part: Extract<MessagePart, { type: 'task_contract' }> }) {
+  const contract = part.contract
+  return (
+    <div className="agent-contract-card">
+      <div className="agent-contract-header">
+        <ListChecks size={15} />
+        <span>Task Contract</span>
+        <small>{contract.status}</small>
+      </div>
+      <div className="agent-contract-goal">{contract.goal}</div>
+      <div className="agent-contract-section">
+        <strong>范围</strong>
+        <div className="agent-contract-chips">
+          {contract.scope.slice(0, 4).map((scope, index) => (
+            <span key={`${scope.kind}-${scope.value}-${index}`}>{scopeText(scope)}</span>
+          ))}
+        </div>
+      </div>
+      <div className="agent-contract-section">
+        <strong>验收</strong>
+        <ul>
+          {contract.acceptanceCriteria.map(item => (
+            <li key={item.id}>{item.text}</li>
+          ))}
+        </ul>
+      </div>
+      {contract.riskPoints.length > 0 && (
+        <div className="agent-contract-section">
+          <strong>风险</strong>
+          <div className="agent-contract-risks">
+            {contract.riskPoints.slice(0, 3).map(item => (
+              <span className={'risk-' + item.risk} key={item.id}>{riskText(item.risk)} · {item.text}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function planStatusLabel(status: AgentPlanItem['status']): string {
+  if (status === 'in_progress') return '进行中'
+  if (status === 'completed') return '完成'
+  if (status === 'blocked') return '阻塞'
+  if (status === 'skipped') return '跳过'
+  return '待处理'
+}
+
+function PlanPart({ part }: { part: Extract<MessagePart, { type: 'plan' }> }) {
+  return (
+    <div className="agent-plan-card">
+      <div className="agent-contract-header">
+        <CheckCircle2 size={15} />
+        <span>Plan</span>
+        {part.reason && <small>{part.reason}</small>}
+      </div>
+      <ol className="agent-plan-list">
+        {part.items.map(item => (
+          <li className={'status-' + item.status} key={item.id}>
+            <span className="agent-plan-status">
+              {item.status === 'completed' ? <CheckCircle2 size={13} /> : item.status === 'blocked' ? <AlertCircle size={13} /> : <Circle size={13} />}
+            </span>
+            <div>
+              <strong>{item.title}</strong>
+              <small>{planStatusLabel(item.status)}{item.evidence ? ` · ${item.evidence}` : ''}</small>
+              {item.description && <p>{item.description}</p>}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
 function EditResultPart({ part }: { part: Extract<MessagePart, { type: 'edit_result' }> }) {
   return (
     <div className={'agent-edit-result state-' + part.state}>
@@ -362,6 +459,8 @@ function MessagePartView({
 }) {
   if (part.type === 'tool') return <ToolPart part={part} />
   if (part.type === 'stage') return <StagePart part={part} />
+  if (part.type === 'task_contract') return <TaskContractPart part={part} />
+  if (part.type === 'plan') return <PlanPart part={part} />
   if (part.type === 'diagnostic') return <DiagnosticPart part={part} />
   if (part.type === 'verification') return <VerificationPart part={part} />
   if (part.type === 'edit_result') return <EditResultPart part={part} />
@@ -583,12 +682,15 @@ export function AgentPanel(props: Props) {
   useEffect(() => {
     const unsubscribe = window.rille.onAgentEvent((event: AgentEvent) => {
       if (event.type === 'session.created' || event.type === 'session.updated') {
-        if (!props.sessionId || event.session.id === props.sessionId) props.onSessionChange(event.session)
+        if (props.sessionId && event.session.id === props.sessionId) props.onSessionChange(event.session)
         return
       }
-      if (props.sessionId && 'sessionId' in event && event.sessionId !== props.sessionId) return
+      if (!props.sessionId) return
+      if ('sessionId' in event && event.sessionId !== props.sessionId) return
       if (event.type === 'message.part.created') {
-        setParts(prev => [...prev, event.part])
+        setParts(prev => prev.some(part => part.id === event.part.id)
+          ? prev.map(part => part.id === event.part.id ? event.part : part)
+          : [...prev, event.part])
       } else if (event.type === 'message.part.updated') {
         setParts(prev => prev.some(part => part.id === event.part.id)
           ? prev.map(part => part.id === event.part.id ? event.part : part)
@@ -765,6 +867,11 @@ export function AgentPanel(props: Props) {
 
   return (
     <aside className="agent-panel" aria-label="Vibe Coding">
+      {projectContextLabel && (
+        <div className="agent-project-context" title={projectContextLabel}>
+          <span>{projectContextLabel}</span>
+        </div>
+      )}
       <div className="agent-context-bar">
         <div className="agent-context-line" title={contextLine}>{contextLine}</div>
       </div>
@@ -857,11 +964,6 @@ export function AgentPanel(props: Props) {
               </div>
             )}
           </div>
-          {projectContextLabel && (
-            <div className="agent-compose-context" title={projectContextLabel}>
-              <span>{projectContextLabel}</span>
-            </div>
-          )}
           <div className="agent-compose-menu-wrap model-menu">
             <button
               type="button"

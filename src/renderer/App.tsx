@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Files,
   Folder,
+  FolderOpen,
   GitBranch,
   Globe,
   Home,
@@ -17,6 +18,7 @@ import {
   PanelBottom,
   PanelLeft,
   PanelRight,
+  X,
 } from 'lucide-react'
 import { FileTree } from './components/FileTree'
 import { Tabs } from './components/Tabs'
@@ -59,6 +61,7 @@ export interface AppContextType extends AppState {
 
 type BottomPanelTab = 'problems' | 'output' | 'debug' | 'terminal' | 'ports'
 type RightTool = 'launcher' | 'files' | 'review' | 'search' | 'browser'
+type OpenRightTool = Exclude<RightTool, 'launcher' | 'browser'>
 
 type GitMeta = Pick<GitStatusResult, 'isRepo' | 'repoRoot' | 'branch' | 'remoteName' | 'error'>
 
@@ -121,6 +124,15 @@ function normalizePath(path: string): string {
 
 function fileNameFromPath(path: string): string {
   return path.split(/[/\\]/).pop() ?? path
+}
+
+function workspaceRelativePathSegments(filePath: string, workspacePath?: string | null): string[] {
+  const normalizedFile = normalizePath(filePath)
+  const normalizedWorkspace = normalizePath(workspacePath ?? '').replace(/\/+$/, '')
+  const relativePath = normalizedWorkspace && normalizedFile.toLowerCase().startsWith(`${normalizedWorkspace.toLowerCase()}/`)
+    ? normalizedFile.slice(normalizedWorkspace.length + 1)
+    : normalizedFile
+  return relativePath.split('/').filter(Boolean)
 }
 
 function workspaceKey(workspace: WorkspaceLocation | null): string {
@@ -205,7 +217,9 @@ export default function App() {
   const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(() => readStoredBoolean('rille:bottom-panel-visible:v3', false))
   const [activeBottomTab, setActiveBottomTab] = useState<BottomPanelTab>('terminal')
   const [activeRightTool, setActiveRightTool] = useState<RightTool>('launcher')
+  const [openRightTools, setOpenRightTools] = useState<OpenRightTool[]>([])
   const [isRightPanelDetailExpanded, setIsRightPanelDetailExpanded] = useState(false)
+  const [rightBrowserWidth, setRightBrowserWidth] = useState(300)
   const [terminalNewSignal, setTerminalNewSignal] = useState(0)
   const [terminalKillSignal, setTerminalKillSignal] = useState(0)
   const [terminalLaunchRequest, setTerminalLaunchRequest] = useState<TerminalLaunchRequest | null>(null)
@@ -220,6 +234,7 @@ export default function App() {
   const [agentSessions, setAgentSessions] = useState<AgentSessionSummary[]>([])
   const [selectedAgentSession, setSelectedAgentSession] = useState<AgentSession | null>(null)
   const [isAgentSessionsLoading, setIsAgentSessionsLoading] = useState(false)
+  const [sessionContextMenu, setSessionContextMenu] = useState<{ session: AgentSessionSummary; x: number; y: number } | null>(null)
   const [gitMeta, setGitMeta] = useState<GitMeta | null>(null)
   const [collapsedProjectKeys, setCollapsedProjectKeys] = useState<Set<string>>(() => new Set())
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -245,6 +260,7 @@ export default function App() {
     setBreakpoints({})
     setGitMeta(null)
     setActiveRightTool('launcher')
+    setOpenRightTools([])
     setIsRightPanelDetailExpanded(false)
 
     if (!workspace) {
@@ -256,12 +272,21 @@ export default function App() {
     setState(prev => ({ ...prev, workspace, fileTree: tree, openFiles: [], activeFilePath: null }))
   }, [])
 
-  const selectAgentSession = useCallback(async (sessionId: string) => {
-    const session = await window.rille.agentResumeSession(sessionId)
+  const selectAgentSession = useCallback(async (summary: AgentSessionSummary) => {
+    if (selectedAgentSession?.id === summary.id) return
+    const session: AgentSession = {
+      id: summary.id,
+      title: summary.title,
+      workspace: summary.workspace,
+      createdAt: summary.createdAt,
+      updatedAt: summary.updatedAt,
+      status: summary.status === 'running' || summary.status === 'waiting_approval' ? 'idle' : summary.status,
+      permissionMode: summary.permissionMode,
+    }
     setSelectedAgentSession(session)
     await loadWorkspaceContext(session.workspace)
     void refreshAgentSessions()
-  }, [loadWorkspaceContext, refreshAgentSessions])
+  }, [loadWorkspaceContext, refreshAgentSessions, selectedAgentSession?.id])
 
   const createAgentSessionForWorkspace = useCallback(async () => {
     const workspace = selectedAgentSession ? selectedAgentSession.workspace : state.workspace
@@ -377,6 +402,7 @@ export default function App() {
   const openFile = useCallback(async (path: string) => {
     setGitDiffTarget(null)
     setActiveRightTool('files')
+    setOpenRightTools(prev => prev.includes('files') ? prev : [...prev, 'files'])
     setIsRightPanelDetailExpanded(true)
     setIsRightPanelVisible(true)
     const existing = state.openFiles.find(f => normalizePath(f.path) === normalizePath(path))
@@ -520,8 +546,8 @@ export default function App() {
       if (event.type === 'message.part.created' && event.part.type === 'text') {
         const lastMessage = event.part.text.slice(0, 160)
         setAgentSessions(prev => prev.map(item => item.id === event.sessionId
-          ? { ...item, lastMessage, updatedAt: Date.now() }
-          : item).sort((a, b) => b.updatedAt - a.updatedAt))
+          ? { ...item, lastMessage }
+          : item))
       }
     })
     return unsubscribe
@@ -656,6 +682,44 @@ export default function App() {
     return () => window.removeEventListener('pointerdown', closeMenu)
   }, [openMenu])
 
+  useEffect(() => {
+    if (!sessionContextMenu) return
+    const closeMenu = () => setSessionContextMenu(null)
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSessionContextMenu(null)
+    }
+    window.addEventListener('pointerdown', closeMenu)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', closeMenu)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [sessionContextMenu])
+
+  const renameAgentSession = useCallback(async (session: AgentSessionSummary) => {
+    const currentTitle = session.title || session.lastMessage || '新对话'
+    const nextTitle = window.prompt('重命名对话', currentTitle)
+    if (nextTitle === null) return
+    const title = nextTitle.trim()
+    if (!title || title === session.title) return
+    const updated = await window.rille.agentRenameSession(session.id, title)
+    setAgentSessions(prev => prev.map(item => item.id === session.id ? { ...item, title, updatedAt: updated?.updatedAt ?? Date.now() } : item))
+    setSelectedAgentSession(prev => prev?.id === session.id && updated ? updated : prev)
+    void refreshAgentSessions()
+  }, [refreshAgentSessions])
+
+  const deleteAgentSession = useCallback(async (session: AgentSessionSummary) => {
+    const label = session.title || session.lastMessage || '这个对话'
+    if (!window.confirm(`删除“${label}”？此操作不可恢复。`)) return
+    await window.rille.agentDeleteSession(session.id)
+    setAgentSessions(prev => prev.filter(item => item.id !== session.id))
+    if (selectedAgentSession?.id === session.id) {
+      setSelectedAgentSession(null)
+      await loadWorkspaceContext(null)
+    }
+    void refreshAgentSessions()
+  }, [loadWorkspaceContext, refreshAgentSessions, selectedAgentSession?.id])
+
   const runEditorCommand = useCallback((command: string, fallbackCommand?: string) => {
     if (editorRef.current) {
       editorRef.current.focus()
@@ -697,6 +761,7 @@ export default function App() {
     setCursorPosition({ line: 1, column: 1 })
     setGitDiffTarget(target)
     setActiveRightTool('review')
+    setOpenRightTools(prev => prev.includes('review') ? prev : [...prev, 'review'])
     setIsRightPanelDetailExpanded(true)
     setIsRightPanelVisible(true)
   }, [])
@@ -742,9 +807,9 @@ export default function App() {
     {
       label: '查看(V)',
       items: [
-        { label: '文件', action: () => { setIsRightPanelVisible(true); setActiveRightTool('files') } },
-        { label: '搜索', action: () => { setIsRightPanelVisible(true); setActiveRightTool('search') } },
-        { label: '审查', action: () => { setIsRightPanelVisible(true); setActiveRightTool('review') } },
+        { label: '文件', action: () => { setIsRightPanelVisible(true); setOpenRightTools(prev => prev.includes('files') ? prev : [...prev, 'files']); setActiveRightTool('files') } },
+        { label: '搜索', action: () => { setIsRightPanelVisible(true); setOpenRightTools(prev => prev.includes('search') ? prev : [...prev, 'search']); setActiveRightTool('search') } },
+        { label: '审查', action: () => { setIsRightPanelVisible(true); setOpenRightTools(prev => prev.includes('review') ? prev : [...prev, 'review']); setActiveRightTool('review') } },
       ],
     },
     {
@@ -815,7 +880,11 @@ export default function App() {
       key={session.id}
       type="button"
       className={'agent-session-item ' + (selectedAgentSession?.id === session.id ? 'active ' : '') + session.status}
-      onClick={() => void selectAgentSession(session.id)}
+      onClick={() => void selectAgentSession(session)}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        setSessionContextMenu({ session, x: event.clientX, y: event.clientY })
+      }}
     >
       <span className="agent-session-label">{session.lastMessage || session.title || '新对话'}</span>
       <span className="agent-session-time">{sessionTimeLabel(session.updatedAt)}</span>
@@ -848,8 +917,7 @@ export default function App() {
                     aria-expanded={isExpanded}
                     onClick={() => toggleProjectGroup(key)}
                   >
-                    <ChevronDown size={13} className="project-session-chevron" />
-                    <Folder size={15} />
+                    {isExpanded ? <FolderOpen size={17} /> : <Folder size={17} />}
                     <span>{group.workspace.label || fileNameFromPath(group.workspace.path)}</span>
                   </button>
                   {isExpanded && (
@@ -896,7 +964,80 @@ export default function App() {
     const hasProject = Boolean(state.workspace)
     const hasGit = Boolean(gitMeta?.isRepo)
     const workspaceLabel = state.workspace?.label || (state.workspace ? fileNameFromPath(state.workspace.path) : '')
-    const activePathLabel = activeFile?.name || workspaceLabel || '项目'
+    const activePathSegments = activeFile
+      ? workspaceRelativePathSegments(activeFile.path, state.workspace?.path)
+      : []
+    const rightToolLabels: Record<OpenRightTool, string> = {
+      files: '文件',
+      review: '源代码管理',
+      search: '搜索',
+    }
+    const activateRightTool = (tool: RightTool) => {
+      if (tool === 'browser') return
+      if (tool !== 'launcher') {
+        setOpenRightTools(prev => prev.includes(tool) ? prev : [...prev, tool])
+      }
+      setActiveRightTool(tool)
+      setIsRightPanelDetailExpanded(false)
+    }
+    const closeRightTool = (tool: OpenRightTool) => {
+      setOpenRightTools(prev => prev.filter(item => item !== tool))
+      if (activeRightTool === tool) {
+        setActiveRightTool('launcher')
+        setIsRightPanelDetailExpanded(false)
+      }
+    }
+    const renderRightToolTabs = () => openRightTools.length > 0 && (
+      <div className="right-panel-tabs" role="tablist" aria-label="右侧面板">
+        <div className="right-panel-tabs-scroll">
+          {openRightTools.map(tool => (
+            <button
+              type="button"
+              key={tool}
+              role="tab"
+              aria-selected={activeRightTool === tool}
+              className={'right-panel-tab ' + (activeRightTool === tool ? 'active' : '')}
+              onClick={() => {
+                setActiveRightTool(tool)
+                setIsRightPanelDetailExpanded(false)
+              }}
+            >
+              <span>{rightToolLabels[tool]}</span>
+              <span
+                role="button"
+                tabIndex={0}
+                className="right-panel-tab-close"
+                aria-label={`关闭${rightToolLabels[tool]}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  closeRightTool(tool)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    closeRightTool(tool)
+                  }
+                }}
+              >
+                <X size={12} />
+              </span>
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="right-panel-tab-add"
+          aria-label="添加右侧面板"
+          onClick={() => {
+            setActiveRightTool('launcher')
+            setIsRightPanelDetailExpanded(false)
+          }}
+        >
+          <Plus size={15} />
+        </button>
+      </div>
+    )
 
     const toolButtons: Array<{ tool: RightTool; label: string; description: string; icon: typeof Files; disabled?: boolean }> = [
       ...(hasProject ? [{ tool: 'files' as const, label: '文件', description: '浏览项目文件', icon: Files }] : []),
@@ -915,10 +1056,7 @@ export default function App() {
               key={item.tool}
               className={'right-tool-card ' + (activeRightTool === item.tool ? 'active' : '')}
               disabled={item.disabled}
-              onClick={() => {
-                setActiveRightTool(item.tool)
-                setIsRightPanelDetailExpanded(false)
-              }}
+              onClick={() => activateRightTool(item.tool)}
             >
               <Icon size={25} />
               <strong>{item.label}</strong>
@@ -930,16 +1068,25 @@ export default function App() {
     )
 
     return (
-      <aside className={'file-workspace-panel right-tool-panel ' + (isRightPanelDetailExpanded ? 'detail-expanded' : '')} aria-label="项目工具">
+      <aside
+        className={'file-workspace-panel right-tool-panel ' + (isRightPanelDetailExpanded ? 'detail-expanded' : '')}
+        aria-label="项目工具"
+        style={{ '--right-browser-width': `${rightBrowserWidth}px` } as CSSProperties}
+      >
+        {renderRightToolTabs()}
         {activeRightTool === 'files' && state.workspace && (
           <div className="right-workspace-pathbar">
             <span>{workspaceLabel}</span>
-            {activeFile && (
-              <>
+            {activePathSegments.map((segment, index) => (
+              <span className="path-segment-wrap" key={`${segment}:${index}`}>
                 <ChevronDown size={13} className="path-separator" />
-                <strong>{activePathLabel}</strong>
-              </>
-            )}
+                {index === activePathSegments.length - 1 ? (
+                  <strong>{segment}</strong>
+                ) : (
+                  <span>{segment}</span>
+                )}
+              </span>
+            ))}
           </div>
         )}
         <div className="file-workspace-body">
@@ -977,6 +1124,25 @@ export default function App() {
           )}
 
           {activeRightTool === 'files' && hasEditor && isRightPanelDetailExpanded && (
+            <>
+            <div
+              className="right-detail-resize-handle"
+              onPointerDown={(event) => {
+                event.preventDefault()
+                const startX = event.clientX
+                const startWidth = rightBrowserWidth
+                const onMove = (moveEvent: PointerEvent) => {
+                  const delta = startX - moveEvent.clientX
+                  setRightBrowserWidth(Math.max(220, Math.min(520, startWidth + delta)))
+                }
+                const onUp = () => {
+                  document.removeEventListener('pointermove', onMove)
+                  document.removeEventListener('pointerup', onUp)
+                }
+                document.addEventListener('pointermove', onMove)
+                document.addEventListener('pointerup', onUp)
+              }}
+            />
             <section className="file-workspace-section file-panel-editor" aria-label="编辑器">
               {state.openFiles.length > 0 && (
                 <Tabs
@@ -1016,6 +1182,7 @@ export default function App() {
                 )}
               </div>
             </section>
+            </>
           )}
 
           {activeRightTool === 'review' && (
@@ -1025,6 +1192,25 @@ export default function App() {
           )}
 
           {activeRightTool === 'review' && hasDiff && isRightPanelDetailExpanded && (
+            <>
+            <div
+              className="right-detail-resize-handle"
+              onPointerDown={(event) => {
+                event.preventDefault()
+                const startX = event.clientX
+                const startWidth = rightBrowserWidth
+                const onMove = (moveEvent: PointerEvent) => {
+                  const delta = startX - moveEvent.clientX
+                  setRightBrowserWidth(Math.max(220, Math.min(520, startWidth + delta)))
+                }
+                const onUp = () => {
+                  document.removeEventListener('pointermove', onMove)
+                  document.removeEventListener('pointerup', onUp)
+                }
+                document.addEventListener('pointermove', onMove)
+                document.addEventListener('pointerup', onUp)
+              }}
+            />
             <section className="file-workspace-section file-panel-diff" aria-label="Diff">
               {gitDiffTarget && state.workspace ? (
                 <GitDiffViewer
@@ -1039,6 +1225,7 @@ export default function App() {
                 </div>
               )}
             </section>
+            </>
           )}
 
           {activeRightTool === 'search' && (
@@ -1048,6 +1235,25 @@ export default function App() {
           )}
 
           {activeRightTool === 'search' && hasEditor && isRightPanelDetailExpanded && (
+            <>
+            <div
+              className="right-detail-resize-handle"
+              onPointerDown={(event) => {
+                event.preventDefault()
+                const startX = event.clientX
+                const startWidth = rightBrowserWidth
+                const onMove = (moveEvent: PointerEvent) => {
+                  const delta = startX - moveEvent.clientX
+                  setRightBrowserWidth(Math.max(220, Math.min(520, startWidth + delta)))
+                }
+                const onUp = () => {
+                  document.removeEventListener('pointermove', onMove)
+                  document.removeEventListener('pointerup', onUp)
+                }
+                document.addEventListener('pointermove', onMove)
+                document.addEventListener('pointerup', onUp)
+              }}
+            />
             <section className="file-workspace-section file-panel-editor" aria-label="编辑器">
               {state.openFiles.length > 0 && (
                 <Tabs
@@ -1082,6 +1288,7 @@ export default function App() {
                 )}
               </div>
             </section>
+            </>
           )}
         </div>
       </aside>
@@ -1266,6 +1473,39 @@ export default function App() {
         </main>
 
         <ModelSettingsDialog open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+
+        {sessionContextMenu && (
+          <div
+            className="agent-session-context-menu"
+            style={{ left: sessionContextMenu.x, top: sessionContextMenu.y }}
+            onPointerDown={event => event.stopPropagation()}
+            role="menu"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                const session = sessionContextMenu.session
+                setSessionContextMenu(null)
+                void renameAgentSession(session)
+              }}
+            >
+              重命名
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="danger"
+              onClick={() => {
+                const session = sessionContextMenu.session
+                setSessionContextMenu(null)
+                void deleteAgentSession(session)
+              }}
+            >
+              删除
+            </button>
+          </div>
+        )}
 
         {remoteFolderDialog && (
           <div className="remote-modal-overlay">

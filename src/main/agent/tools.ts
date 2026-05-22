@@ -1,14 +1,17 @@
 import { randomUUID } from 'crypto'
 import type {
   AgentContextSnapshot,
+  AgentPlanItem,
   AgentSession,
   AgentToolDefinition,
   AgentToolResult,
   AgentTurn,
   EditProposal,
+  TaskContract,
   ToolResultView,
 } from '../../shared/agent/protocol'
 import { applyEditProposal, createEditProposal } from './editStore'
+import { normalizePlanUpdate } from './taskContract'
 import {
   needsShell,
   requireWorkspace,
@@ -32,7 +35,10 @@ export interface ToolExecutionContext {
   session: AgentSession
   turn: AgentTurn
   context: AgentContextSnapshot
+  taskContract?: TaskContract
+  planItems?: AgentPlanItem[]
   emitProposal: (proposal: EditProposal) => void
+  updatePlan?: (items: AgentPlanItem[], reason?: string) => AgentPlanItem[]
 }
 
 export interface RegisteredTool {
@@ -127,6 +133,57 @@ export const toolRegistry: RegisteredTool[] = [
     },
     summarize: () => '诊断快照',
     execute: async (_input, { context }) => diagnostics(context),
+  },
+  {
+    definition: {
+      name: 'update_plan',
+      title: '更新结构化计划',
+      description: 'Update the current structured plan. Input: { "items": [{"id"?: string, "title": string, "status": "pending"|"in_progress"|"completed"|"blocked"|"skipped", "description"?: string, "evidence"?: string}], "reason"?: string }.',
+      inputSchema: {
+        type: 'object',
+        required: ['items'],
+        properties: {
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                title: { type: 'string' },
+                status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'blocked', 'skipped'] },
+                description: { type: 'string' },
+                evidence: { type: 'string' },
+              },
+              additionalProperties: false,
+            },
+          },
+          reason: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+      isReadOnly: true,
+      risk: 'low',
+    },
+    summarize: input => {
+      const items = Array.isArray(input.items) ? input.items : []
+      return str(input, 'reason') || `更新 ${items.length} 个计划项`
+    },
+    execute: async (input, context) => {
+      if (!context.updatePlan) {
+        return { output: '当前 runtime 不支持更新结构化计划。', error: 'plan_update_unavailable', status: 'error' }
+      }
+      const normalized = normalizePlanUpdate({
+        currentItems: context.planItems ?? [],
+        rawItems: input.items,
+        reason: input.reason,
+      })
+      const items = context.updatePlan(normalized.items, normalized.reason)
+      return {
+        output: normalized.reason ? `计划已更新：${normalized.reason}` : '计划已更新。',
+        structured: { items: items as unknown as Record<string, unknown>, reason: normalized.reason },
+        status: 'ok',
+      }
+    },
   },
   {
     definition: {

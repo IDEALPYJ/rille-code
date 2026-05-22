@@ -131,6 +131,77 @@ export interface AgentContextSnapshot {
   cursor?: { line: number; column: number }
 }
 
+export type ContractScopeKind = 'file' | 'module' | 'behavior' | 'ui' | 'test' | 'doc' | 'workspace' | 'unknown'
+export type ContractScopeSource = 'user' | 'agent_inferred' | 'tool_observed'
+export type AcceptanceEvidenceRequirement = 'diagnostics' | 'command' | 'diff' | 'review' | 'browser' | 'user'
+export type AcceptanceCriterionStatus = 'unverified' | 'covered' | 'failed' | 'waived'
+export type VerificationPlanKind = 'diagnostics' | 'typecheck' | 'test' | 'lint' | 'build' | 'review' | 'manual'
+export type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
+export type TaskAssumptionStatus = 'open' | 'confirmed' | 'rejected' | 'stale'
+export type TaskContractStatus = 'draft' | 'active' | 'updated' | 'completed' | 'blocked'
+export type StructuredPlanStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'skipped'
+export type StructuredPlanSource = 'runtime' | 'model' | 'user'
+
+export interface ContractScopeItem {
+  kind: ContractScopeKind
+  value: string
+  source: ContractScopeSource
+}
+
+export interface AcceptanceCriterion {
+  id: string
+  text: string
+  evidenceRequired: AcceptanceEvidenceRequirement[]
+  status: AcceptanceCriterionStatus
+}
+
+export interface VerificationPlanItem {
+  id: string
+  verifier: VerificationPlanKind
+  reason: string
+  command?: string
+}
+
+export interface RiskPoint {
+  id: string
+  risk: RiskLevel
+  text: string
+  approvalRequired: boolean
+}
+
+export interface TaskAssumption {
+  id: string
+  text: string
+  status: TaskAssumptionStatus
+}
+
+export interface TaskContract {
+  id: string
+  sessionId: string
+  turnId: string
+  goal: string
+  scope: ContractScopeItem[]
+  nonGoals: string[]
+  constraints: string[]
+  acceptanceCriteria: AcceptanceCriterion[]
+  verificationPlan: VerificationPlanItem[]
+  riskPoints: RiskPoint[]
+  assumptions: TaskAssumption[]
+  status: TaskContractStatus
+  createdAt: number
+  updatedAt: number
+}
+
+export interface AgentPlanItem {
+  id: string
+  title: string
+  description?: string
+  status: StructuredPlanStatus
+  source: StructuredPlanSource
+  evidence?: string
+  updatedAt: number
+}
+
 export interface AgentSession {
   id: string
   workspace: AgentWorkspaceLocation | null
@@ -213,6 +284,8 @@ export type MessagePart =
   | { id: string; messageId: string; type: 'text'; role: 'user' | 'assistant' | 'system'; text: string; createdAt: number }
   | { id: string; messageId: string; type: 'reasoning'; text: string; redacted?: boolean; createdAt: number }
   | { id: string; messageId: string; type: 'stage'; stage: AgentRunStage; detail?: string; createdAt: number }
+  | { id: string; messageId: string; type: 'task_contract'; contract: TaskContract; createdAt: number }
+  | { id: string; messageId: string; type: 'plan'; items: AgentPlanItem[]; reason?: string; createdAt: number }
   | { id: string; messageId: string; type: 'tool'; call: ToolCallView; state: ToolState; output?: ToolResultView; createdAt: number }
   | { id: string; messageId: string; type: 'file'; filePath: string; range?: AgentTextRange; label: string; createdAt: number }
   | { id: string; messageId: string; type: 'diff'; proposalId: string; title: string; state: EditProposal['state']; createdAt: number }
@@ -268,6 +341,8 @@ export type AgentOp =
   | { type: 'session.resume'; sessionId: string }
   | { type: 'session.resumeLast'; workspace: AgentWorkspaceLocation | null }
   | { type: 'session.list' }
+  | { type: 'session.rename'; sessionId: string; title: string }
+  | { type: 'session.delete'; sessionId: string }
   | { type: 'turn.submit'; sessionId: string; text: string; context: AgentContextSnapshot }
   | { type: 'turn.interrupt'; sessionId: string; turnId: string }
   | { type: 'approval.respond'; requestId: string; decision: ApprovalDecision }
@@ -281,6 +356,9 @@ export type AgentEvent =
   | { type: 'session.updated'; session: AgentSession }
   | { type: 'turn.started'; sessionId: string; turn: AgentTurn }
   | { type: 'turn.stage'; sessionId: string; turnId: string; stage: AgentRunStage; detail?: string }
+  | { type: 'task_contract.created'; sessionId: string; turnId: string; contract: TaskContract }
+  | { type: 'task_contract.updated'; sessionId: string; turnId: string; contract: TaskContract; reason: string; source: StructuredPlanSource }
+  | { type: 'plan.updated'; sessionId: string; turnId: string; items: AgentPlanItem[]; reason?: string; source: StructuredPlanSource; createdAt: number }
   | { type: 'message.part.created'; sessionId: string; turnId?: string; part: MessagePart }
   | { type: 'message.part.updated'; sessionId: string; turnId?: string; part: MessagePart }
   | { type: 'tool.started'; sessionId: string; turnId: string; call: ToolCallView }

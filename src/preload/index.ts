@@ -91,6 +91,8 @@ export interface RilleAPI {
   agentResumeSession(sessionId: string): Promise<AgentSession>
   agentResumeLastSession(workspace: AgentWorkspaceLocation | null): Promise<AgentSession | null>
   agentListSessions(): Promise<AgentSessionSummary[]>
+  agentRenameSession(sessionId: string, title: string): Promise<AgentSession | null>
+  agentDeleteSession(sessionId: string): Promise<boolean>
   agentSubmitTurn(sessionId: string, text: string, context: AgentContextSnapshot): Promise<AgentTurn>
   agentInterruptTurn(sessionId: string, turnId: string): Promise<AgentSession | null>
   agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>
@@ -508,6 +510,8 @@ const api: RilleAPI = {
   agentResumeSession: (sessionId) => invokeAgent<AgentSession>('agent:resumeSession', { type: 'session.resume', sessionId }),
   agentResumeLastSession: (workspace) => invokeAgent<AgentSession | null>('agent:resumeLastSession', { type: 'session.resumeLast', workspace }),
   agentListSessions: () => invokeAgent<AgentSessionSummary[]>('agent:listSessions', { type: 'session.list' }),
+  agentRenameSession: (sessionId, title) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'session.rename', sessionId, title }),
+  agentDeleteSession: (sessionId) => invokeAgent<boolean>('agent:dispatch', { type: 'session.delete', sessionId }),
   agentSubmitTurn: (sessionId, text, context) => invokeAgent<AgentTurn>('agent:submitTurn', { type: 'turn.submit', sessionId, text, context }),
   agentInterruptTurn: (sessionId, turnId) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'turn.interrupt', sessionId, turnId }),
   agentRespondApproval: (requestId, decision) => invokeAgent<boolean>('agent:dispatch', { type: 'approval.respond', requestId, decision }),

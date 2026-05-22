@@ -3,7 +3,7 @@ import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModel
 import { deleteAgentModelProfile, listAgentModelProfiles, readAgentConfigSnapshot, saveAgentConfig, saveAgentModelProfile, selectAgentModelProfile } from './config'
 import { testAgentProvider } from './provider'
 import { AgentThread } from './thread'
-import { findLastSession, listSessionSummaries, readSessionMeta } from './sessionStore'
+import { deleteSessionStore, findLastSession, listSessionSummaries, readSessionMeta, renameSessionMeta } from './sessionStore'
 
 const threads = new Map<string, AgentThread>()
 
@@ -68,6 +68,25 @@ export function listAgentSessions(): AgentIpcResult<AgentSessionSummary[]> {
   }
 }
 
+export function renameAgentSession(op: Extract<AgentOp, { type: 'session.rename' }>): AgentIpcResult<AgentSession | null> {
+  try {
+    const thread = threads.get(op.sessionId)
+    if (thread) return ok(thread.rename(op.title))
+    return ok(renameSessionMeta(op.sessionId, op.title))
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export function deleteAgentSession(op: Extract<AgentOp, { type: 'session.delete' }>): AgentIpcResult<boolean> {
+  try {
+    threads.delete(op.sessionId)
+    return ok(deleteSessionStore(op.sessionId))
+  } catch (error) {
+    return fail(error)
+  }
+}
+
 export async function submitAgentTurn(op: Extract<AgentOp, { type: 'turn.submit' }>): Promise<AgentIpcResult<AgentTurn>> {
   try {
     return ok(await requireThread(op.sessionId).submitTurn(op.text, op.context))
@@ -78,6 +97,8 @@ export async function submitAgentTurn(op: Extract<AgentOp, { type: 'turn.submit'
 
 export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<AgentSession | EditProposal | boolean | null>> {
   try {
+    if (op.type === 'session.rename') return renameAgentSession(op)
+    if (op.type === 'session.delete') return deleteAgentSession(op)
     if (op.type === 'edit.apply') {
       return ok(await requireThread(op.sessionId).applyEdit(op.proposalId))
     }

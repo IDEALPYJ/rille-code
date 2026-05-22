@@ -184,7 +184,7 @@ export function Editor({
           fontSize: 14,
           fontFamily: "var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace)",
           fontLigatures: true,
-          minimap: { enabled: true, scale: 0.8, showSlider: 'mouseover' as const },
+          minimap: { enabled: false },
           lineNumbers: 'on',
           renderWhitespace: 'selection',
           bracketPairColorization: { enabled: true },

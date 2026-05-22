@@ -3,7 +3,8 @@ import { rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent, AgentSession } from '../../src/shared/agent/protocol'
+import type { AgentContextSnapshot, AgentEvent, AgentSession, AgentTurn } from '../../src/shared/agent/protocol'
+import { createInitialPlanItems, createInitialTaskContract } from '../../src/main/agent/taskContract'
 
 let userData = ''
 
@@ -22,6 +23,25 @@ function session(): AgentSession {
     updatedAt: Date.now(),
     status: 'idle',
     permissionMode: 'ask',
+  }
+}
+
+function turn(sessionId: string): AgentTurn {
+  return {
+    id: 'turn_test',
+    sessionId,
+    text: '修复当前类型错误',
+    createdAt: Date.now(),
+    status: 'running',
+  }
+}
+
+function context(): AgentContextSnapshot {
+  return {
+    workspace: null,
+    activeFile: null,
+    openFiles: [],
+    diagnostics: [],
   }
 }
 
@@ -48,5 +68,23 @@ describe('sessionStore', () => {
     const events = await store.readSessionEvents(meta.id)
     expect(events).toHaveLength(1)
   })
-})
 
+  it('replays task contract and plan events without requiring older sessions to have them', async () => {
+    userData = mkdtempSync(join(tmpdir(), 'rille-session-'))
+    const store = await import('../../src/main/agent/sessionStore')
+    const meta = session()
+    const activeTurn = turn(meta.id)
+    const contract = createInitialTaskContract({ session: meta, turn: activeTurn, text: activeTurn.text, context: context(), timestamp: 10 })
+    const planItems = createInitialPlanItems(contract, 11)
+    const events: AgentEvent[] = [
+      { type: 'session.created', session: meta },
+      { type: 'turn.started', sessionId: meta.id, turn: activeTurn },
+      { type: 'task_contract.created', sessionId: meta.id, turnId: activeTurn.id, contract },
+      { type: 'plan.updated', sessionId: meta.id, turnId: activeTurn.id, items: planItems, reason: 'runtime 初始化任务计划', source: 'runtime', createdAt: 11 },
+    ]
+
+    for (const event of events) await store.appendSessionEvent(event)
+
+    await expect(store.readSessionEvents(meta.id)).resolves.toEqual(events)
+  })
+})

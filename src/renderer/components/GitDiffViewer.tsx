@@ -69,7 +69,7 @@ export function GitDiffViewer({ workspace, target }: Props) {
         { token: 'string', foreground: '0F7A55' },
       ],
       colors: {
-        'editor.background': '#FBFCFE',
+        'editor.background': '#FFFFFF',
         'editor.foreground': '#1D2433',
         'editorLineNumber.foreground': '#AAB4C4',
         'editorLineNumber.activeForeground': '#42526E',

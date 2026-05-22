@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { appendFile, readFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import type { AgentEvent, AgentSession, AgentSessionSummary, MessagePart } from '../../shared/agent/protocol'
@@ -49,6 +49,22 @@ export function readSessionMeta(sessionId: string): AgentSession | null {
   } catch {
     return null
   }
+}
+
+export function renameSessionMeta(sessionId: string, title: string): AgentSession | null {
+  const meta = readSessionMeta(sessionId)
+  if (!meta) return null
+  const next: AgentSession = { ...meta, title: title.trim() || '新对话', updatedAt: Date.now() }
+  saveSessionMeta(next)
+  return next
+}
+
+export function deleteSessionStore(sessionId: string): boolean {
+  const dir = sessionDir(sessionId)
+  if (!existsSync(dir)) return false
+  rmSync(dir, { recursive: true, force: true })
+  sessionSequences.delete(sessionId)
+  return true
 }
 
 export async function appendSessionEvent(event: AgentEvent): Promise<void> {
