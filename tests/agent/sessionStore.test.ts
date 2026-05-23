@@ -188,4 +188,52 @@ describe('sessionStore', () => {
 
     await expect(store.readSessionEvents(meta.id)).resolves.toContainEqual(event)
   })
+
+  it('replays Phase G evidence, coverage, and review events', async () => {
+    userData = mkdtempSync(join(tmpdir(), 'rille-session-'))
+    const store = await import('../../src/main/agent/sessionStore')
+    const meta = session()
+    const activeTurn = turn(meta.id)
+    const evidence = {
+      id: 'evidence_partial',
+      sessionId: meta.id,
+      turnId: activeTurn.id,
+      source: 'command' as const,
+      status: 'partial' as const,
+      summary: 'partial command evidence',
+      createdAt: 12,
+    }
+    const coverage = {
+      contractId: 'contract_1',
+      criteria: [{ criterionId: 'ac_1', status: 'partial' as const, evidenceIds: [evidence.id], reason: 'partial' }],
+      updatedAt: 13,
+    }
+    const gate = {
+      status: 'partial' as const,
+      coverage,
+      evidence: [evidence],
+      nextAction: 'repair' as const,
+      summary: 'partial coverage',
+    }
+    const review = {
+      id: 'review_1',
+      sessionId: meta.id,
+      turnId: activeTurn.id,
+      status: 'approved' as const,
+      findingIds: [],
+      findings: [],
+      summary: 'approved',
+      createdAt: 14,
+    }
+    const events: AgentEvent[] = [
+      { type: 'session.created', session: meta },
+      { type: 'turn.started', sessionId: meta.id, turn: activeTurn },
+      { type: 'evidence.created', sessionId: meta.id, turnId: activeTurn.id, evidence },
+      { type: 'verification.coverage.updated', sessionId: meta.id, turnId: activeTurn.id, coverage, gate },
+      { type: 'review.completed', sessionId: meta.id, turnId: activeTurn.id, result: review },
+    ]
+
+    for (const event of events) await store.appendSessionEvent(event)
+    await expect(store.readSessionEvents(meta.id)).resolves.toEqual(events)
+  })
 })

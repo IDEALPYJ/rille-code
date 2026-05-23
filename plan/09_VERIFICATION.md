@@ -25,17 +25,17 @@ Verification 负责判断任务是否由 evidence 证明完成。
 
 - `VerificationResult` 包含 id、sessionId、turnId、verifier、command、status、output、exitCode、duration。
 - `VerifierRunner` 从 `.rille/policy.json` 的 verification commands 或 `package.json` scripts 发现命令。
-- apply edit 成功后自动运行首个可用 verifier。
-- UI 展示 verification part。
+- `VerifierRunner` 可同时返回 legacy `VerificationResult` 和 command Evidence。
+- apply edit 成功后自动运行首个可用 verifier，并持久化 Evidence。
+- AgentLoop 会从 diagnostics、command、diff/proposal 生成 Evidence，并在 final answer 前执行 before-stop gate。
+- Coverage 会按 Task Contract acceptance criteria 聚合 Evidence。
+- UI 展示 verification part、evidence coverage card。
 
 当前缺口：
 
-- 状态只有 passed/failed/skipped。
-- 没有 Evidence 和 VerificationCoverage。
-- 没有 before-stop hook。
-- 没有关联 Task Contract acceptance criteria。
-- 没有 stale evidence 检查。
-- 没有 Review gate。
+- 用户 waiver 只有状态预留，尚无交互 UI。
+- stale evidence 的 workspace freshness 检查留到 Phase H。
+- Evidence output 没有 artifactRef 存储，仍使用现有截断策略。
 
 ## 设计原则
 
@@ -57,29 +57,34 @@ export type VerificationStatus =
   | 'blocked'
   | 'stale'
   | 'waived'
-  | 'inconclusive'
 
 export interface Evidence {
   id: string
+  sessionId: string
+  turnId: string
   source: 'command' | 'diagnostics' | 'diff' | 'browser' | 'review' | 'user'
   status: VerificationStatus
   summary: string
   output?: string
   artifactRef?: string
-  workspaceState?: RuntimeState
+  data?: Record<string, unknown>
   createdAt: number
 }
 
 export interface VerificationCoverage {
-  criterionId: string
-  evidenceIds: string[]
-  status: 'covered' | 'failed' | 'partial' | 'blocked' | 'waived' | 'stale'
-  reason: string
+  contractId: string
+  criteria: Array<{
+    criterionId: string
+    evidenceIds: string[]
+    status: 'covered' | 'failed' | 'partial' | 'blocked' | 'waived' | 'stale'
+    reason: string
+  }>
+  updatedAt: number
 }
 
 export interface VerificationGateResult {
   status: VerificationStatus
-  coverage: VerificationCoverage[]
+  coverage: VerificationCoverage | null
   evidence: Evidence[]
   nextAction: 'allow_final' | 'repair' | 'run_more_checks' | 'ask_user' | 'blocked'
 }
@@ -97,7 +102,7 @@ code changed or model claims ready
   -> compute VerificationCoverage
   -> passed: allow review/final
   -> failed/partial: create repair context
-  -> blocked/inconclusive: ask user or mark blocked
+  -> blocked: ask user or mark blocked
 ```
 
 ### Before-stop hook
@@ -138,13 +143,13 @@ security_verifier
 
 ## 实现步骤
 
-1. 扩展 VerificationStatus。
-2. 新增 Evidence 和 VerificationCoverage 类型。
-3. 增加 diagnostics verifier 和 diff verifier。
-4. 在 AgentLoop final 前接入 before-stop hook。
-5. 将 verification failed 转为 Observation。
-6. UI 增加 coverage card。
-7. 支持用户 waiver。
+1. 已扩展 VerificationStatus。
+2. 已新增 Evidence、VerificationCoverage 和 VerificationGateResult 类型。
+3. 已增加 diagnostics evidence 和 diff/proposal evidence。
+4. 已在 AgentLoop final 前接入 before-stop hook。
+5. 已将 verification failed/blocked 转为 Observation。
+6. UI 已增加 coverage card。
+7. 用户 waiver 只有状态预留，完整交互留待后续。
 
 ## 测试与验收
 
@@ -153,13 +158,12 @@ security_verifier
 - command pass 映射 covered。
 - command fail 映射 failed。
 - no command 映射 skipped 或 blocked。
-- workspace changed 后旧 evidence 标记 stale。
-- waived 需要 user decision。
+- stale / waived 作为协议状态可 replay；完整交互和 freshness 检查留待后续。
 
 集成测试：
 
 - apply edit 后 typecheck fail 进入 repair。
-- final_response 未验证时触发 verifier。
+- final_response 未验证时触发 before-stop gate 并进入 repair context。
 - diff verifier 发现无关文件修改。
 
 手工验收：
@@ -175,3 +179,8 @@ security_verifier
 - 跑了测试但不关联验收标准。
 - Evidence 没有命令、时间、workspace 信息。
 - 把 Review 当 Verification。
+
+## 完成记录
+
+- 2026-05-23：Phase G 已完成 Verification foundation。新增 Evidence、VerificationCoverage、VerificationGateResult 和相关事件；VerifierRunner 支持 command Evidence；AgentLoop 会生成 diagnostics / command / diff Evidence，并在 final 前执行 before-stop gate；failed/blocked/partial coverage 会按最终 Agent 标准阻止任务完成并注入 repair context；缺少检查时 final gate 会自动运行一次项目 verifier；coverage card 已接入 AgentPanel。剩余 stale workspace freshness、waiver UI 和 artifactRef 存储进入后续阶段。
+- 2026-05-23：按最终完整 Agent 标准硬化 Phase G。Coverage 现在按 acceptance criterion 的每个 `evidenceRequired` 类型逐项覆盖，重复 command evidence 不能代替 diagnostics；任何 failed/blocked evidence 都会阻止 final；proposal diff 与 applied/workspace diff 分层，未应用的 edit proposal 不再被视为任务已完成。

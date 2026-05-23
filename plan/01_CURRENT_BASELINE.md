@@ -22,18 +22,19 @@
 
 | 能力 | 当前状态 | 主要文件 |
 | --- | --- | --- |
-| Shared protocol | 有 AgentOp、AgentEvent、MessagePart、AgentRunStage、VerificationResult、EditProposal、TaskContract、AgentPlanItem、ContextFragment、ContextTrace、ContextBuildResult、Observation、PolicyDecision、PermissionGrant；`edit.apply` 可携带当前 IDE context snapshot 用于写盘前 dirty guard | `src/shared/agent/protocol.ts` |
+| Shared protocol | 有 AgentOp、AgentEvent、MessagePart、AgentRunStage、VerificationResult、Evidence、VerificationCoverage、ReviewFinding、ReviewResult、EditProposal、TaskContract、AgentPlanItem、ContextFragment、ContextTrace、ContextBuildResult、Observation、PolicyDecision、PermissionGrant；`edit.apply` 可携带当前 IDE context snapshot 用于写盘前 dirty guard | `src/shared/agent/protocol.ts` |
 | Session runtime | 有 AgentThread，管理 session、turn、Task Contract 初始化与更新、Plan 初始化、interrupt、approval、edit apply/reject/rollback；resume `waiting_approval` 会恢复为 idle 并让旧 approval 失效 | `src/main/agent/thread.ts`, `src/main/agent/taskContract.ts` |
-| Agent loop | 有 AgentLoop，支持 ContextBuildResult -> contract/plan -> model -> JSON tool calls -> permission/policy/grant -> tool execution -> Observation/result feedback -> plan/contract update，并持久化 redacted context trace | `src/main/agent/runtime.ts`, `src/main/agent/contextBuilder.ts` |
+| Agent loop | 有 AgentLoop，支持 ContextBuildResult -> contract/plan -> model -> JSON tool calls -> permission/policy/grant -> tool execution -> Evidence/Observation/result feedback -> verification/review before-stop gate -> plan/contract update，并持久化 redacted context trace | `src/main/agent/runtime.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/verificationGate.ts` |
 | Model adapter | 有 TextJsonToolAdapter 和 JSON action parser，system prompt 会注入 Task Contract / Plan 边界 | `src/main/agent/modelAdapter.ts` |
 | Provider | 支持 OpenAI-compatible、Anthropic、Gemini、Ollama/custom 基础调用 | `src/main/agent/provider.ts`, `src/main/agent/config.ts` |
 | Tool registry | 有 active editor、open files、diagnostics、update_plan、update_task_contract、ask_user、select_files、list/read/search、git、propose edit、runtime-only apply、run command；每个 RegisteredTool 都有 visibility、sideEffect、validate；read/propose 会优先使用 canonical path 匹配到的 dirty active buffer | `src/main/agent/tools.ts` |
 | Permission | 有 plan/ask/accept_edits/auto/bypass、command risk classifier、`.rille/policy.json` loader、session PermissionGrant、拒绝循环检测和 policy denial Observation | `src/main/agent/permissions.ts` |
 | Workspace | 有 local / ssh / wsl 路由、workspace path guard 和 canonical workspace path helper | `src/main/agent/workspace.ts` |
 | Edit store | 有 full-file proposal、conflict check、dirty snapshot guard、apply/reject、rollback proposal | `src/main/agent/editStore.ts` |
-| Verification | 有 VerifierRunner，发现验证命令并在 apply 后运行首个可用命令 | `src/main/agent/verifier.ts` |
+| Verification | 有 VerifierRunner、Evidence、VerificationCoverage、before-stop gate、diagnostics/command/diff evidence 和 failed verification repair context | `src/main/agent/verifier.ts`, `src/main/agent/verificationGate.ts` |
+| Review | 有基础 rule-based review gate，能对 missing verification、failed evidence、疑似越界文件和高风险覆盖缺口生成 blocking finding | `src/main/agent/verificationGate.ts` |
 | Persistence | 有 userData JSONL events、meta、summary、schemaVersion、sequence | `src/main/agent/sessionStore.ts` |
-| Agent UI | 有 timeline、Task Contract card、Plan card、tool group、stage、approval、diff、edit result、verification 展示；会记录 latest context summary 供后续 Trace UI 使用 | `src/renderer/components/agent/AgentPanel.tsx` |
+| Agent UI | 有 timeline、Task Contract card、Plan card、tool group、stage、approval、diff、edit result、verification、evidence coverage、review findings 展示；会记录 latest context summary 供后续 Trace UI 使用 | `src/renderer/components/agent/AgentPanel.tsx` |
 | Tests | 有 Vitest 覆盖 task contract、tools、edit、model adapter、permission、session store、runtime、context builder、verifier、workspace | `tests/agent/*` |
 
 ## 当前基础闭环
@@ -51,12 +52,15 @@
   -> adapter 解析 JSON tool_calls
   -> PermissionEngine 结合 hard deny / validation / grant / policy / mode 判断 allow / ask / deny
   -> ToolRuntime 执行工具
+  -> 生成 diagnostics / command / diff Evidence
   -> 持久化 tool / policy / edit Observation
   -> propose_file_edit 生成 EditProposal
   -> UI 展示 diff
   -> 用户 apply / reject / rollback
   -> EditStore 做冲突检查和写入
-  -> VerifierRunner 运行验证命令
+  -> VerifierRunner 运行验证命令并生成 Evidence
+  -> Before-stop gate 计算 VerificationCoverage 和 ReviewResult
+  -> Gate 通过才允许 completed，否则进入 repair context
   -> SessionStore 持久化事件
   -> AgentPanel 展示状态
 ```
@@ -67,8 +71,8 @@
 
 ```text
 npm test
-  11 files passed
-  52 tests passed
+  12 files passed
+  60 tests passed
 
 npm run typecheck
   passed
@@ -81,14 +85,14 @@ npm run build
 
 1. Task Contract 已有 Phase D 初版和模型驱动的 `update_task_contract` 更新能力，但还没有用户确认 gate，也没有和 evidence coverage 深度绑定。
 2. Plan card 已有 Phase D 初版，但还没有 blocking gate、repair context 和跨 turn plan continuity。
-3. Context Engine Foundation 已完成 Phase E：有 `ContextFragment` / `ContextTrace` / `ContextBuildResult` 协议、collectors、完整 project rules 读取顺序、stable/dynamic 确定性排序、budget-aware trimming、AgentLoop `context.built` trace event、replay 测试和 UI latest context summary；cache key、verification/review fragment、compact boundary 留给 Phase G/H。
+3. Context Engine Foundation 已完成 Phase E/G：有 `ContextFragment` / `ContextTrace` / `ContextBuildResult` 协议、collectors、完整 project rules 读取顺序、stable/dynamic 确定性排序、budget-aware trimming、AgentLoop `context.built` trace event、verification/review summary fragment、replay 测试和 UI latest context summary；cache key 和 compact boundary 留给 Phase H。
 4. Model Gateway 仍以文本 JSON protocol 为主，没有原生 tool calling、streaming、usage、fallback trace。
-5. Tool result 已结构化并会转为 Observation，但还没有 artifactRef 存储和完整 repair context。
+5. Tool result 已结构化并会转为 Observation；final gate 已能把缺失/失败 coverage 注入 repair context，但还没有 artifactRef 存储和完整 artifact 输出治理。
 6. Policy 已有项目级 `.rille/policy.json`、session grant、approval runtime/matchedRule/grantOptions 和 denial Observation；仍没有持久 workspace grant、protected paths 过滤和 secret redaction 全链路治理。
-7. Verification 只有 passed/failed/skipped，缺少 evidence coverage 和 partial/blocked/stale/waived。
-8. Review 还不是独立质量门。
+7. Verification 已扩展为 evidence/coverage gate，并按最终 Agent 标准阻止 failed/blocked/partial coverage 直接完成；final gate 会在缺少检查时自动触发项目 verifier。stale evidence 的 workspace freshness 检查仍待 Phase H。
+8. Review 已有基础 rule-based gate，会阻止 pending edit proposal、失败 evidence 和疑似越界修改完成；还没有 reviewer model/advisor，也没有 accepted risk/waiver UI。
 9. Memory、Long-running、Trace、Eval 还主要是设计预留。
-10. UI 已可展示 Task Contract 和 Plan，但还缺 Evidence coverage、Review finding、Handoff。
+10. UI 已可展示 Task Contract、Plan、Evidence coverage 和 Review finding，但还缺 Handoff。
 
 ## 与其他模块关系
 
@@ -99,7 +103,8 @@ npm run build
 - `06_TOOL_RUNTIME.md` 以 toolRegistry、ToolValidationResult 和 Observation 为基线。
 - `07_POLICY_SAFETY.md` 以 decidePermission、classifyCommandRisk、policy loader 和 PermissionGrantStore 为基线。
 - `08_EXECUTION_RUNTIME.md` 以 workspace helpers 为基线。
-- `09_VERIFICATION.md` 以 VerifierRunner 为基线。
+- `09_VERIFICATION.md` 以 VerifierRunner 和 verificationGate 为基线。
+- `10_REVIEW_QUALITY.md` 以 rule-based review gate 为基线。
 - `13_PRODUCT_UX.md` 以 AgentPanel 为基线。
 
 ## 实现步骤

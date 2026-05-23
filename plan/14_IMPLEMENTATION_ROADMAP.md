@@ -292,6 +292,14 @@ npm run build
 剩余风险: artifactRef、protected paths、secret redaction、持久 workspace grant、Evidence/Review gate 和完整 ask/select UI 不属于 Phase F 收口，进入 Phase G/J 或后续 Policy hardening。
 下一步: Phase G1，扩展 VerificationStatus 为 passed、failed、skipped、partial、blocked、stale、waived。
 
+日期: 2026-05-23
+完成范围: Phase G Verification / Review Gate
+涉及文件: `src/shared/agent/protocol.ts`、`src/main/agent/verificationGate.ts`、`src/main/agent/verifier.ts`、`src/main/agent/runtime.ts`、`src/main/agent/thread.ts`、`src/main/agent/contextBuilder.ts`、`src/renderer/components/agent/AgentPanel.tsx`、`tests/agent/verificationGate.test.ts`、`tests/agent/verifier.test.ts`、`tests/agent/runtime.test.ts`、`tests/agent/sessionStore.test.ts`、`plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`、`plan/01_CURRENT_BASELINE.md`、`plan/09_VERIFICATION.md`、`plan/10_REVIEW_QUALITY.md`、`plan/14_IMPLEMENTATION_ROADMAP.md`
+验证命令: `npm test`、`npm run typecheck`、`npm run build`、`rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+结果: `npm test` 为 12 files / 61 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查无输出；总控 checklist 可列出当前完成与未完成项。
+剩余风险: waiver UI、stale workspace freshness、artifactRef 存储和 reviewer model/advisor 不属于 Phase G 收口，进入 Phase H/J 或后续 Review hardening。
+下一步: Phase H1，增加 FeatureProgressItem、ProgressState、Handoff 协议与事件。
+
 ## 停止线
 
 出现以下情况时停止扩大实现范围：

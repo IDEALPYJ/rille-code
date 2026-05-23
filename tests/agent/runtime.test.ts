@@ -1,8 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'fs'
+import { rm } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import type { AgentContextSnapshot, AgentEvent, AgentSession, AgentTurn } from '../../src/shared/agent/protocol'
 import { createInitialPlanItems, createInitialTaskContract } from '../../src/main/agent/taskContract'
 
 const callAgentModelMock = vi.hoisted(() => vi.fn())
+let root = ''
 
 vi.mock('../../src/main/agent/config', () => ({
   readAgentConfigSnapshot: () => ({
@@ -61,9 +66,26 @@ function context(): AgentContextSnapshot {
   }
 }
 
+function cleanContext(): AgentContextSnapshot {
+  return { ...context(), diagnostics: [] }
+}
+
+function diagnosticsOnlyContract(runtimeSession: AgentSession, runtimeTurn: AgentTurn, runtimeContext: AgentContextSnapshot) {
+  const contract = createInitialTaskContract({ session: runtimeSession, turn: runtimeTurn, text: runtimeTurn.text, context: runtimeContext, timestamp: 1 })
+  return {
+    ...contract,
+    acceptanceCriteria: contract.acceptanceCriteria.map(item => ({ ...item, evidenceRequired: ['diagnostics' as const] })),
+  }
+}
+
 describe('AgentLoop context integration', () => {
   beforeEach(() => {
     callAgentModelMock.mockReset()
+  })
+
+  afterEach(async () => {
+    if (root) await rm(root, { recursive: true, force: true })
+    root = ''
   })
 
   it('emits redacted context.built before calling the model', async () => {
@@ -71,8 +93,17 @@ describe('AgentLoop context integration', () => {
     const { AgentLoop } = await import('../../src/main/agent/runtime')
     const runtimeSession = session()
     const runtimeTurn = turn()
-    const runtimeContext = context()
-    const contract = createInitialTaskContract({ session: runtimeSession, turn: runtimeTurn, text: runtimeTurn.text, context: runtimeContext, timestamp: 1 })
+    root = mkdtempSync(join(tmpdir(), 'rille-runtime-gate-'))
+    mkdirSync(join(root, 'src'))
+    writeFileSync(join(root, 'src/main.ts'), 'const value: string = 1', 'utf8')
+    const runtimeContext: AgentContextSnapshot = {
+      ...context(),
+      workspace: { kind: 'local', path: root, label: 'tmp' },
+      activeFile: { path: join(root, 'src/main.ts'), name: 'main.ts', isDirty: false, content: 'const value: string = 1' },
+      openFiles: [{ path: join(root, 'src/main.ts'), name: 'main.ts', isDirty: false }],
+      diagnostics: [{ id: 'diag_secret', filePath: join(root, 'src/main.ts'), line: 1, column: 7, severity: 'warning', message: 'SECRET_DIAG_DO_NOT_PERSIST' }],
+    }
+    const contract = diagnosticsOnlyContract(runtimeSession, runtimeTurn, runtimeContext)
     const planItems = createInitialPlanItems(contract, 1)
     const events: AgentEvent[] = []
 
@@ -85,7 +116,7 @@ describe('AgentLoop context integration', () => {
       planItems,
       signal: new AbortController().signal,
       emit: event => events.push(event),
-      requestApproval: async () => ({ action: 'deny', reason: 'not needed' }),
+      requestApproval: async () => ({ action: 'allow_once' }),
     }).run()
 
     expect(reason).toBe('completed')
@@ -134,8 +165,11 @@ describe('AgentLoop context integration', () => {
     const { AgentLoop } = await import('../../src/main/agent/runtime')
     const runtimeSession = session()
     const runtimeTurn = turn()
-    const runtimeContext = context()
-    const contract = createInitialTaskContract({ session: runtimeSession, turn: runtimeTurn, text: runtimeTurn.text, context: runtimeContext, timestamp: 1 })
+    const runtimeContext: AgentContextSnapshot = {
+      ...context(),
+      diagnostics: [{ id: 'diag_secret', filePath: '/repo/src/main.ts', line: 1, column: 7, severity: 'warning', message: 'SECRET_DIAG_DO_NOT_PERSIST' }],
+    }
+    const contract = diagnosticsOnlyContract(runtimeSession, runtimeTurn, runtimeContext)
     const planItems = createInitialPlanItems(contract, 1)
     const events: AgentEvent[] = []
 
@@ -149,7 +183,7 @@ describe('AgentLoop context integration', () => {
       planItems,
       signal: new AbortController().signal,
       emit: event => events.push(event),
-      requestApproval: async () => ({ action: 'deny', reason: 'not needed' }),
+      requestApproval: async () => ({ action: 'allow_once' }),
     }).run()
 
     expect(reason).toBe('completed')
@@ -187,7 +221,7 @@ describe('AgentLoop context integration', () => {
       session: session(),
       turn: turn(),
       text: 'apply edit',
-      context: context(),
+      context: cleanContext(),
       signal: new AbortController().signal,
       emit: event => events.push(event),
       requestApproval: async () => ({ action: 'deny', reason: 'not needed' }),
@@ -205,25 +239,28 @@ describe('AgentLoop context integration', () => {
         tool_calls: [{
           id: 'tool_command_1',
           name: 'run_command',
-          input: { commandLine: 'npm run typecheck' },
+          input: { commandLine: 'node --version' },
         }],
       }))
       .mockResolvedValueOnce(JSON.stringify({
         tool_calls: [{
           id: 'tool_command_2',
           name: 'run_command',
-          input: { commandLine: 'npm run build' },
+          input: { commandLine: 'node --version' },
         }],
       }))
       .mockResolvedValueOnce('{"answer":"done"}')
     const { AgentLoop } = await import('../../src/main/agent/runtime')
     const requestApproval = vi.fn(async () => ({ action: 'always_allow' as const, pattern: 'ignored-ui-pattern' }))
+    root = mkdtempSync(join(tmpdir(), 'rille-runtime-grant-'))
+    const runtimeSession: AgentSession = { ...session(), workspace: { kind: 'local', path: root, label: 'tmp' } }
+    const runtimeContext: AgentContextSnapshot = { ...cleanContext(), workspace: runtimeSession.workspace }
 
     const reason = await new AgentLoop({
-      session: session(),
+      session: runtimeSession,
       turn: turn(),
       text: 'run commands',
-      context: context(),
+      context: runtimeContext,
       signal: new AbortController().signal,
       emit: vi.fn(),
       requestApproval,
@@ -231,5 +268,48 @@ describe('AgentLoop context integration', () => {
 
     expect(reason).toBe('completed')
     expect(requestApproval).toHaveBeenCalledTimes(1)
+  })
+
+  it('blocks final answer when changed code has failed verification evidence', async () => {
+    callAgentModelMock
+      .mockResolvedValueOnce(JSON.stringify({
+        tool_calls: [{
+          id: 'tool_edit',
+          name: 'propose_file_edit',
+          input: { filePath: 'src/main.ts', modifiedContent: 'const value = 1' },
+        }],
+      }))
+      .mockResolvedValueOnce('{"answer":"完成"}')
+      .mockResolvedValueOnce('{"answer":"仍然阻塞"}')
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const runtimeSession = session()
+    const runtimeTurn = turn()
+    root = mkdtempSync(join(tmpdir(), 'rille-runtime-edit-'))
+    mkdirSync(join(root, 'src'))
+    writeFileSync(join(root, 'src/main.ts'), 'const value: string = 1', 'utf8')
+    const runtimeContext: AgentContextSnapshot = {
+      ...context(),
+      workspace: { kind: 'local', path: root, label: 'tmp' },
+      activeFile: { path: join(root, 'src/main.ts'), name: 'main.ts', isDirty: false, content: 'const value: string = 1' },
+      openFiles: [{ path: join(root, 'src/main.ts'), name: 'main.ts', isDirty: false }],
+    }
+    const contract = createInitialTaskContract({ session: runtimeSession, turn: runtimeTurn, text: '修复当前类型错误', context: runtimeContext, timestamp: 1 })
+    const events: AgentEvent[] = []
+
+    const reason = await new AgentLoop({
+      session: runtimeSession,
+      turn: runtimeTurn,
+      text: runtimeTurn.text,
+      context: runtimeContext,
+      taskContract: contract,
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+    }).run()
+
+    expect(reason).toBe('tool_failed')
+    expect(events.some(event => event.type === 'verification.coverage.updated' && event.gate.nextAction === 'repair')).toBe(true)
+    expect(events.some(event => event.type === 'review.completed' && event.result.status === 'request_changes')).toBe(true)
+    expect(events.some(event => event.type === 'observation.created' && event.observation.source === 'verification')).toBe(true)
   })
 })

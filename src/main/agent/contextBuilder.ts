@@ -212,6 +212,62 @@ function collectDiagnosticsFragment(context: AgentContextSnapshot): ContextFragm
   })
 }
 
+function collectVerificationFragment(input: ContextBuildInput): ContextFragment | null {
+  const evidence = input.evidence ?? []
+  const coverage = input.verificationCoverage
+  if (evidence.length === 0 && !coverage) return null
+  return fragment({
+    id: `context_verification_${input.turn.id}`,
+    type: 'verification',
+    section: 'dynamic_suffix',
+    priority: 75,
+    source: 'verification_gate',
+    text: [
+      'Verification summary:',
+      JSON.stringify({
+        evidence: evidence.slice(-8).map(item => ({
+          id: item.id,
+          source: item.source,
+          status: item.status,
+          summary: item.summary,
+        })),
+        coverage: coverage?.criteria.map(item => ({
+          criterionId: item.criterionId,
+          status: item.status,
+          reason: item.reason,
+          evidenceIds: item.evidenceIds,
+        })),
+      }, null, 2),
+    ].join('\n'),
+  })
+}
+
+function collectReviewFragment(input: ContextBuildInput): ContextFragment | null {
+  const review = input.reviewResult
+  if (!review) return null
+  return fragment({
+    id: `context_review_${review.id}`,
+    type: 'review',
+    section: 'dynamic_suffix',
+    priority: 74,
+    source: review.id,
+    text: [
+      'Review summary:',
+      JSON.stringify({
+        status: review.status,
+        summary: review.summary,
+        findings: review.findings.map(item => ({
+          id: item.id,
+          severity: item.severity,
+          blocking: item.blocking,
+          title: item.title,
+          recommendation: item.recommendation,
+        })),
+      }, null, 2),
+    ].join('\n'),
+  })
+}
+
 async function collectGitFragment(context: AgentContextSnapshot): Promise<ContextFragment | null> {
   if (!context.workspace) return null
   const text = ['Git status:', await readGitStatus(context.workspace)].join('\n')
@@ -251,6 +307,8 @@ async function collectContextFragments(input: ContextBuildInput): Promise<Contex
     collectActiveEditorFragment(context),
     collectOpenFilesFragment(context),
     collectDiagnosticsFragment(context),
+    collectVerificationFragment(input),
+    collectReviewFragment(input),
     await collectGitFragment(context),
   ].filter((item): item is ContextFragment => Boolean(item))
   return [...stable, ...dynamic]

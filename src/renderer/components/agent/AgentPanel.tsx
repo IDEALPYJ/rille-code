@@ -267,16 +267,63 @@ function DiagnosticPart({ part }: { part: Extract<MessagePart, { type: 'diagnost
 
 function VerificationPart({ part }: { part: Extract<MessagePart, { type: 'verification' }> }) {
   const result = part.result
-  const statusLabel = result.status === 'passed' ? '通过' : result.status === 'failed' ? '失败' : '跳过'
+  const statusLabel: Record<typeof result.status, string> = {
+    passed: '通过',
+    failed: '失败',
+    skipped: '跳过',
+    partial: '部分',
+    blocked: '阻塞',
+    stale: '过期',
+    waived: '豁免',
+  }
   return (
     <div className={'agent-verification-card status-' + result.status}>
       <div className="agent-tool-icon">{result.status === 'passed' ? <CheckCircle2 size={14} /> : result.status === 'skipped' ? <ListChecks size={14} /> : <AlertCircle size={14} />}</div>
       <div className="agent-tool-main">
-        <div className="agent-tool-title">验证{statusLabel}</div>
+        <div className="agent-tool-title">验证{statusLabel[result.status]}</div>
         <div className="agent-tool-summary">
           {[result.command || result.verifier, result.exitCode !== undefined ? `退出 ${result.exitCode ?? '-'}` : '', result.durationMs ? `${Math.max(1, Math.round(result.durationMs / 1000))}s` : '', result.truncated ? '已截断' : ''].filter(Boolean).join(' · ')}
         </div>
         {result.output && <pre className="agent-verification-output">{result.output}</pre>}
+      </div>
+    </div>
+  )
+}
+
+function EvidenceCoveragePart({ part }: { part: Extract<MessagePart, { type: 'evidence_coverage' }> }) {
+  const counts = part.coverage.criteria.reduce<Record<string, number>>((acc, item) => {
+    acc[item.status] = (acc[item.status] || 0) + 1
+    return acc
+  }, {})
+  return (
+    <div className={'agent-verification-card status-' + (part.gate?.status || 'partial')}>
+      <div className="agent-tool-icon">{part.gate?.nextAction === 'allow_final' ? <CheckCircle2 size={14} /> : <ListChecks size={14} />}</div>
+      <div className="agent-tool-main">
+        <div className="agent-tool-title">Evidence Coverage</div>
+        <div className="agent-tool-summary">
+          {Object.entries(counts).map(([status, count]) => `${status} ${count}`).join(' · ') || '无验收项'}{part.gate ? ` · ${part.gate.nextAction}` : ''}
+        </div>
+        {part.gate?.summary && <p>{part.gate.summary}</p>}
+      </div>
+    </div>
+  )
+}
+
+function ReviewPart({ part }: { part: Extract<MessagePart, { type: 'review' }> }) {
+  const blocking = part.result.findings.filter(item => item.blocking).length
+  return (
+    <div className={'agent-verification-card status-' + (blocking > 0 ? 'blocked' : 'passed')}>
+      <div className="agent-tool-icon">{blocking > 0 ? <AlertCircle size={14} /> : <CheckCircle2 size={14} />}</div>
+      <div className="agent-tool-main">
+        <div className="agent-tool-title">Review {part.result.status}</div>
+        <div className="agent-tool-summary">{part.result.summary}</div>
+        {part.result.findings.length > 0 && (
+          <div className="agent-approval-details">
+            {part.result.findings.slice(0, 6).map(finding => (
+              <span key={finding.id}>{finding.blocking ? 'blocking' : finding.severity}: {finding.title}</span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -463,6 +510,8 @@ function MessagePartView({
   if (part.type === 'plan') return <PlanPart part={part} />
   if (part.type === 'diagnostic') return <DiagnosticPart part={part} />
   if (part.type === 'verification') return <VerificationPart part={part} />
+  if (part.type === 'evidence_coverage') return <EvidenceCoveragePart part={part} />
+  if (part.type === 'review') return <ReviewPart part={part} />
   if (part.type === 'edit_result') return <EditResultPart part={part} />
   if (part.type === 'file') {
     return (

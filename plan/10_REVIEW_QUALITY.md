@@ -29,11 +29,10 @@ Review 模块判断实现是否值得接受，而不只是行为是否可能通�
 
 当前缺口：
 
-- 没有 ReviewFinding 类型。
-- 没有独立 review gate。
-- 没有 review category、severity、blocking 标记。
-- 没有 review issue -> repair context。
-- 没有 high-risk diff 自动触发 review。
+- 已有 ReviewFinding、ReviewResult 和基础 rule-based review gate。
+- Blocking finding 会进入 Observation 和 repair context。
+- 当前 Review 不接 reviewer model / advisor。
+- accepted risk / waiver 还没有用户交互 UI。
 
 ## 设计原则
 
@@ -70,6 +69,7 @@ export interface ReviewResult {
   turnId: string
   status: 'approved' | 'request_changes' | 'needs_more_verification' | 'out_of_scope' | 'blocked'
   findingIds: string[]
+  findings: ReviewFinding[]
   summary: string
   createdAt: number
 }
@@ -111,13 +111,13 @@ verification passed or large/risky diff
 
 ## 实现步骤
 
-1. 新增 ReviewFinding 和 ReviewResult 类型。
-2. 实现基础 rule-based diff review。
-3. 触发条件：large diff、高风险路径、verification partial、高风险 task。
-4. UI 增加 Review card。
-5. Blocking finding 转 Observation。
-6. Repair context 注入 finding。
-7. 后续接入 reviewer model 或 advisor。
+1. 已新增 ReviewFinding 和 ReviewResult 类型。
+2. 已实现基础 rule-based diff review。
+3. 已覆盖缺少验证、failed evidence、疑似越界文件、高风险 task coverage 缺口。
+4. UI 已增加 Review card。
+5. Blocking finding 已转 Observation。
+6. Repair context 已注入 finding/gate 摘要。
+7. reviewer model 或 advisor 留待后续。
 
 ## 测试与验收
 
@@ -146,3 +146,8 @@ verification passed or large/risky diff
 - 把风格建议当 blocking。
 - Review finding 不进入 repair loop。
 - 子代理 review 结果未经主 Agent 裁决。
+
+## 完成记录
+
+- 2026-05-23：Phase G 已完成 rule-based Review foundation。Review gate 基于 Task Contract、Evidence、Coverage 和 proposed files 生成 findings；blocking finding 会阻止 final、写入 Observation 并显示在 AgentPanel。当前仍不接 reviewer model/advisor，accepted risk/waiver 交互留待后续。
+- 2026-05-23：按最终完整 Agent 标准硬化 Review gate。未应用的 edit proposal 会生成 blocking finding，Agent 不能只生成 diff proposal 就声明完成；failed/blocked evidence 不再只在 code_changed 场景阻断，而是作为任务完成 gate 的通用阻断条件。

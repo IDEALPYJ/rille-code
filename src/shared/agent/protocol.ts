@@ -99,7 +99,7 @@ export type AgentRunStage =
   | 'completed'
   | 'failed'
 
-export type VerificationStatus = 'passed' | 'failed' | 'skipped'
+export type VerificationStatus = 'passed' | 'failed' | 'skipped' | 'partial' | 'blocked' | 'stale' | 'waived'
 
 export interface VerificationResult {
   id: string
@@ -224,6 +224,71 @@ export interface Observation {
   createdAt: number
 }
 
+export interface Evidence {
+  id: string
+  sessionId: string
+  turnId: string
+  criterionId?: string
+  source: AcceptanceEvidenceRequirement
+  status: VerificationStatus
+  summary: string
+  output?: string
+  artifactRef?: string
+  data?: Record<string, unknown>
+  createdAt: number
+}
+
+export type VerificationCoverageStatus = 'covered' | 'failed' | 'partial' | 'blocked' | 'stale' | 'waived'
+
+export interface VerificationCoverageItem {
+  criterionId: string
+  status: VerificationCoverageStatus
+  evidenceIds: string[]
+  reason: string
+}
+
+export interface VerificationCoverage {
+  contractId: string
+  criteria: VerificationCoverageItem[]
+  updatedAt: number
+}
+
+export interface VerificationGateResult {
+  status: VerificationStatus
+  coverage: VerificationCoverage | null
+  evidence: Evidence[]
+  nextAction: 'allow_final' | 'repair' | 'run_more_checks' | 'ask_user' | 'blocked'
+  summary: string
+}
+
+export interface ReviewFinding {
+  id: string
+  sessionId: string
+  turnId: string
+  category: 'scope' | 'correctness' | 'security' | 'test' | 'architecture' | 'ux' | 'evidence'
+  severity: 'info' | 'low' | 'medium' | 'high' | 'critical'
+  blocking: boolean
+  title: string
+  body: string
+  filePath?: string
+  range?: AgentTextRange
+  evidenceRefs: string[]
+  recommendation?: string
+  status: 'open' | 'fixed' | 'accepted_risk' | 'dismissed'
+  createdAt: number
+}
+
+export interface ReviewResult {
+  id: string
+  sessionId: string
+  turnId: string
+  status: 'approved' | 'request_changes' | 'needs_more_verification' | 'out_of_scope' | 'blocked'
+  findingIds: string[]
+  findings: ReviewFinding[]
+  summary: string
+  createdAt: number
+}
+
 export interface ContractScopeItem {
   kind: ContractScopeKind
   value: string
@@ -320,6 +385,9 @@ export interface ContextBuildInput {
   contextSnapshot: AgentContextSnapshot
   taskContract?: TaskContract
   planItems?: AgentPlanItem[]
+  evidence?: Evidence[]
+  verificationCoverage?: VerificationCoverage | null
+  reviewResult?: ReviewResult | null
   budgetTokens: number
 }
 
@@ -430,6 +498,8 @@ export type MessagePart =
   | { id: string; messageId: string; type: 'diff'; proposalId: string; title: string; state: EditProposal['state']; createdAt: number }
   | { id: string; messageId: string; type: 'diagnostic'; diagnostics: AgentDiagnostic[]; createdAt: number }
   | { id: string; messageId: string; type: 'verification'; result: VerificationResult; createdAt: number }
+  | { id: string; messageId: string; type: 'evidence_coverage'; coverage: VerificationCoverage; evidence: Evidence[]; gate?: VerificationGateResult; createdAt: number }
+  | { id: string; messageId: string; type: 'review'; result: ReviewResult; createdAt: number }
   | { id: string; messageId: string; type: 'edit_result'; proposalId: string; state: EditProposal['state']; filePath: string; message: string; createdAt: number }
 
 export interface ApprovalRequest {
@@ -507,6 +577,9 @@ export type AgentEvent =
   | { type: 'tool.started'; sessionId: string; turnId: string; call: ToolCallView }
   | { type: 'tool.completed'; sessionId: string; turnId: string; callId: string; result: ToolResultView }
   | { type: 'observation.created'; sessionId: string; turnId: string; observation: Observation }
+  | { type: 'evidence.created'; sessionId: string; turnId: string; evidence: Evidence }
+  | { type: 'verification.coverage.updated'; sessionId: string; turnId: string; coverage: VerificationCoverage; gate: VerificationGateResult }
+  | { type: 'review.completed'; sessionId: string; turnId: string; result: ReviewResult }
   | { type: 'approval.requested'; sessionId: string; turnId: string; request: ApprovalRequest }
   | { type: 'approval.resolved'; sessionId: string; turnId: string; requestId: string; decision: ApprovalDecision }
   | { type: 'edit.proposed'; sessionId: string; turnId: string; proposal: EditProposal }

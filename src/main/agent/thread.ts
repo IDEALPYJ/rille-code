@@ -10,6 +10,7 @@ import type {
   AgentTurn,
   ApprovalDecision,
   ApprovalRequest,
+  Evidence,
   EditProposal,
   MessagePart,
   Observation,
@@ -20,6 +21,7 @@ import { AgentLoop } from './runtime'
 import { appendSessionEvent, readSessionEvents, saveSessionMeta } from './sessionStore'
 import { createInitialPlanItems, createInitialTaskContract } from './taskContract'
 import { VerifierRunner } from './verifier'
+import { observationFromVerification } from './verificationGate'
 
 function now(): number {
   return Date.now()
@@ -325,6 +327,10 @@ export class AgentThread {
     this.emit({ type: 'observation.created', sessionId: this.session.id, turnId: observation.turnId, observation })
   }
 
+  private emitEvidence(evidence: Evidence): void {
+    this.emit({ type: 'evidence.created', sessionId: this.session.id, turnId: evidence.turnId, evidence })
+  }
+
   private emitEditResult(turnId: string, proposalId: string, state: EditProposal['state'], filePath: string, message: string): void {
     this.emitPart(turnId, {
       id: createPartId(),
@@ -348,8 +354,18 @@ export class AgentThread {
     }
     this.emitStage(turn.id, 'running_verification', '运行项目验证命令')
     this.emit({ type: 'verification.started', sessionId: this.session.id, turnId: turn.id, verifier: 'command' })
-    const result = await new VerifierRunner(this.session, turn).runFirstAvailable()
+    const { result, evidence } = await new VerifierRunner(this.session, turn).runFirstAvailableWithEvidence()
     this.emit({ type: 'verification.completed', sessionId: this.session.id, turnId: turn.id, result })
+    this.emitEvidence(evidence)
+    if (result.status === 'failed' || result.status === 'blocked') {
+      this.emitObservation(observationFromVerification(this.session.id, turn.id, {
+        status: result.status,
+        coverage: null,
+        evidence: [evidence],
+        nextAction: 'repair',
+        summary: `Post-apply verification ${result.status}.`,
+      }))
+    }
     this.emitPart(turn.id, {
       id: createPartId(),
       messageId: createMessageId('assistant'),

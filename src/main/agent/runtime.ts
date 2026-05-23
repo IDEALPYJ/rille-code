@@ -9,20 +9,33 @@ import type {
   AgentTurn,
   ApprovalDecision,
   ApprovalRequest,
+  Evidence,
   MessagePart,
   Observation,
   PolicyDecision,
+  ReviewResult,
   TaskContract,
   ToolCallView,
   ToolResultView,
   TurnStopReason,
+  VerificationCoverage,
+  VerificationGateResult,
 } from '../../shared/agent/protocol'
 import { readAgentConfigSnapshot } from './config'
 import { buildAgentContext, DEFAULT_CONTEXT_BUDGET_TOKENS } from './contextBuilder'
 import { callAgentModel, type AgentChatMessage } from './provider'
 import { decidePermission, deniedToolResult, DenialTracker, PermissionGrantStore, permissionForCall, permissionPattern } from './permissions'
 import { executeToolCall, getRegisteredTool, type RuntimeToolCall } from './tools'
+import { VerifierRunner } from './verifier'
 import { TextJsonToolAdapter } from './modelAdapter'
+import {
+  evaluateVerificationGate,
+  evidenceFromDiagnostics,
+  evidenceFromToolResult,
+  observationFromReview,
+  observationFromVerification,
+  runRuleBasedReview,
+} from './verificationGate'
 
 interface RuntimeOptions {
   session: AgentSession
@@ -142,6 +155,12 @@ export class AgentLoop {
   private readonly grants: PermissionGrantStore
   private taskContract?: TaskContract
   private planItems: AgentPlanItem[]
+  private evidence: Evidence[] = []
+  private verificationCoverage: VerificationCoverage | null = null
+  private reviewResult: ReviewResult | null = null
+  private proposedFiles = new Set<string>()
+  private gateRepairInjected = false
+  private finalVerificationAttempted = false
 
   constructor(private readonly options: RuntimeOptions) {
     this.grants = options.grants ?? new PermissionGrantStore()
@@ -194,6 +213,11 @@ export class AgentLoop {
         createdAt: now(),
       })
     }
+    this.recordEvidence(evidenceFromDiagnostics({
+      sessionId: this.options.session.id,
+      turnId: this.options.turn.id,
+      context: this.options.context,
+    }))
 
     const contextResult = await buildAgentContext({
       phase: 'planning',
@@ -202,6 +226,9 @@ export class AgentLoop {
       contextSnapshot: this.options.context,
       taskContract: this.taskContract,
       planItems: this.planItems,
+      evidence: this.evidence,
+      verificationCoverage: this.verificationCoverage,
+      reviewResult: this.reviewResult,
       budgetTokens: DEFAULT_CONTEXT_BUDGET_TOKENS,
     })
     this.options.emit({
@@ -236,6 +263,33 @@ export class AgentLoop {
       const action = this.adapter.parseAction(modelText)
 
       if (action.type === 'answer') {
+        const gate = await this.runFinalGate()
+        if (gate.nextAction !== 'allow_final') {
+          if (this.gateRepairInjected) {
+            this.emitPart({
+              id: createPartId(),
+              messageId: assistantMessageId,
+              type: 'text',
+              role: 'assistant',
+              text: `无法完成：${gate.summary}`,
+              createdAt: now(),
+            })
+            this.emitStage(assistantMessageId, 'failed', gate.summary)
+            return 'tool_failed'
+          }
+          this.gateRepairInjected = true
+          messages.push({
+            role: 'user',
+            content: [
+              'Runtime final gate blocked completion.',
+              `Gate status: ${gate.status}`,
+              `Next action: ${gate.nextAction}`,
+              `Summary: ${gate.summary}`,
+              'Repair the issue, run needed verification, or clearly explain a blocking reason.',
+            ].join('\n'),
+          })
+          continue
+        }
         this.emitPart({
           id: createPartId(),
           messageId: assistantMessageId,
@@ -323,6 +377,7 @@ export class AgentLoop {
           taskContract: this.taskContract,
           planItems: this.planItems,
           emitProposal: proposal => {
+            this.proposedFiles.add(proposal.filePath)
             this.options.emit({ type: 'edit.proposed', sessionId: this.options.session.id, turnId: this.options.turn.id, proposal })
             this.emitPart({
               id: createPartId(),
@@ -338,6 +393,8 @@ export class AgentLoop {
           updateTaskContract: (contract, reason) => this.updateTaskContract(contract, reason),
         })
         results.push({ call, result })
+        const evidence = evidenceFromToolResult({ sessionId: this.options.session.id, turnId: this.options.turn.id, call, result })
+        if (evidence) this.recordEvidence(evidence)
         this.completeToolPart(toolPart, runningCall, result)
       }
       messages.push({
@@ -373,6 +430,109 @@ export class AgentLoop {
 
   private emitObservation(observation: Observation): void {
     this.options.emit({ type: 'observation.created', sessionId: this.options.session.id, turnId: this.options.turn.id, observation })
+  }
+
+  private emitEvidence(evidence: Evidence): void {
+    this.options.emit({ type: 'evidence.created', sessionId: this.options.session.id, turnId: this.options.turn.id, evidence })
+  }
+
+  private recordEvidence(evidence: Evidence): void {
+    this.evidence.push(evidence)
+    this.emitEvidence(evidence)
+  }
+
+  private emitCoverage(gate: VerificationGateResult): void {
+    if (!gate.coverage) return
+    this.verificationCoverage = gate.coverage
+    this.options.emit({ type: 'verification.coverage.updated', sessionId: this.options.session.id, turnId: this.options.turn.id, coverage: gate.coverage, gate })
+    this.emitPart({
+      id: createPartId(),
+      messageId: createMessageId('assistant'),
+      type: 'evidence_coverage',
+      coverage: gate.coverage,
+      evidence: this.evidence,
+      gate,
+      createdAt: now(),
+    })
+  }
+
+  private emitReview(result: ReviewResult): void {
+    this.reviewResult = result
+    this.options.emit({ type: 'review.completed', sessionId: this.options.session.id, turnId: this.options.turn.id, result })
+    this.emitPart({
+      id: createPartId(),
+      messageId: createMessageId('assistant'),
+      type: 'review',
+      result,
+      createdAt: now(),
+    })
+  }
+
+  private hasAppliedOrWorkspaceDiffEvidence(): boolean {
+    return this.evidence.some(item => item.source === 'diff' && item.data && (
+      item.data.state === 'applied'
+      || item.data.kind === 'workspace_diff'
+      || item.data.workspaceChanged === true
+    ))
+  }
+
+  private async runAutomaticVerification(): Promise<void> {
+    this.emitStage(createMessageId('assistant'), 'running_verification', 'Final gate requested project verification')
+    this.options.emit({ type: 'verification.started', sessionId: this.options.session.id, turnId: this.options.turn.id, verifier: 'command' })
+    const { result, evidence } = await new VerifierRunner(this.options.session, this.options.turn).runFirstAvailableWithEvidence()
+    this.options.emit({ type: 'verification.completed', sessionId: this.options.session.id, turnId: this.options.turn.id, result })
+    this.recordEvidence(evidence)
+    this.emitPart({
+      id: createPartId(),
+      messageId: createMessageId('assistant'),
+      type: 'verification',
+      result,
+      createdAt: now(),
+    })
+  }
+
+  private async runFinalGate(): Promise<VerificationGateResult> {
+    const codeChanged = this.hasAppliedOrWorkspaceDiffEvidence()
+    const gate = evaluateVerificationGate({ contract: this.taskContract, evidence: this.evidence, codeChanged })
+    if (gate.nextAction === 'run_more_checks' && !this.finalVerificationAttempted) {
+      this.finalVerificationAttempted = true
+      await this.runAutomaticVerification()
+      return this.finishFinalGate(evaluateVerificationGate({ contract: this.taskContract, evidence: this.evidence, codeChanged }))
+    }
+    return this.finishFinalGate(gate)
+  }
+
+  private finishFinalGate(gate: VerificationGateResult): VerificationGateResult {
+    const codeChanged = this.hasAppliedOrWorkspaceDiffEvidence()
+    this.emitCoverage(gate)
+    const review = runRuleBasedReview({
+      sessionId: this.options.session.id,
+      turnId: this.options.turn.id,
+      contract: this.taskContract,
+      evidence: this.evidence,
+      coverage: gate.coverage,
+      codeChanged,
+      proposedFiles: [...this.proposedFiles],
+      pendingProposalFiles: [...this.proposedFiles],
+    })
+    this.emitReview(review)
+    if (review.status !== 'approved') {
+      this.emitObservation(observationFromReview(review))
+    }
+    if (gate.nextAction !== 'allow_final') {
+      this.emitObservation(observationFromVerification(this.options.session.id, this.options.turn.id, gate))
+      return gate
+    }
+    if (review.status !== 'approved') {
+      return {
+        status: 'blocked',
+        coverage: gate.coverage,
+        evidence: this.evidence,
+        nextAction: 'repair',
+        summary: review.summary,
+      }
+    }
+    return gate
   }
 
   private updatePart(part: MessagePart): void {

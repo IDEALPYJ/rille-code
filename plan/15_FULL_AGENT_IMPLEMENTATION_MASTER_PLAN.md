@@ -319,8 +319,8 @@ interface SubagentContract {
 | Phase D/E Hardening | 已完成 | 补齐 Task Contract 更新、dirty buffer 防覆盖、旧 approval resume 和 context summary 基础 | 已作为当前稳定基线 |
 | Phase E | 已完成 | Final Context Engine Foundation | 已作为当前 Context 基线 |
 | Phase F | 已完成 | Tool Runtime + Policy Foundation | 已作为当前 Tool / Policy 基线 |
-| Phase G | 未开始 | Verification + Review Gate | 下一步执行 G1：扩展 VerificationStatus |
-| Phase H | 未开始 | Memory + Long-running State | 从 Handoff 和 Progress 开始 |
+| Phase G | 已完成 | Verification + Review Gate | 已作为当前 Verification / Review 基线 |
+| Phase H | 未开始 | Memory + Long-running State | 下一步执行 H1：增加 FeatureProgressItem、ProgressState、Handoff 协议与事件 |
 | Phase I | 未开始 | Observability + Eval | 从 TraceEvent 和 debug export 开始 |
 | Phase J | 未开始 | UX + Skills/Subagents | 从 Evidence UI 和 skills discovery 开始 |
 
@@ -361,14 +361,14 @@ interface SubagentContract {
 
 ### Phase G: Verification + Review Gate
 
-- [ ] G1. 扩展 VerificationStatus 为 passed、failed、skipped、partial、blocked、stale、waived。
-- [ ] G2. 增加 Evidence 和 VerificationCoverage 协议与事件。
-- [ ] G3. 增加 before-stop hook：code_changed 后无 evidence 不允许 completed。
-- [ ] G4. verification failure 进入 repair context。
-- [ ] G5. 增加 ReviewFinding、ReviewResult 和 blocking gate。
-- [ ] G6. AgentPanel 展示 evidence coverage 和 review findings。
-- [ ] G7. 补充 verification gate、review gate、repair loop、replay 测试。
-- [ ] G8. 更新 01、09、10、14、15 文档并记录验证结果。
+- [x] G1. 扩展 VerificationStatus 为 passed、failed、skipped、partial、blocked、stale、waived。
+- [x] G2. 增加 Evidence 和 VerificationCoverage 协议与事件。
+- [x] G3. 增加 before-stop hook：code_changed 后无 evidence 不允许 completed。
+- [x] G4. verification failure 进入 repair context。
+- [x] G5. 增加 ReviewFinding、ReviewResult 和 blocking gate。
+- [x] G6. AgentPanel 展示 evidence coverage 和 review findings。
+- [x] G7. 补充 verification gate、review gate、repair loop、replay 测试。
+- [x] G8. 更新 01、09、10、14、15 文档并记录验证结果。
 
 ### Phase H: Memory + Long-running State
 
@@ -538,6 +538,19 @@ interface SubagentContract {
 剩余风险: Phase F 只实现 session 内存 grant，没有持久 workspace grant；`ask_user` 和 `select_files` 先返回 blocking/error observation，完整交互 UI 留到 Phase J；Observation 已持久化但还没有 Phase G 的 Evidence/VerificationCoverage 和 before-stop gate。
 下一步: Phase G1，扩展 VerificationStatus 为 passed、failed、skipped、partial、blocked、stale、waived。
 
+### Phase G / Verification + Review Gate 完成记录
+
+步骤: G1-G8
+状态: 已完成
+完成日期: 2026-05-23
+涉及模块: protocol、verificationGate、verifier、runtime、thread、contextBuilder、AgentPanel、verification/runtime/session replay tests、Phase G 文档
+实现摘要: 已扩展 VerificationStatus，并新增 Evidence、VerificationCoverage、VerificationGateResult、ReviewFinding、ReviewResult、`evidence.created`、`verification.coverage.updated`、`review.completed`、coverage/review MessagePart；VerifierRunner 可同时产出 command Evidence，runtime 会从 diagnostics、command、diff/proposal 生成 Evidence，并在 final answer 前执行 before-stop gate；缺少检查时 final gate 会自动运行一次项目 verifier；failed/blocked/partial coverage 会按最终完整 Agent 标准阻止 completed 并把 gate 摘要注入下一轮 repair context；Coverage 按每个 `evidenceRequired` 类型逐项覆盖，重复同类 evidence 不能代替缺失类型；proposal diff 与 applied/workspace diff 分层，未应用 proposal 会由 review gate 阻止完成；rule-based review 会检查缺少验证、失败 evidence、高风险覆盖、pending proposal 和疑似越界文件，blocking finding 会产生 review Observation；Context Engine 会注入 verification/review 摘要，AgentPanel 可展示 coverage 和 review findings。
+测试文件: `tests/agent/verificationGate.test.ts`、`tests/agent/verifier.test.ts`、`tests/agent/runtime.test.ts`、`tests/agent/sessionStore.test.ts`
+验证命令: `npm test`、`npm run typecheck`、`npm run build`、`rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+验证结果: `npm test` 为 12 files / 61 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查无输出；checklist 检查可列出当前完成与未完成项。
+剩余风险: 用户 waiver 只有协议状态预留，尚无交互 UI；Review 是 rule-based，不接 reviewer model/advisor；Evidence output 仍走现有截断策略，没有 artifactRef 存储；stale evidence 检查只预留状态，完整 workspace freshness 留给 Phase H。
+下一步: Phase H1，增加 FeatureProgressItem、ProgressState、Handoff 协议与事件。
+
 ## 全局测试策略
 
 每次代码实现必须运行：
@@ -569,17 +582,17 @@ rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md
 
 ## 下一步指针
 
-当前下一步是 Phase G1：
+当前下一步是 Phase H1：
 
 ```text
-扩展 VerificationStatus 为 passed、failed、skipped、partial、blocked、stale、waived。
+增加 FeatureProgressItem、ProgressState、Handoff 协议与事件。
 ```
 
-Phase G1 完成后必须同步更新：
+Phase H1 完成后必须同步更新：
 
 - `plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
 - `plan/01_CURRENT_BASELINE.md`
-- `plan/09_VERIFICATION.md`
+- `plan/11_MEMORY_LONG_RUNNING.md`
 - `plan/14_IMPLEMENTATION_ROADMAP.md`
 
 ## 停止线

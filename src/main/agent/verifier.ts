@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
-import type { AgentSession, AgentTurn, AgentWorkspaceLocation, VerificationResult } from '../../shared/agent/protocol'
+import type { AgentSession, AgentTurn, AgentWorkspaceLocation, Evidence, VerificationResult } from '../../shared/agent/protocol'
 import { workspaceReadFile, workspaceRunCommand } from './workspace'
+import { evidenceFromVerificationResult } from './verificationGate'
 
 export interface VerificationCommand {
   verifier: 'command'
@@ -48,6 +49,11 @@ export async function discoverVerificationCommands(workspace?: AgentWorkspaceLoc
 export class VerifierRunner {
   constructor(private readonly session: AgentSession, private readonly turn?: AgentTurn) {}
 
+  async runFirstAvailableWithEvidence(): Promise<{ result: VerificationResult; evidence: Evidence }> {
+    const result = await this.runFirstAvailable()
+    return { result, evidence: evidenceFromVerificationResult(result) }
+  }
+
   async runFirstAvailable(): Promise<VerificationResult> {
     const turn = this.turn || fallbackTurn(this.session)
     const command = (await discoverVerificationCommands(this.session.workspace))[0]
@@ -84,4 +90,3 @@ export class VerifierRunner {
     }
   }
 }
-
