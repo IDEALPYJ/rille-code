@@ -30,12 +30,19 @@ Observability 模块让 Agent 的行动过程可见、可复盘、可恢复、�
 
 当前缺口：
 
-- 没有 ContextTrace。
-- 没有 ModelCallTrace / usage。
-- 没有 PolicyTrace。
-- 没有 Evidence coverage trace。
-- 没有 Eval 数据集和 regression harness。
-- 没有 debug export。
+- eval runner 仅做 trajectory type 匹配，不做完整 workspace fixture 和 replay。
+- costUsd 未内置定价表，需外部注入。
+- trace export 目前是 full-session 读取，大 session 内存风险。
+
+Phase I 已实现：
+
+- TraceEvent 9 种子类型（task/context/model/tool/policy/verification/review/handoff/cost）。
+- AgentUsage（inputTokens、outputTokens、latencyMs）从 OpenAI/Anthropic/Gemini API 响应提取。
+- TraceCollector 在 AgentLoop 关键决策点收集 trace，finalize 时通过 trace.batch 持久化。
+- redactTraceEvent（policy grant 脱敏）+ computeTrajectoryMetrics（完成率、拒绝次数、token 聚合）。
+- exportSessionTrace（domain event → trace event 推导+脱敏）+ index.ts trace.export IPC handler。
+- eval/ 目录含 cases/_template.json 和 runner.ts。
+- 测试覆盖：trace.test.ts（6 tests）、sessionStore trace.batch 持久化测试。
 
 ## 设计原则
 

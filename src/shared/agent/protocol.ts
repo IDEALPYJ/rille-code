@@ -447,6 +447,39 @@ export interface Handoff {
   createdAt: number
 }
 
+// === Trace / Usage / Eval ===
+
+export interface AgentUsage {
+  model: string
+  providerId: string
+  inputTokens?: number
+  outputTokens?: number
+  cachedInputTokens?: number
+  costUsd?: number
+  latencyMs?: number
+}
+
+export type TraceEvent =
+  | { type: 'task.created'; sessionId: string; turnId: string; contractId: string; summary: string; createdAt: number }
+  | { type: 'context.built'; sessionId: string; turnId: string; trace: ContextTrace; createdAt: number }
+  | { type: 'model.called'; sessionId: string; turnId: string; usage?: AgentUsage; createdAt: number }
+  | { type: 'tool.executed'; sessionId: string; turnId: string; callId: string; name: string; status: string; durationMs?: number; createdAt: number }
+  | { type: 'policy.decided'; sessionId: string; turnId: string; decision: PolicyDecision; createdAt: number }
+  | { type: 'verification.ran'; sessionId: string; turnId: string; result: VerificationResult; createdAt: number }
+  | { type: 'review.completed'; sessionId: string; turnId: string; result: ReviewResult; createdAt: number }
+  | { type: 'handoff.generated'; sessionId: string; turnId: string; handoff: Handoff; createdAt: number }
+  | { type: 'cost.updated'; sessionId: string; turnId: string; usage: AgentUsage; createdAt: number }
+
+export interface EvalCase {
+  id: string
+  title: string
+  task: string
+  workspaceFixture?: string
+  expectedTrajectory: string[]
+  expectedEvidence: string[]
+  safetyExpectations: string[]
+}
+
 export interface AgentSession {
   id: string
   workspace: AgentWorkspaceLocation | null
@@ -604,6 +637,7 @@ export type AgentOp =
   | { type: 'edit.reject'; sessionId: string; proposalId: string; reason?: string }
   | { type: 'edit.rollback'; sessionId: string; proposalId: string }
   | { type: 'permission.update'; sessionId: string; permissionMode: AgentPermissionMode }
+  | { type: 'trace.export'; sessionId: string; redacted?: boolean }
 
 export type AgentEvent =
   | { type: 'session.created'; session: AgentSession }
@@ -632,5 +666,7 @@ export type AgentEvent =
   | { type: 'turn.failed'; sessionId: string; turnId: string; reason: TurnStopReason; error: string }
   | { type: 'progress.updated'; sessionId: string; turnId: string; progress: ProgressState }
   | { type: 'handoff.created'; sessionId: string; turnId: string; handoff: Handoff }
+  | { type: 'trace.exported'; sessionId: string; format: 'json'; redacted: boolean; traceEvents: TraceEvent[] }
+  | { type: 'trace.batch'; sessionId: string; turnId: string; traceEvents: TraceEvent[] }
 
 export type AgentIpcResult<T> = { ok: true; value: T } | { ok: false; error: string }

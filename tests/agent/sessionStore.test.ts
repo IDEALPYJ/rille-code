@@ -287,4 +287,21 @@ describe('sessionStore', () => {
     for (const event of events) await store.appendSessionEvent(event)
     await expect(store.readSessionEvents(meta.id)).resolves.toEqual(events)
   })
+
+  it('persists and replays trace.batch events', async () => {
+    const store = await import('../../src/main/agent/sessionStore')
+    const meta = session()
+    const activeTurn = turn(meta.id)
+    const traceEvents = [
+      { type: 'task.created' as const, sessionId: meta.id, turnId: activeTurn.id, contractId: 'c1', summary: 'task', createdAt: 1 },
+      { type: 'model.called' as const, sessionId: meta.id, turnId: activeTurn.id, usage: { model: 'gpt-4', providerId: 'openai', inputTokens: 100, outputTokens: 50, latencyMs: 500 }, createdAt: 2 },
+      { type: 'tool.executed' as const, sessionId: meta.id, turnId: activeTurn.id, callId: 'call1', name: 'read_file', status: 'ok', durationMs: 50, createdAt: 3 },
+    ]
+    const events: AgentEvent[] = [
+      { type: 'session.created', session: meta },
+      { type: 'trace.batch', sessionId: meta.id, turnId: activeTurn.id, traceEvents },
+    ]
+    for (const event of events) await store.appendSessionEvent(event)
+    await expect(store.readSessionEvents(meta.id)).resolves.toEqual(events)
+  })
 })

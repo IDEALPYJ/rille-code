@@ -24,7 +24,11 @@ vi.mock('../../src/main/agent/config', () => ({
 }))
 
 vi.mock('../../src/main/agent/provider', () => ({
-  callAgentModel: callAgentModelMock,
+  callAgentModel: async (...args: unknown[]) => {
+    const result = await callAgentModelMock(...args)
+    if (typeof result === 'string') return { text: result, usage: undefined }
+    return result
+  },
 }))
 
 function session(): AgentSession {

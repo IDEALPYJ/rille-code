@@ -308,6 +308,14 @@ npm run build
 剩余风险: ProjectMemoryEntry 只设计未实现；handoff 仅在 turn 边界生成；stale evidence 检查仅验证文件存在性（不比较 git diff）；workspace freshness 仅 local workspace；compact 无显式触发逻辑。
 下一步: Phase I1，增加 TraceEvent 和 AgentUsage 协议与事件。
 
+日期: 2026-05-23
+完成范围: Phase I Observability + Eval
+涉及文件: `src/shared/agent/protocol.ts`、`src/main/agent/provider.ts`、`src/main/agent/runtime.ts`、`src/main/agent/trace.ts`（新）、`src/main/agent/index.ts`、`tests/agent/trace.test.ts`（新）、`tests/agent/sessionStore.test.ts`、`eval/runner.ts`（新）、`eval/cases/_template.json`（新）、`plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`、`plan/01_CURRENT_BASELINE.md`、`plan/12_OBSERVABILITY_EVAL.md`、`plan/14_IMPLEMENTATION_ROADMAP.md`
+验证命令: `npm test`、`npm run typecheck`、`npm run build`、`rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+结果: `npm test` 为 13 files / 80 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查无输出；总控 checklist 可列出当前完成与未完成项。
+剩余风险: provider usage 依赖各 API 返回格式（Ollama/custom 可能无 usage）；eval runner 仅 trajectory type 匹配；costUsd 无内置定价表；大 session trace export 内存风险。
+下一步: Phase J1，Agent 工作台展示 Task、Plan、Diff、Approval、Evidence、Review、Handoff、Trace。
+
 ## 停止线
 
 出现以下情况时停止扩大实现范围：

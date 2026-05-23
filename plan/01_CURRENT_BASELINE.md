@@ -24,9 +24,9 @@
 | --- | --- | --- |
 | Shared protocol | 有 AgentOp、AgentEvent、MessagePart、AgentRunStage、VerificationResult、Evidence、VerificationCoverage、ReviewFinding、ReviewResult、EditProposal、TaskContract、AgentPlanItem、ContextFragment、ContextTrace、ContextBuildResult、Observation、PolicyDecision、PermissionGrant；`edit.apply` 可携带当前 IDE context snapshot 用于写盘前 dirty guard | `src/shared/agent/protocol.ts` |
 | Session runtime | 有 AgentThread，管理 session、turn、Task Contract 初始化与更新、Plan 初始化、interrupt、approval、edit apply/reject/rollback；resume `waiting_approval` 会恢复为 idle 并让旧 approval 失效 | `src/main/agent/thread.ts`, `src/main/agent/taskContract.ts` |
-| Agent loop | 有 AgentLoop，支持 ContextBuildResult -> contract/plan -> model -> JSON tool calls -> permission/policy/grant -> tool execution -> Evidence/Observation/result feedback -> verification/review before-stop gate -> plan/contract update -> progress/handoff finalize，并持久化 redacted context trace | `src/main/agent/runtime.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/verificationGate.ts` |
+| Agent loop | 有 AgentLoop，支持 ContextBuildResult -> contract/plan -> model -> JSON tool calls -> permission/policy/grant -> tool execution -> Evidence/Observation/result feedback -> verification/review before-stop gate -> plan/contract update -> progress/handoff finalize -> trace batch persist，并持久化 redacted context trace | `src/main/agent/runtime.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/verificationGate.ts`, `src/main/agent/trace.ts` |
 | Model adapter | 有 TextJsonToolAdapter 和 JSON action parser，system prompt 会注入 Task Contract / Plan 边界 | `src/main/agent/modelAdapter.ts` |
-| Provider | 支持 OpenAI-compatible、Anthropic、Gemini、Ollama/custom 基础调用 | `src/main/agent/provider.ts`, `src/main/agent/config.ts` |
+| Provider | 支持 OpenAI-compatible、Anthropic、Gemini、Ollama/custom 基础调用；返回 ModelCallResult（text + usage：tokens、latencyMs） | `src/main/agent/provider.ts`, `src/main/agent/config.ts` |
 | Tool registry | 有 active editor、open files、diagnostics、update_plan、update_task_contract、ask_user、select_files、list/read/search、git、propose edit、runtime-only apply、run command；每个 RegisteredTool 都有 visibility、sideEffect、validate；read/propose 会优先使用 canonical path 匹配到的 dirty active buffer | `src/main/agent/tools.ts` |
 | Permission | 有 plan/ask/accept_edits/auto/bypass、command risk classifier、`.rille/policy.json` loader、session PermissionGrant、拒绝循环检测和 policy denial Observation | `src/main/agent/permissions.ts` |
 | Workspace | 有 local / ssh / wsl 路由、workspace path guard 和 canonical workspace path helper | `src/main/agent/workspace.ts` |
@@ -35,8 +35,9 @@
 | Review | 有基础 rule-based review gate，能对 missing verification、failed evidence、疑似越界文件和高风险覆盖缺口生成 blocking finding | `src/main/agent/verificationGate.ts` |
 | Persistence | 有 userData JSONL events、meta、summary、schemaVersion、sequence | `src/main/agent/sessionStore.ts` |
 | Memory / Long-running | 有 FeatureItem、ProgressState、Handoff 协议；turn 结束自动生成 progress/handoff 事件；resume 时注入 handoff 到 context；workspace freshness 检查；session_summary fragment | `src/main/agent/runtime.ts`, `src/main/agent/thread.ts`, `src/main/agent/contextBuilder.ts` |
+| Observability / Eval | 有 AgentUsage、TraceEvent（9 种子类型）、EvalCase 协议；provider 返回 usage（tokens + latency）；TraceCollector 在关键决策点收集 trace；finalize 时持久化 trace.batch；redactTraceEvent 脱敏；computeTrajectoryMetrics 聚合指标；exportSessionTrace 导出；eval/ 目录含 runner.ts | `src/main/agent/trace.ts`, `src/main/agent/provider.ts`, `src/main/agent/runtime.ts`, `eval/` |
 | Agent UI | 有 timeline、Task Contract card、Plan card、tool group、stage、approval、diff、edit result、verification、evidence coverage、review findings、handoff 展示；会记录 latest context summary 供后续 Trace UI 使用 | `src/renderer/components/agent/AgentPanel.tsx` |
-| Tests | 有 Vitest 覆盖 task contract、tools、edit、model adapter、permission、session store、runtime、context builder、verifier、workspace、progress/handoff | `tests/agent/*` |
+| Tests | 有 Vitest 覆盖 task contract、tools、edit、model adapter、permission、session store、runtime、context builder、verifier、workspace、progress/handoff、trace/metrics | `tests/agent/*` |
 
 ## 当前基础闭环
 
@@ -73,8 +74,8 @@
 
 ```text
 npm test
-  12 files passed
-  70 tests passed
+  13 files passed
+  80 tests passed
 
 npm run typecheck
   passed

@@ -3,6 +3,7 @@ import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModel
 import { deleteAgentModelProfile, listAgentModelProfiles, readAgentConfigSnapshot, saveAgentConfig, saveAgentModelProfile, selectAgentModelProfile } from './config'
 import { testAgentProvider } from './provider'
 import { AgentThread } from './thread'
+import { exportSessionTrace } from './trace'
 import { deleteSessionStore, findLastSession, listSessionSummaries, readSessionMeta, renameSessionMeta, saveSessionMeta } from './sessionStore'
 
 const threads = new Map<string, AgentThread>()
@@ -113,6 +114,9 @@ export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<Agent
       for (const thread of threads.values()) thread.handle(op)
       return ok(true)
     }
+    if (op.type === 'trace.export') {
+      return ok({ traceEvents: await exportSessionTrace(op.sessionId, op.redacted !== false) } as unknown as AgentSession)
+    }
     if ('sessionId' in op) {
       return ok(requireThread(op.sessionId).handle(op))
     }
@@ -173,6 +177,15 @@ export function removeAgentModelProfile(profileId: string): AgentIpcResult<Agent
 export async function checkAgentProvider(profileId?: string): Promise<AgentIpcResult<{ success: boolean; message: string }>> {
   try {
     return ok(await testAgentProvider(profileId))
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export async function exportAgentTrace(sessionId: string, redacted = true): Promise<AgentIpcResult<{ traceEvents: unknown[] }>> {
+  try {
+    const traceEvents = await exportSessionTrace(sessionId, redacted)
+    return ok({ traceEvents })
   } catch (error) {
     return fail(error)
   }

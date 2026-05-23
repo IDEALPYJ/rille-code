@@ -1,9 +1,14 @@
-import type { AgentConfigSnapshot } from '../../shared/agent/protocol'
+import type { AgentConfigSnapshot, AgentUsage } from '../../shared/agent/protocol'
 import { getAgentConfigForProvider, type ProviderConfigWithSecret } from './config'
 
 export interface AgentChatMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
+}
+
+export interface ModelCallResult {
+  text: string
+  usage?: AgentUsage
 }
 
 interface ProviderRequestOptions {
@@ -56,8 +61,42 @@ function splitSystem(messages: AgentChatMessage[]): { system: string; messages: 
   return { system, messages: messages.filter(message => message.role !== 'system') }
 }
 
-async function callOpenAIChat(config: ProviderConfigWithSecret, messages: AgentChatMessage[], options: ProviderRequestOptions): Promise<string> {
+function extractOpenAIUsage(payload: unknown): AgentUsage | undefined {
+  const data = payload as { usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } }
+  if (!data.usage) return undefined
+  return {
+    model: '',
+    providerId: 'openai',
+    inputTokens: data.usage.prompt_tokens,
+    outputTokens: data.usage.completion_tokens,
+  }
+}
+
+function extractAnthropicUsage(payload: unknown): AgentUsage | undefined {
+  const data = payload as { usage?: { input_tokens?: number; output_tokens?: number } }
+  if (!data.usage) return undefined
+  return {
+    model: '',
+    providerId: 'anthropic',
+    inputTokens: data.usage.input_tokens,
+    outputTokens: data.usage.output_tokens,
+  }
+}
+
+function extractGeminiUsage(payload: unknown): AgentUsage | undefined {
+  const data = payload as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number } }
+  if (!data.usageMetadata) return undefined
+  return {
+    model: '',
+    providerId: 'google',
+    inputTokens: data.usageMetadata.promptTokenCount,
+    outputTokens: data.usageMetadata.candidatesTokenCount,
+  }
+}
+
+async function callOpenAIChat(config: ProviderConfigWithSecret, messages: AgentChatMessage[], options: ProviderRequestOptions): Promise<ModelCallResult> {
   const apiKey = requireApiKey(config)
+  const startedAt = Date.now()
   const payload = {
     model: config.model,
     messages,
@@ -72,13 +111,21 @@ async function callOpenAIChat(config: ProviderConfigWithSecret, messages: AgentC
     },
     body: JSON.stringify(payload),
   })
-  const text = extractOpenAIText(await parseJsonResponse(response)).trim()
+  const json = await parseJsonResponse(response)
+  const text = extractOpenAIText(json).trim()
   if (!text) throw new Error('模型返回为空。')
-  return text
+  const usage = extractOpenAIUsage(json)
+  if (usage) {
+    usage.model = config.model
+    usage.providerId = config.providerId
+    usage.latencyMs = Date.now() - startedAt
+  }
+  return { text, usage }
 }
 
-async function callAnthropic(config: ProviderConfigWithSecret, messages: AgentChatMessage[], options: ProviderRequestOptions): Promise<string> {
+async function callAnthropic(config: ProviderConfigWithSecret, messages: AgentChatMessage[], options: ProviderRequestOptions): Promise<ModelCallResult> {
   const apiKey = requireApiKey(config)
+  const startedAt = Date.now()
   const { system, messages: conversation } = splitSystem(messages)
   const response = await fetch(joinUrl(config.baseURL, '/v1/messages'), {
     method: 'POST',
@@ -96,13 +143,21 @@ async function callAnthropic(config: ProviderConfigWithSecret, messages: AgentCh
       temperature: 0.2,
     }),
   })
-  const text = extractAnthropicText(await parseJsonResponse(response)).trim()
+  const json = await parseJsonResponse(response)
+  const text = extractAnthropicText(json).trim()
   if (!text) throw new Error('模型返回为空。')
-  return text
+  const usage = extractAnthropicUsage(json)
+  if (usage) {
+    usage.model = config.model
+    usage.providerId = config.providerId
+    usage.latencyMs = Date.now() - startedAt
+  }
+  return { text, usage }
 }
 
-async function callGemini(config: ProviderConfigWithSecret, messages: AgentChatMessage[], options: ProviderRequestOptions): Promise<string> {
+async function callGemini(config: ProviderConfigWithSecret, messages: AgentChatMessage[], options: ProviderRequestOptions): Promise<ModelCallResult> {
   const apiKey = requireApiKey(config)
+  const startedAt = Date.now()
   const { system, messages: conversation } = splitSystem(messages)
   const url = `${joinUrl(config.baseURL, `/v1beta/models/${encodeURIComponent(config.model)}:generateContent`)}?key=${encodeURIComponent(apiKey)}`
   const response = await fetch(url, {
@@ -120,19 +175,26 @@ async function callGemini(config: ProviderConfigWithSecret, messages: AgentChatM
       },
     }),
   })
-  const text = extractGeminiText(await parseJsonResponse(response)).trim()
+  const json = await parseJsonResponse(response)
+  const text = extractGeminiText(json).trim()
   if (!text) throw new Error('模型返回为空。')
-  return text
+  const usage = extractGeminiUsage(json)
+  if (usage) {
+    usage.model = config.model
+    usage.providerId = config.providerId
+    usage.latencyMs = Date.now() - startedAt
+  }
+  return { text, usage }
 }
 
-export async function callAgentModel(messages: AgentChatMessage[], options: ProviderRequestOptions = {}): Promise<string> {
+export async function callAgentModel(messages: AgentChatMessage[], options: ProviderRequestOptions = {}): Promise<ModelCallResult> {
   const config = getAgentConfigForProvider()
   if (config.protocol === 'anthropic') return callAnthropic(config, messages, options)
   if (config.protocol === 'gemini') return callGemini(config, messages, options)
   return callOpenAIChat(config, messages, options)
 }
 
-export async function callAgentModelWithConfig(config: ProviderConfigWithSecret, messages: AgentChatMessage[], options: ProviderRequestOptions = {}): Promise<string> {
+export async function callAgentModelWithConfig(config: ProviderConfigWithSecret, messages: AgentChatMessage[], options: ProviderRequestOptions = {}): Promise<ModelCallResult> {
   if (config.protocol === 'anthropic') return callAnthropic(config, messages, options)
   if (config.protocol === 'gemini') return callGemini(config, messages, options)
   return callOpenAIChat(config, messages, options)
@@ -140,11 +202,11 @@ export async function callAgentModelWithConfig(config: ProviderConfigWithSecret,
 
 export async function testAgentProvider(profileId?: string): Promise<{ success: boolean; message: string }> {
   try {
-    const answer = await callAgentModelWithConfig(getAgentConfigForProvider(profileId), [
+    const result = await callAgentModelWithConfig(getAgentConfigForProvider(profileId), [
       { role: 'system', content: 'You are a connectivity test. Reply with exactly OK.' },
       { role: 'user', content: 'OK' },
     ])
-    return { success: true, message: answer.slice(0, 120) || 'OK' }
+    return { success: true, message: result.text.slice(0, 120) || 'OK' }
   } catch (error) {
     return { success: false, message: error instanceof Error ? error.message : String(error) }
   }

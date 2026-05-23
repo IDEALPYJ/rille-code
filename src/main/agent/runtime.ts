@@ -27,7 +27,8 @@ import type {
 } from '../../shared/agent/protocol'
 import { readAgentConfigSnapshot } from './config'
 import { buildAgentContext, DEFAULT_CONTEXT_BUDGET_TOKENS } from './contextBuilder'
-import { callAgentModel, type AgentChatMessage } from './provider'
+import { callAgentModel, type AgentChatMessage, type ModelCallResult } from './provider'
+import { TraceCollector } from './trace'
 import { decidePermission, deniedToolResult, DenialTracker, PermissionGrantStore, permissionForCall, permissionPattern } from './permissions'
 import { executeToolCall, getRegisteredTool, type RuntimeToolCall } from './tools'
 import { VerifierRunner } from './verifier'
@@ -166,6 +167,7 @@ export class AgentLoop {
   private proposedFiles = new Set<string>()
   private changedFiles: string[] = []
   private failedAttempts: string[] = []
+  private traceCollector = new TraceCollector()
   private gateRepairInjected = false
   private finalVerificationAttempted = false
 
@@ -254,6 +256,10 @@ export class AgentLoop {
       trace: contextResult.trace,
       createdAt: now(),
     })
+    this.traceCollector.contextBuilt(this.options.session.id, this.options.turn.id, contextResult.trace)
+    if (this.taskContract) {
+      this.traceCollector.taskCreated(this.options.session.id, this.options.turn.id, this.taskContract.id, this.taskContract.goal)
+    }
     const messages: AgentChatMessage[] = this.adapter.buildMessages({
       session: this.options.session,
       contextPrompt: contextResult.prompt,
@@ -266,8 +272,10 @@ export class AgentLoop {
     for (let iteration = 0; iteration < 12; iteration += 1) {
       if (this.options.signal.aborted) return this.finalize('interrupted')
       this.emitStage(assistantMessageId, 'calling_model', `第 ${iteration + 1} 轮模型调用`)
-      const modelText = await callAgentModel(messages, { signal: this.options.signal })
+      const { text: modelText, usage } = await callAgentModel(messages, { signal: this.options.signal })
       if (this.options.signal.aborted) return this.finalize('interrupted')
+      this.traceCollector.modelCalled(this.options.session.id, this.options.turn.id, usage)
+      if (usage) this.traceCollector.costUpdated(this.options.session.id, this.options.turn.id, usage)
       const action = this.adapter.parseAction(modelText)
 
       if (action.type === 'answer') {
@@ -342,6 +350,7 @@ export class AgentLoop {
         if (permission.action === 'deny') {
           const result = deniedToolResult(call, permission.reason, permission.policyDecision.alternatives)
           results.push({ call, result })
+          this.traceCollector.policyDecided(this.options.session.id, this.options.turn.id, permission.policyDecision)
           this.failedAttempts.push(`${call.name}: ${permission.reason}`)
           this.emitObservation(observationFromPolicy(this.options.session.id, this.options.turn.id, call, permission.policyDecision))
           if (denialTracker.record(permissionPattern(call))) {
@@ -428,6 +437,7 @@ export class AgentLoop {
   private completeToolPart(part: Extract<MessagePart, { type: 'tool' }>, runningCall: ToolCallView, result: ToolResultView) {
     const completedCall: ToolCallView = { ...runningCall, state: result.error ? 'failed' : 'completed', completedAt: now() }
     this.options.emit({ type: 'tool.completed', sessionId: this.options.session.id, turnId: this.options.turn.id, callId: runningCall.id, result })
+    this.traceCollector.toolExecuted(this.options.session.id, this.options.turn.id, runningCall.id, runningCall.name, result.error ? 'failed' : 'ok', result.durationMs)
     this.emitObservation(observationFromToolResult(this.options.session.id, this.options.turn.id, runningCall, result))
     this.updatePart({
       ...part,
@@ -494,6 +504,7 @@ export class AgentLoop {
     this.options.emit({ type: 'verification.started', sessionId: this.options.session.id, turnId: this.options.turn.id, verifier: 'command' })
     const { result, evidence } = await new VerifierRunner(this.options.session, this.options.turn).runFirstAvailableWithEvidence()
     this.options.emit({ type: 'verification.completed', sessionId: this.options.session.id, turnId: this.options.turn.id, result })
+    this.traceCollector.verificationRan(this.options.session.id, this.options.turn.id, result)
     this.recordEvidence(evidence)
     this.emitPart({
       id: createPartId(),
@@ -529,6 +540,7 @@ export class AgentLoop {
       pendingProposalFiles: [...this.proposedFiles],
     })
     this.emitReview(review)
+    this.traceCollector.reviewCompleted(this.options.session.id, this.options.turn.id, review)
     if (review.status !== 'approved') {
       this.emitObservation(observationFromReview(review))
     }
@@ -684,6 +696,7 @@ export class AgentLoop {
 
   private emitHandoff(reason: TurnStopReason): void {
     const handoff = this.buildHandoff(reason)
+    this.traceCollector.handoffGenerated(this.options.session.id, this.options.turn.id, handoff)
     this.options.emit({
       type: 'handoff.created',
       sessionId: this.options.session.id,
@@ -712,6 +725,15 @@ export class AgentLoop {
   private finalize(reason: TurnStopReason): TurnStopReason {
     this.emitProgress()
     this.emitHandoff(reason)
+    const traceEvents = this.traceCollector.flush()
+    if (traceEvents.length > 0) {
+      this.options.emit({
+        type: 'trace.batch',
+        sessionId: this.options.session.id,
+        turnId: this.options.turn.id,
+        traceEvents,
+      })
+    }
     return reason
   }
 }

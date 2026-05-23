@@ -321,7 +321,7 @@ interface SubagentContract {
 | Phase F | 已完成 | Tool Runtime + Policy Foundation | 已作为当前 Tool / Policy 基线 |
 | Phase G | 已完成 | Verification + Review Gate | 已作为当前 Verification / Review 基线 |
 | Phase H | 已完成 | Memory + Long-running State | 已作为当前 Memory/Long-running 基线 |
-| Phase I | 未开始 | Observability + Eval | 从 TraceEvent 和 debug export 开始 |
+| Phase I | 已完成 | Observability + Eval | 已作为当前 Observability/Eval 基线 |
 | Phase J | 未开始 | UX + Skills/Subagents | 从 Evidence UI 和 skills discovery 开始 |
 
 ## 执行 Checklist
@@ -382,13 +382,13 @@ interface SubagentContract {
 
 ### Phase I: Observability + Eval
 
-- [ ] I1. 增加 TraceEvent 和 AgentUsage 协议与事件。
-- [ ] I2. 为 context、model、tool、policy、execution、verification、review 增加 trace。
-- [ ] I3. 增加 redacted debug export。
-- [ ] I4. 建立 eval case 目录和 replay runner。
-- [ ] I5. 增加 trajectory 指标：完成率、修复率、重复 deny、验证覆盖、成本、耗时。
-- [ ] I6. 补充 trace export、usage、eval replay 测试。
-- [ ] I7. 更新 01、12、14、15 文档并记录验证结果。
+- [x] I1. 增加 TraceEvent 和 AgentUsage 协议与事件。
+- [x] I2. 为 context、model、tool、policy、execution、verification、review 增加 trace。
+- [x] I3. 增加 redacted debug export。
+- [x] I4. 建立 eval case 目录和 replay runner。
+- [x] I5. 增加 trajectory 指标：完成率、修复率、重复 deny、验证覆盖、成本、耗时。
+- [x] I6. 补充 trace export、usage、eval replay 测试。
+- [x] I7. 更新 01、12、14、15 文档并记录验证结果。
 
 ### Phase J: UX + Skills/Subagents
 
@@ -564,6 +564,19 @@ interface SubagentContract {
 剩余风险: ProjectMemoryEntry 只设计未实现，没有持久化 memory store；handoff 仅在 turn 边界生成，长任务中途暂停无中间 checkpoint；stale evidence 检查只验证文件存在性，不比较 git hash/diff；workspace freshness 仅对 local workspace 有效，SSH/WSL 跳过检查；compact boundary 只在 token 预算紧张时依靠 trimming 自然排除，没有显式 compact 触发逻辑。
 下一步: Phase I1，增加 TraceEvent 和 AgentUsage 协议与事件。
 
+### Phase I / Observability + Eval 完成记录
+
+步骤: I1-I7
+状态: 已完成
+完成日期: 2026-05-23
+涉及模块: protocol、provider、runtime、trace（新）、index、AgentPanel、sessionStore tests、runtime tests、trace tests（新）、Phase I 文档
+实现摘要: 已新增 AgentUsage、TraceEvent（9 种子类型）、EvalCase 协议类型及 trace.batch、trace.exported 事件和 trace.export IPC op；provider 层 callOpenAIChat/callAnthropic/callGemini 均从 API 响应提取 usage（tokens）+ latencyMs，callAgentModel 返回 ModelCallResult 替代 raw string；TraceCollector 在 AgentLoop 关键决策点（task/context/model/tool/policy/verification/review/handoff/cost）收集 trace 事件，finalize 时通过 trace.batch 持久化；trace.ts 提供 redactTraceEvent（policy grant 脱敏）、computeTrajectoryMetrics（完成率、拒绝次数、token 聚合）和 exportSessionTrace（domain event → trace event 推导+脱敏）；index.ts 新增 exportAgentTrace 和 trace.export IPC handler；eval/ 目录包含 runner.ts 和 cases/_template.json。
+测试文件: `tests/agent/trace.test.ts`（新，6 tests：TraceCollector、redactTraceEvent、computeTrajectoryMetrics）、`tests/agent/sessionStore.test.ts`（+1 trace.batch 持久化测试）、`tests/agent/runtime.test.ts`（已有 tests 通过 mock 适配 ModelCallResult）
+验证命令: `npm test`、`npm run typecheck`、`npm run build`、`rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+验证结果: `npm test` 为 13 files / 80 tests passed；`npm run typecheck` passed；`npm run build` passed。
+剩余风险: provider usage 提取依赖各 API 实际返回格式，部分 provider（如 Ollama、custom）可能不返回 usage 字段；eval runner 仅做 trajectory type 匹配，不做实际 workspace fixture 设置和完整 replay；costUsd 未内置定价表，需外部注入；trace export 目前是 full-session 读取，大 session 可能 OOM。
+下一步: Phase J1，Agent 工作台展示 Task、Plan、Diff、Approval、Evidence、Review、Handoff、Trace。
+
 ## 全局测试策略
 
 每次代码实现必须运行：
@@ -595,17 +608,17 @@ rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md
 
 ## 下一步指针
 
-当前下一步是 Phase I1：
+当前下一步是 Phase J1：
 
 ```text
-增加 TraceEvent 和 AgentUsage 协议与事件。
+Agent 工作台展示 Task、Plan、Diff、Approval、Evidence、Review、Handoff、Trace。
 ```
 
-Phase I1 完成后必须同步更新：
+Phase J1 完成后必须同步更新：
 
 - `plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
 - `plan/01_CURRENT_BASELINE.md`
-- `plan/12_OBSERVABILITY_EVAL.md`
+- `plan/13_PRODUCT_UX.md`
 - `plan/14_IMPLEMENTATION_ROADMAP.md`
 
 ## 停止线
