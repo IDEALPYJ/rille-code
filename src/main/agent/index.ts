@@ -3,7 +3,7 @@ import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModel
 import { deleteAgentModelProfile, listAgentModelProfiles, readAgentConfigSnapshot, saveAgentConfig, saveAgentModelProfile, selectAgentModelProfile } from './config'
 import { testAgentProvider } from './provider'
 import { AgentThread } from './thread'
-import { deleteSessionStore, findLastSession, listSessionSummaries, readSessionMeta, renameSessionMeta } from './sessionStore'
+import { deleteSessionStore, findLastSession, listSessionSummaries, readSessionMeta, renameSessionMeta, saveSessionMeta } from './sessionStore'
 
 const threads = new Map<string, AgentThread>()
 
@@ -39,6 +39,7 @@ export async function resumeAgentSession(sender: WebContents, op: Extract<AgentO
       const meta = readSessionMeta(op.sessionId)
       if (!meta) throw new Error('Agent session does not exist.')
       const restored: AgentSession = { ...meta, status: meta.status === 'running' || meta.status === 'waiting_approval' ? 'idle' : meta.status }
+      if (restored.status !== meta.status) saveSessionMeta(restored)
       thread = new AgentThread(sender, restored.workspace, restored.permissionMode, restored)
       threads.set(thread.id, thread)
     }
@@ -100,7 +101,7 @@ export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<Agent
     if (op.type === 'session.rename') return renameAgentSession(op)
     if (op.type === 'session.delete') return deleteAgentSession(op)
     if (op.type === 'edit.apply') {
-      return ok(await requireThread(op.sessionId).applyEdit(op.proposalId))
+      return ok(await requireThread(op.sessionId).applyEdit(op.proposalId, op.context))
     }
     if (op.type === 'edit.reject') {
       return ok(requireThread(op.sessionId).rejectEdit(op.proposalId, op.reason))

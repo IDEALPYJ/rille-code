@@ -11,8 +11,9 @@ import type {
   ToolResultView,
 } from '../../shared/agent/protocol'
 import { applyEditProposal, createEditProposal } from './editStore'
-import { normalizePlanUpdate } from './taskContract'
+import { normalizePlanUpdate, normalizeTaskContractUpdate } from './taskContract'
 import {
+  canonicalWorkspacePath,
   needsShell,
   requireWorkspace,
   withinWorkspace,
@@ -39,6 +40,7 @@ export interface ToolExecutionContext {
   planItems?: AgentPlanItem[]
   emitProposal: (proposal: EditProposal) => void
   updatePlan?: (items: AgentPlanItem[], reason?: string) => AgentPlanItem[]
+  updateTaskContract?: (contract: TaskContract, reason: string) => TaskContract
 }
 
 export interface RegisteredTool {
@@ -94,6 +96,15 @@ function openFiles(context: AgentContextSnapshot): ToolResultView {
     output: lines.join('\n') || '没有打开文件。',
     structured: { count: context.openFiles.length },
     status: 'ok',
+  }
+}
+
+function activeFileMatches(workspace: ReturnType<typeof requireWorkspace>, context: AgentContextSnapshot, filePath: string): boolean {
+  if (!context.activeFile) return false
+  try {
+    return canonicalWorkspacePath(workspace, context.activeFile.path) === canonicalWorkspacePath(workspace, filePath)
+  } catch {
+    return context.activeFile.path === filePath
   }
 }
 
@@ -187,6 +198,41 @@ export const toolRegistry: RegisteredTool[] = [
   },
   {
     definition: {
+      name: 'update_task_contract',
+      title: '更新任务合同',
+      description: 'Update the current Task Contract. Input: { "contract": { goal?, scope?, nonGoals?, constraints?, acceptanceCriteria?, verificationPlan?, riskPoints?, assumptions?, status? }, "reason"?: string }.',
+      inputSchema: {
+        type: 'object',
+        required: ['contract'],
+        properties: {
+          contract: { type: 'object', additionalProperties: true },
+          reason: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+      isReadOnly: true,
+      risk: 'low',
+    },
+    summarize: input => str(input, 'reason') || '更新任务合同',
+    execute: async (input, context) => {
+      if (!context.taskContract || !context.updateTaskContract) {
+        return { output: '当前 runtime 不支持更新任务合同。', error: 'task_contract_update_unavailable', status: 'error' }
+      }
+      const normalized = normalizeTaskContractUpdate({
+        currentContract: context.taskContract,
+        patch: input.contract,
+        reason: input.reason,
+      })
+      const contract = context.updateTaskContract(normalized.contract, normalized.reason)
+      return {
+        output: `任务合同已更新：${normalized.reason}`,
+        structured: { contract: contract as unknown as Record<string, unknown>, reason: normalized.reason },
+        status: 'ok',
+      }
+    },
+  },
+  {
+    definition: {
       name: 'list_directory',
       title: '列出目录',
       description: 'List files and folders inside the workspace. Input: { "dirPath"?: string }.',
@@ -219,7 +265,7 @@ export const toolRegistry: RegisteredTool[] = [
     execute: async (input, { context }) => {
       const workspace = requireWorkspace(context.workspace)
       const filePath = str(input, 'filePath') || context.activeFile?.path || ''
-      const content = context.activeFile?.path === filePath && context.activeFile.content !== undefined
+      const content = activeFileMatches(workspace, context, filePath) && context.activeFile?.content !== undefined
         ? context.activeFile.content
         : await workspaceReadFile(workspace, filePath)
       const result = truncate(content, MAX_FILE_CHARS)
@@ -290,7 +336,7 @@ export const toolRegistry: RegisteredTool[] = [
       const workspace = requireWorkspace(context.workspace)
       const filePath = str(input, 'filePath') || context.activeFile?.path || ''
       const absolutePath = withinWorkspace(workspace, filePath)
-      const originalContent = context.activeFile?.path === filePath && context.activeFile.content !== undefined
+      const originalContent = activeFileMatches(workspace, context, filePath) && context.activeFile?.content !== undefined
         ? context.activeFile.content
         : await workspaceReadFile(workspace, absolutePath).catch(error => {
           const message = error instanceof Error ? error.message : String(error)
@@ -326,7 +372,7 @@ export const toolRegistry: RegisteredTool[] = [
     modelVisible: false,
     summarize: input => str(input, 'proposalId'),
     execute: async (input, { context }) => {
-      const proposal = await applyEditProposal(str(input, 'proposalId'), context.workspace)
+      const proposal = await applyEditProposal(str(input, 'proposalId'), context.workspace, context)
       return {
         output: proposal.state === 'applied'
           ? `已应用编辑提案 ${proposal.id}。`

@@ -420,7 +420,7 @@ export type AgentOp =
   | { type: 'turn.submit'; sessionId: string; text: string; context: AgentContextSnapshot }
   | { type: 'turn.interrupt'; sessionId: string; turnId: string }
   | { type: 'approval.respond'; requestId: string; decision: ApprovalDecision }
-  | { type: 'edit.apply'; sessionId: string; proposalId: string }
+  | { type: 'edit.apply'; sessionId: string; proposalId: string; context?: AgentContextSnapshot }
   | { type: 'edit.reject'; sessionId: string; proposalId: string; reason?: string }
   | { type: 'edit.rollback'; sessionId: string; proposalId: string }
   | { type: 'permission.update'; sessionId: string; permissionMode: AgentPermissionMode }

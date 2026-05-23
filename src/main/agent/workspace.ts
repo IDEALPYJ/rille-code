@@ -58,6 +58,11 @@ export function withinWorkspace(workspace: AgentWorkspaceLocation, filePath?: st
   return absolute
 }
 
+export function canonicalWorkspacePath(workspace: AgentWorkspaceLocation, filePath?: string): string {
+  const absolute = withinWorkspace(workspace, filePath)
+  return workspace.kind === 'local' ? resolve(absolute) : normalizeRemotePath(absolute).replace(/\/+$/, '') || '/'
+}
+
 function truncateBytes(text: string, maxBytes = DEFAULT_OUTPUT_LIMIT): { output: string; truncated: boolean } {
   const bytes = Buffer.byteLength(text, 'utf8')
   if (bytes <= maxBytes) return { output: text, truncated: false }

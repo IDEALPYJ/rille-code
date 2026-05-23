@@ -38,6 +38,7 @@ Context Engine 负责为每一次模型调用构造最合适的工作集。
 - 已实现 stable/dynamic 确定性排序和 budget-aware deterministic trimming，trace 会记录 included 与 excluded。
 - 尚未实现 cache key。
 - AgentLoop 已直接使用 `ContextBuildResult`，并会在模型调用前持久化 redacted `context.built` summary 和 trace。
+- AgentPanel 已记录 latest context summary，用于后续 Trace UI；当前不展示完整 trace，也不保存 prompt。
 - 没有按 phase 组织 context。
 - 工具结果不经过 context selection。
 
@@ -195,6 +196,7 @@ README.md
 - 2026-05-23：E4 已完成 project rules 完整读取顺序。普通规则文件缺失或读取失败会跳过；`.rille/rules` 缺失或不可读会跳过；目录内只读取 `.md` 文件并排序；fragment source 保留实际命中文件路径。剩余 E5-E8：deterministic trimming、AgentLoop context trace event、observation/evidence fragments、compact boundary。
 - 2026-05-23：E5 已完成 stable_prefix / dynamic_suffix 确定性排序与 budget-aware trimming。排序规则为 section、priority、source、id；预算耗尽时低优先级 fragment 进入 trace excluded；极小预算保留最高优先级 fragment，避免空 prompt。剩余 E6-E8：AgentLoop context trace event、observation/evidence fragments、compact boundary。
 - 2026-05-23：E6-E8 已完成 Phase E 收口。AgentLoop 使用 `ContextBuildResult.prompt` 调用模型，并在模型调用前持久化 `context.built`；trace 只保存 fragment 元数据，不保存完整 prompt 或 fragment text。剩余 observation/evidence/review fragments 和 compact boundary 分别进入 Phase F/G/H。
+- 2026-05-23：D/E hardening 已完成 Context Engine 小收口。AgentPanel 会从 `context.built` 事件记录 latest context summary，供下一阶段 Trace UI 使用；本轮仍不渲染完整 trace，不持久化 prompt，不引入 Observation/Evidence/Review fragments。下一步仍是 Phase F1。
 
 ## 反模式
 

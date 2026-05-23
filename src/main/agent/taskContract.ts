@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import type {
   AcceptanceEvidenceRequirement,
+  AcceptanceCriterion,
   AgentContextSnapshot,
   AgentPlanItem,
   AgentSession,
@@ -8,7 +9,10 @@ import type {
   ContractScopeItem,
   RiskLevel,
   StructuredPlanStatus,
+  TaskAssumption,
   TaskContract,
+  TaskContractStatus,
+  VerificationPlanItem,
 } from '../../shared/agent/protocol'
 
 const WRITE_INTENT_RE = /\b(fix|implement|add|remove|delete|update|change|write|edit|refactor|build|create)\b|修复|实现|新增|添加|删除|修改|改造|重构|创建|补充/
@@ -203,6 +207,183 @@ function normalizeStatus(value: unknown, fallback: StructuredPlanStatus): Struct
     return value
   }
   return fallback
+}
+
+function normalizeContractStatus(value: unknown, fallback: TaskContractStatus): TaskContractStatus {
+  if (value === 'draft' || value === 'active' || value === 'updated' || value === 'completed' || value === 'blocked') return value
+  return fallback
+}
+
+function normalizeAcceptanceStatus(value: unknown, fallback: AcceptanceCriterion['status']): AcceptanceCriterion['status'] {
+  if (value === 'unverified' || value === 'covered' || value === 'failed' || value === 'waived') return value
+  return fallback
+}
+
+function normalizeEvidenceRequirements(raw: unknown, fallback: AcceptanceEvidenceRequirement[]): AcceptanceEvidenceRequirement[] {
+  const allowed: AcceptanceEvidenceRequirement[] = ['diagnostics', 'command', 'diff', 'review', 'browser', 'user']
+  if (!Array.isArray(raw)) return fallback
+  const values = raw.filter((item): item is AcceptanceEvidenceRequirement => allowed.includes(item as AcceptanceEvidenceRequirement))
+  return values.length > 0 ? values : fallback
+}
+
+function normalizeScopeItems(raw: unknown, fallback: ContractScopeItem[]): ContractScopeItem[] {
+  const allowedKind = ['file', 'module', 'behavior', 'ui', 'test', 'doc', 'workspace', 'unknown'] as const
+  const allowedSource = ['user', 'agent_inferred', 'tool_observed'] as const
+  if (!Array.isArray(raw)) return fallback
+  const items = raw.flatMap((item): ContractScopeItem[] => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+    const rawItem = item as Record<string, unknown>
+    const kind = allowedKind.includes(rawItem.kind as ContractScopeItem['kind']) ? rawItem.kind as ContractScopeItem['kind'] : 'unknown'
+    const value = typeof rawItem.value === 'string' && rawItem.value.trim() ? compact(rawItem.value, 240) : ''
+    const source = allowedSource.includes(rawItem.source as ContractScopeItem['source']) ? rawItem.source as ContractScopeItem['source'] : 'agent_inferred'
+    return value ? [{ kind, value, source }] : []
+  })
+  return items.length > 0 ? items : fallback
+}
+
+function normalizeAcceptanceCriteria(raw: unknown, fallback: AcceptanceCriterion[]): AcceptanceCriterion[] {
+  if (!Array.isArray(raw)) return fallback
+  const items = raw.flatMap((item, index): AcceptanceCriterion[] => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+    const rawItem = item as Record<string, unknown>
+    const fallbackItem = fallback.find(existing => existing.id === rawItem.id) || fallback[index]
+    const text = typeof rawItem.text === 'string' && rawItem.text.trim()
+      ? compact(rawItem.text, 240)
+      : fallbackItem?.text
+    if (!text) return []
+    const id = typeof rawItem.id === 'string' && rawItem.id.trim() ? compact(rawItem.id, 80) : fallbackItem?.id || `ac_${index + 1}`
+    return [{
+      id,
+      text,
+      evidenceRequired: normalizeEvidenceRequirements(rawItem.evidenceRequired, fallbackItem?.evidenceRequired ?? ['user']),
+      status: normalizeAcceptanceStatus(rawItem.status, fallbackItem?.status ?? 'unverified'),
+    }]
+  })
+  return items.length > 0 ? items : fallback
+}
+
+function normalizeVerificationPlan(raw: unknown, fallback: VerificationPlanItem[]): VerificationPlanItem[] {
+  const allowed = ['diagnostics', 'typecheck', 'test', 'lint', 'build', 'review', 'manual'] as const
+  if (!Array.isArray(raw)) return fallback
+  const items = raw.flatMap((item, index): VerificationPlanItem[] => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+    const rawItem = item as Record<string, unknown>
+    const fallbackItem = fallback.find(existing => existing.id === rawItem.id) || fallback[index]
+    const verifier = allowed.includes(rawItem.verifier as VerificationPlanItem['verifier'])
+      ? rawItem.verifier as VerificationPlanItem['verifier']
+      : fallbackItem?.verifier
+    const reason = typeof rawItem.reason === 'string' && rawItem.reason.trim() ? compact(rawItem.reason, 240) : fallbackItem?.reason
+    if (!verifier || !reason) return []
+    const id = typeof rawItem.id === 'string' && rawItem.id.trim() ? compact(rawItem.id, 80) : fallbackItem?.id || `verify_${index + 1}`
+    return [{
+      id,
+      verifier,
+      reason,
+      command: typeof rawItem.command === 'string' && rawItem.command.trim() ? compact(rawItem.command, 240) : fallbackItem?.command,
+    }]
+  })
+  return items.length > 0 ? items : fallback
+}
+
+function normalizeRiskPoints(raw: unknown, fallback: TaskContract['riskPoints']): TaskContract['riskPoints'] {
+  const allowed = ['low', 'medium', 'high', 'critical'] as const
+  if (!Array.isArray(raw)) return fallback
+  const items = raw.flatMap((item, index): TaskContract['riskPoints'] => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+    const rawItem = item as Record<string, unknown>
+    const fallbackItem = fallback.find(existing => existing.id === rawItem.id) || fallback[index]
+    const text = typeof rawItem.text === 'string' && rawItem.text.trim() ? compact(rawItem.text, 240) : fallbackItem?.text
+    if (!text) return []
+    const risk = allowed.includes(rawItem.risk as RiskLevel) ? rawItem.risk as RiskLevel : fallbackItem?.risk ?? 'medium'
+    const id = typeof rawItem.id === 'string' && rawItem.id.trim() ? compact(rawItem.id, 80) : fallbackItem?.id || `risk_${index + 1}`
+    return [{ id, risk, text, approvalRequired: typeof rawItem.approvalRequired === 'boolean' ? rawItem.approvalRequired : fallbackItem?.approvalRequired ?? risk !== 'low' }]
+  })
+  return items.length > 0 ? items : fallback
+}
+
+function normalizeAssumptions(raw: unknown, fallback: TaskAssumption[]): TaskAssumption[] {
+  const allowed = ['open', 'confirmed', 'rejected', 'stale'] as const
+  if (!Array.isArray(raw)) return fallback
+  const items = raw.flatMap((item, index): TaskAssumption[] => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+    const rawItem = item as Record<string, unknown>
+    const fallbackItem = fallback.find(existing => existing.id === rawItem.id) || fallback[index]
+    const text = typeof rawItem.text === 'string' && rawItem.text.trim() ? compact(rawItem.text, 240) : fallbackItem?.text
+    if (!text) return []
+    const id = typeof rawItem.id === 'string' && rawItem.id.trim() ? compact(rawItem.id, 80) : fallbackItem?.id || `assumption_${index + 1}`
+    const status = allowed.includes(rawItem.status as TaskAssumption['status']) ? rawItem.status as TaskAssumption['status'] : fallbackItem?.status ?? 'open'
+    return [{ id, text, status }]
+  })
+  return items.length > 0 ? items : fallback
+}
+
+function normalizeStringList(raw: unknown, fallback: string[], maxChars = 240): string[] {
+  if (!Array.isArray(raw)) return fallback
+  const items = raw.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map(item => compact(item, maxChars))
+  return items.length > 0 ? items : fallback
+}
+
+function hasMeaningfulContractPatchValue(key: string, value: unknown): boolean {
+  if (key === 'goal') return typeof value === 'string' && value.trim().length > 0
+  if (key === 'status') return normalizeContractStatus(value, 'draft') === value
+  if (key === 'nonGoals' || key === 'constraints') {
+    return Array.isArray(value) && value.some(item => typeof item === 'string' && item.trim().length > 0)
+  }
+  if (key === 'scope') {
+    return Array.isArray(value) && value.some(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false
+      const raw = item as Record<string, unknown>
+      return typeof raw.value === 'string' && raw.value.trim().length > 0
+    })
+  }
+  if (key === 'acceptanceCriteria' || key === 'riskPoints' || key === 'assumptions') {
+    return Array.isArray(value) && value.some(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false
+      const raw = item as Record<string, unknown>
+      return typeof raw.text === 'string' && raw.text.trim().length > 0
+    })
+  }
+  if (key === 'verificationPlan') {
+    return Array.isArray(value) && value.some(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false
+      const raw = item as Record<string, unknown>
+      return typeof raw.reason === 'string' && raw.reason.trim().length > 0
+    })
+  }
+  return false
+}
+
+export function normalizeTaskContractUpdate(input: {
+  currentContract: TaskContract
+  patch: unknown
+  reason?: unknown
+  timestamp?: number
+}): { contract: TaskContract; reason: string } {
+  if (!input.patch || typeof input.patch !== 'object' || Array.isArray(input.patch)) {
+    throw new Error('update_task_contract 需要 contract 对象。')
+  }
+  const raw = input.patch as Record<string, unknown>
+  const allowedKeys = new Set(['goal', 'scope', 'nonGoals', 'constraints', 'acceptanceCriteria', 'verificationPlan', 'riskPoints', 'assumptions', 'status'])
+  const changedKeys = Object.keys(raw).filter(key => allowedKeys.has(key) && hasMeaningfulContractPatchValue(key, raw[key]))
+  if (changedKeys.length === 0) throw new Error('update_task_contract 至少需要一个有效字段。')
+  const current = input.currentContract
+  const next: TaskContract = {
+    ...current,
+    goal: typeof raw.goal === 'string' && raw.goal.trim() ? compact(raw.goal) : current.goal,
+    scope: normalizeScopeItems(raw.scope, current.scope),
+    nonGoals: normalizeStringList(raw.nonGoals, current.nonGoals),
+    constraints: normalizeStringList(raw.constraints, current.constraints),
+    acceptanceCriteria: normalizeAcceptanceCriteria(raw.acceptanceCriteria, current.acceptanceCriteria),
+    verificationPlan: normalizeVerificationPlan(raw.verificationPlan, current.verificationPlan),
+    riskPoints: normalizeRiskPoints(raw.riskPoints, current.riskPoints),
+    assumptions: normalizeAssumptions(raw.assumptions, current.assumptions),
+    status: normalizeContractStatus(raw.status, current.status === 'completed' || current.status === 'blocked' ? current.status : 'updated'),
+    updatedAt: input.timestamp ?? Date.now(),
+  }
+  const reason = typeof input.reason === 'string' && input.reason.trim()
+    ? compact(input.reason, 240)
+    : `更新任务合同：${changedKeys.join(', ')}`
+  return { contract: next, reason }
 }
 
 function createPlanId(title: string, index: number): string {

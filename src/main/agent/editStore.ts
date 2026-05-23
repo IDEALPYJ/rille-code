@@ -1,8 +1,8 @@
 import { readFile, writeFile } from 'fs/promises'
 import { resolve } from 'path'
 import { randomUUID } from 'crypto'
-import type { AgentSession, AgentTurn, AgentWorkspaceLocation, EditProposal } from '../../shared/agent/protocol'
-import { isRemoteWorkspace, withinWorkspace, workspaceReadFile, workspaceWriteFile } from './workspace'
+import type { AgentContextSnapshot, AgentSession, AgentTurn, AgentWorkspaceLocation, EditProposal } from '../../shared/agent/protocol'
+import { canonicalWorkspacePath, isRemoteWorkspace, withinWorkspace, workspaceReadFile, workspaceWriteFile } from './workspace'
 
 const proposals = new Map<string, EditProposal>()
 
@@ -65,10 +65,31 @@ export function createRollbackProposal(proposalId: string, session: AgentSession
   })
 }
 
-export async function applyEditProposal(proposalId: string, workspace?: AgentWorkspaceLocation | null): Promise<EditProposal> {
+function hasDirtySnapshotConflict(proposal: EditProposal, workspace?: AgentWorkspaceLocation | null, context?: AgentContextSnapshot): boolean {
+  if (!workspace || !context) return false
+  const files = [
+    ...(context.activeFile ? [context.activeFile] : []),
+    ...context.openFiles,
+  ]
+  return files.some(file => {
+    if (!file.isDirty) return false
+    try {
+      return canonicalWorkspacePath(workspace, file.path) === canonicalWorkspacePath(workspace, proposal.filePath)
+    } catch {
+      return file.path === proposal.filePath
+    }
+  })
+}
+
+export async function applyEditProposal(proposalId: string, workspace?: AgentWorkspaceLocation | null, context?: AgentContextSnapshot): Promise<EditProposal> {
   const proposal = proposals.get(proposalId)
   if (!proposal) throw new Error('Edit proposal does not exist.')
   if (proposal.state !== 'pending') return proposal
+  if (hasDirtySnapshotConflict(proposal, workspace, context)) {
+    const conflicted: EditProposal = { ...proposal, state: 'conflicted' }
+    proposals.set(proposalId, conflicted)
+    return conflicted
+  }
   const filePath = workspace ? withinWorkspace(workspace, proposal.filePath) : resolve(proposal.filePath)
   const current = await (workspace && isRemoteWorkspace(workspace) ? workspaceReadFile(workspace, filePath) : readFile(filePath, 'utf8')).catch(error => {
     const message = error instanceof Error ? error.message : String(error)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentContextSnapshot, AgentSession, AgentTurn } from '../../src/shared/agent/protocol'
-import { createInitialPlanItems, createInitialTaskContract, normalizePlanUpdate } from '../../src/main/agent/taskContract'
+import { createInitialPlanItems, createInitialTaskContract, normalizePlanUpdate, normalizeTaskContractUpdate } from '../../src/main/agent/taskContract'
 
 function session(): AgentSession {
   return {
@@ -94,5 +94,33 @@ describe('Task Contract creation', () => {
     expect(result.items).toHaveLength(5)
     expect(result.items.find(item => item.id === 'plan_explore')?.status).toBe('completed')
     expect(result.items[4]).toMatchObject({ title: '补充回归测试', status: 'pending', source: 'model' })
+  })
+
+  it('normalizes task contract updates and rejects empty patches', () => {
+    const contract = createInitialTaskContract({
+      session: session(),
+      turn: turn(),
+      text: '修复当前类型错误',
+      context: context(),
+      timestamp: 100,
+    })
+    const result = normalizeTaskContractUpdate({
+      currentContract: contract,
+      patch: {
+        goal: '修复 main.ts 的类型错误',
+        acceptanceCriteria: [{ id: 'ac_goal', text: '类型错误消失', evidenceRequired: ['diagnostics'], status: 'unverified' }],
+        extraField: 'ignored',
+      },
+      reason: '收窄目标',
+      timestamp: 120,
+    })
+
+    expect(result.reason).toBe('收窄目标')
+    expect(result.contract.goal).toBe('修复 main.ts 的类型错误')
+    expect(result.contract.acceptanceCriteria[0]).toMatchObject({ id: 'ac_goal', text: '类型错误消失', status: 'unverified' })
+    expect(result.contract.status).toBe('updated')
+    expect(result.contract.updatedAt).toBe(120)
+    expect(() => normalizeTaskContractUpdate({ currentContract: contract, patch: { extraField: 'ignored' } })).toThrow(/至少需要一个有效字段/)
+    expect(() => normalizeTaskContractUpdate({ currentContract: contract, patch: { goal: '   ', acceptanceCriteria: [] } })).toThrow(/至少需要一个有效字段/)
   })
 })

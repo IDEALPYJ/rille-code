@@ -380,7 +380,7 @@ declare global {
     agentInterruptTurn(sessionId: string, turnId: string): Promise<AgentSession | null>
     agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>
     agentUpdatePermission(sessionId: string, permissionMode: AgentPermissionMode): Promise<AgentSession | null>
-    agentApplyEdit(sessionId: string, proposalId: string): Promise<EditProposal>
+    agentApplyEdit(sessionId: string, proposalId: string, context?: AgentContextSnapshot): Promise<EditProposal>
     agentRejectEdit(sessionId: string, proposalId: string, reason?: string): Promise<EditProposal | AgentSession | null>
     agentRollbackEdit(sessionId: string, proposalId: string): Promise<EditProposal | AgentSession | null>
     agentGetConfig(): Promise<AgentConfigSnapshot>

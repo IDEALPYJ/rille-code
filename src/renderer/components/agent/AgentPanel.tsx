@@ -521,6 +521,7 @@ function ApprovalCard({
 function ProposalReview({
   proposal,
   sessionId,
+  contextSnapshot,
   pendingProposals,
   onClose,
   onApplied,
@@ -528,6 +529,7 @@ function ProposalReview({
 }: {
   proposal: EditProposal
   sessionId: string
+  contextSnapshot: AgentContextSnapshot
   pendingProposals: EditProposal[]
   onClose: () => void
   onApplied?: (filePath: string, content: string) => void
@@ -538,11 +540,11 @@ function ProposalReview({
   const stats = useMemo(() => diffStats(proposal.originalContent, proposal.modifiedContent), [proposal.modifiedContent, proposal.originalContent])
 
   const applyProposal = useCallback(async (target: EditProposal) => {
-    const updated = await window.rille.agentApplyEdit(sessionId, target.id)
+    const updated = await window.rille.agentApplyEdit(sessionId, target.id, contextSnapshot)
     onUpdated(updated)
     if (updated.state === 'applied') onApplied?.(updated.filePath, updated.modifiedContent)
     return updated
-  }, [onApplied, onUpdated, sessionId])
+  }, [contextSnapshot, onApplied, onUpdated, sessionId])
 
   const apply = useCallback(async () => {
     setIsBusy(true)
@@ -669,6 +671,7 @@ export function AgentPanel(props: Props) {
   const [proposals, setProposals] = useState<Record<string, EditProposal>>({})
   const [reviewProposal, setReviewProposal] = useState<EditProposal | null>(null)
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest>>({})
+  const [latestContextSummary, setLatestContextSummary] = useState<Extract<AgentEvent, { type: 'context.built' }>['summary'] | null>(null)
   const [expandedToolGroups, setExpandedToolGroups] = useState<Record<string, boolean>>({})
   const [modelStore, setModelStore] = useState<AgentModelStoreSnapshot | null>(null)
   const [draft, setDraft] = useState('')
@@ -713,6 +716,8 @@ export function AgentPanel(props: Props) {
           delete next[event.requestId]
           return next
         })
+      } else if (event.type === 'context.built') {
+        setLatestContextSummary(event.summary)
       }
     })
     return unsubscribe
@@ -723,6 +728,7 @@ export function AgentPanel(props: Props) {
     setParts([])
     setProposals({})
     setApprovals({})
+    setLatestContextSummary(null)
     setReviewProposal(null)
     setActiveTurn(null)
     setError(null)
@@ -767,8 +773,9 @@ export function AgentPanel(props: Props) {
   const contextLine = useMemo(() => {
     const file = props.activeFile?.name ?? '无当前文件'
     const dirty = props.openFiles.filter(item => item.isDirty).length
-    return `${props.workspace?.label ?? '未打开工作区'} · ${file} · ${dirty} dirty · ${props.diagnostics.length} diagnostics`
-  }, [props.activeFile?.name, props.diagnostics.length, props.openFiles, props.workspace?.label])
+    const contextTrace = latestContextSummary ? ` · ctx ${latestContextSummary.includedCount}/${latestContextSummary.fragmentCount}` : ''
+    return `${props.workspace?.label ?? '未打开工作区'} · ${file} · ${dirty} dirty · ${props.diagnostics.length} diagnostics${contextTrace}`
+  }, [latestContextSummary, props.activeFile?.name, props.diagnostics.length, props.openFiles, props.workspace?.label])
 
   const timelineItems = useMemo(() => {
     const toolGroups = new Map<string, Array<Extract<MessagePart, { type: 'tool' }>>>()
@@ -1014,6 +1021,7 @@ export function AgentPanel(props: Props) {
         <ProposalReview
           proposal={reviewProposal}
           sessionId={session.id}
+          contextSnapshot={toContextSnapshot(props)}
           pendingProposals={pendingProposals}
           onClose={() => setReviewProposal(null)}
           onApplied={props.onFileApplied}

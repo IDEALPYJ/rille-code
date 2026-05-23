@@ -4,7 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { applyEditProposal, createEditProposal, createRollbackProposal, rejectEditProposal } from '../../src/main/agent/editStore'
-import type { AgentSession, AgentTurn } from '../../src/shared/agent/protocol'
+import type { AgentContextSnapshot, AgentSession, AgentTurn } from '../../src/shared/agent/protocol'
 
 let root = ''
 
@@ -39,6 +39,40 @@ describe('editStore', () => {
     expect(await readFile(filePath, 'utf8')).toBe('changed')
   })
 
+  it('does not apply when the current IDE snapshot still has the same file dirty', async () => {
+    const { session, turn, filePath } = fixtures()
+    writeFileSync(filePath, 'one', 'utf8')
+    const proposal = createEditProposal({ session, turn, title: 'edit', filePath, originalContent: 'one', modifiedContent: 'two' })
+    const context: AgentContextSnapshot = {
+      workspace: session.workspace,
+      activeFile: null,
+      openFiles: [{ path: filePath, name: 'file.ts', isDirty: true }],
+      diagnostics: [],
+    }
+
+    const applied = await applyEditProposal(proposal.id, session.workspace, context)
+
+    expect(applied.state).toBe('conflicted')
+    expect(await readFile(filePath, 'utf8')).toBe('one')
+  })
+
+  it('also guards against a dirty active file when openFiles is stale', async () => {
+    const { session, turn, filePath } = fixtures()
+    writeFileSync(filePath, 'one', 'utf8')
+    const proposal = createEditProposal({ session, turn, title: 'edit', filePath, originalContent: 'one', modifiedContent: 'two' })
+    const context: AgentContextSnapshot = {
+      workspace: session.workspace,
+      activeFile: { path: filePath, name: 'file.ts', isDirty: true, content: 'dirty buffer' },
+      openFiles: [],
+      diagnostics: [],
+    }
+
+    const applied = await applyEditProposal(proposal.id, session.workspace, context)
+
+    expect(applied.state).toBe('conflicted')
+    expect(await readFile(filePath, 'utf8')).toBe('one')
+  })
+
   it('stores reject reasons and creates rollback proposals', async () => {
     const { session, turn, filePath } = fixtures()
     writeFileSync(filePath, 'one', 'utf8')
@@ -54,4 +88,3 @@ describe('editStore', () => {
     expect(rollback.modifiedContent).toBe('one')
   })
 })
-

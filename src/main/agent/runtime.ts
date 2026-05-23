@@ -28,6 +28,7 @@ interface RuntimeOptions {
   text: string
   context: AgentContextSnapshot
   taskContract?: TaskContract
+  taskContractPart?: { id: string; messageId: string }
   planItems?: AgentPlanItem[]
   planPart?: { id: string; messageId: string }
   signal: AbortSignal
@@ -79,9 +80,11 @@ function hasVerificationFailure(results: Array<{ call: RuntimeToolCall; result: 
 
 export class AgentLoop {
   private readonly adapter = new TextJsonToolAdapter()
+  private taskContract?: TaskContract
   private planItems: AgentPlanItem[]
 
   constructor(private readonly options: RuntimeOptions) {
+    this.taskContract = options.taskContract
     this.planItems = [...(options.planItems ?? [])]
   }
 
@@ -136,7 +139,7 @@ export class AgentLoop {
       session: this.options.session,
       turn: this.options.turn,
       contextSnapshot: this.options.context,
-      taskContract: this.options.taskContract,
+      taskContract: this.taskContract,
       planItems: this.planItems,
       budgetTokens: DEFAULT_CONTEXT_BUDGET_TOKENS,
     })
@@ -159,7 +162,7 @@ export class AgentLoop {
       session: this.options.session,
       contextPrompt: contextResult.prompt,
       userTask: this.options.text,
-      taskContract: this.options.taskContract,
+      taskContract: this.taskContract,
       planItems: this.planItems,
     })
     const denialTracker = new DenialTracker()
@@ -235,7 +238,7 @@ export class AgentLoop {
           session: this.options.session,
           turn: this.options.turn,
           context: this.options.context,
-          taskContract: this.options.taskContract,
+          taskContract: this.taskContract,
           planItems: this.planItems,
           emitProposal: proposal => {
             this.options.emit({ type: 'edit.proposed', sessionId: this.options.session.id, turnId: this.options.turn.id, proposal })
@@ -250,6 +253,7 @@ export class AgentLoop {
             })
           },
           updatePlan: (items, reason) => this.updatePlan(items, reason),
+          updateTaskContract: (contract, reason) => this.updateTaskContract(contract, reason),
         })
         results.push({ call, result })
         this.completeToolPart(toolPart, runningCall, result)
@@ -311,6 +315,28 @@ export class AgentLoop {
       })
     }
     return this.planItems
+  }
+
+  private updateTaskContract(contract: TaskContract, reason: string): TaskContract {
+    this.taskContract = contract
+    this.options.emit({
+      type: 'task_contract.updated',
+      sessionId: this.options.session.id,
+      turnId: this.options.turn.id,
+      contract,
+      reason,
+      source: 'model',
+    })
+    if (this.options.taskContractPart) {
+      this.updatePart({
+        id: this.options.taskContractPart.id,
+        messageId: this.options.taskContractPart.messageId,
+        type: 'task_contract',
+        contract,
+        createdAt: now(),
+      })
+    }
+    return contract
   }
 
   private emitStage(messageId: string, stage: AgentRunStage, detail?: string): void {

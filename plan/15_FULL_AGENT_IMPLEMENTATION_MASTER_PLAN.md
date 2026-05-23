@@ -316,6 +316,7 @@ interface SubagentContract {
 | 阶段 | 状态 | 目标 | 下一步入口 |
 | --- | --- | --- | --- |
 | Phase D | 已完成 | Task Contract + Structured Plan | 已作为当前基线 |
+| Phase D/E Hardening | 已完成 | 补齐 Task Contract 更新、dirty buffer 防覆盖、旧 approval resume 和 context summary 基础 | 已作为当前稳定基线 |
 | Phase E | 已完成 | Final Context Engine Foundation | 已作为当前 Context 基线 |
 | Phase F | 未开始 | Tool Runtime + Policy Foundation | 下一步执行 F1：RegisteredTool 增加 visibility、sideEffect、validate 和 runtime-only 明确标记 |
 | Phase G | 未开始 | Verification + Review Gate | 从 Evidence 和 before-stop hook 开始 |
@@ -509,6 +510,19 @@ interface SubagentContract {
 验证命令: `npm test`、`npm run typecheck`、`npm run build`、`rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
 验证结果: `npm test` 为 10 files / 35 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查无输出；checklist 检查可列出当前完成与未完成项。
 剩余风险: Phase E 不实现 cache key、tool observation fragment、verification/review fragment、compact boundary；这些按总控计划进入 Phase F/G/H。
+下一步: Phase F1，RegisteredTool 增加 visibility、sideEffect、validate 和 runtime-only 明确标记。
+
+### Phase D/E Hardening 完成记录
+
+步骤: D/E hardening
+状态: 已完成
+完成日期: 2026-05-23
+涉及模块: taskContract、tools、runtime、thread、editStore、workspace、protocol、preload、AgentPanel、task/runtime/tool/edit/thread tests
+实现摘要: 已补齐模型可见 `update_task_contract` 工具，runtime 校验合同更新后发出 `task_contract.updated` 并更新同一个 Task Contract message part；已增加 workspace canonical path helper，让 `read_file` 和 `propose_file_edit` 在相对路径与活动编辑器绝对路径等价时使用 dirty buffer；`applyEditProposal` 写盘前会检查当前 IDE snapshot 中同文件 dirty 状态，冲突时不覆盖未保存内容；resume `waiting_approval` session 时恢复为 `idle`，旧 `approval.requested` 会作为历史展示并立即发出非持久化失效提示；AgentPanel 已保存 latest context summary，供后续 Trace UI 使用。
+测试文件: `tests/agent/taskContract.test.ts`、`tests/agent/tools.test.ts`、`tests/agent/editStore.test.ts`、`tests/agent/runtime.test.ts`、`tests/agent/thread.test.ts`
+验证命令: `npm test`、`npm run typecheck`、`npm run build`
+验证结果: `npm test` 为 11 files / 44 tests passed；`npm run typecheck` passed；`npm run build` passed。
+剩余风险: 本轮没有实现 Phase F 的 Tool metadata、Observation、`.rille/policy.json` grant；没有实现 Phase G 的 Evidence、VerificationCoverage、ReviewFinding 和 before-stop final gate。
 下一步: Phase F1，RegisteredTool 增加 visibility、sideEffect、validate 和 runtime-only 明确标记。
 
 ## 全局测试策略

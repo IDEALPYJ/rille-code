@@ -74,8 +74,30 @@ export class AgentThread {
   }
 
   async replayHistory(): Promise<void> {
-    for (const event of await readSessionEvents(this.session.id)) {
+    const events = await readSessionEvents(this.session.id)
+    const pendingApprovals = new Map<string, ApprovalRequest>()
+    for (const event of events) {
+      if (event.type === 'approval.requested') pendingApprovals.set(event.request.id, event.request)
+      if (event.type === 'approval.resolved') pendingApprovals.delete(event.requestId)
       this.send(event)
+    }
+    for (const request of pendingApprovals.values()) {
+      if (this.approvals.has(request.id)) continue
+      this.send({
+        type: 'approval.resolved',
+        sessionId: this.session.id,
+        turnId: request.turnId,
+        requestId: request.id,
+        decision: { action: 'deny', reason: '会话已恢复，旧审批请求已失效。请重新提交或继续任务。' },
+      })
+      this.send({ type: 'message.part.created', sessionId: this.session.id, turnId: request.turnId, part: {
+        id: `part_approval_expired_${request.id}`,
+        messageId: createMessageId('assistant'),
+        type: 'text',
+        role: 'assistant',
+        text: '旧审批请求已失效。请重新提交请求或继续任务。',
+        createdAt: now(),
+      } })
     }
     this.send({ type: 'session.created', session: this.session })
   }
@@ -115,9 +137,9 @@ export class AgentThread {
     return null
   }
 
-  async applyEdit(proposalId: string) {
+  async applyEdit(proposalId: string, context?: AgentContextSnapshot) {
     this.emitStage(this.activeTurn?.id, 'applying_edit', `应用编辑提案 ${proposalId}`)
-    const proposal = await applyEditProposal(proposalId, this.session.workspace)
+    const proposal = await applyEditProposal(proposalId, this.session.workspace, context)
     this.emit({ type: 'edit.proposed', sessionId: this.session.id, turnId: proposal.turnId, proposal })
     const message = proposal.state === 'applied'
       ? `已应用编辑提案 ${proposal.id}。`
@@ -189,12 +211,13 @@ export class AgentThread {
       const contract = createInitialTaskContract({ session: this.session, turn, text, context })
       const planItems = createInitialPlanItems(contract)
       const contractMessageId = createMessageId('system')
+      const contractPartId = createPartId()
       const planMessageId = createMessageId('system')
       const planPartId = createPartId()
 
       this.emit({ type: 'task_contract.created', sessionId: this.session.id, turnId: turn.id, contract })
       this.emitPart(turn.id, {
-        id: createPartId(),
+        id: contractPartId,
         messageId: contractMessageId,
         type: 'task_contract',
         contract,
@@ -224,6 +247,7 @@ export class AgentThread {
         text,
         context,
         taskContract: contract,
+        taskContractPart: { id: contractPartId, messageId: contractMessageId },
         planItems,
         planPart: { id: planPartId, messageId: planMessageId },
         signal: this.abortController.signal,

@@ -29,8 +29,9 @@ Task Contract 把用户自然语言请求转成可执行、可验证、可恢复
 - `src/main/agent/taskContract.ts` 负责 `createInitialTaskContract()`、`createInitialPlanItems()` 和 `normalizePlanUpdate()`。
 - `MessagePart` 已有 `task_contract` 和 `plan` part。
 - `AgentEvent` 已有 `task_contract.created`、`task_contract.updated` 和 `plan.updated`。
+- model-visible `update_task_contract` 已允许模型更新 `goal/scope/nonGoals/constraints/acceptanceCriteria/verificationPlan/riskPoints/assumptions/status` 等合同字段；runtime 会归一化输入、忽略非法字段、拒绝空更新，并更新同一个 Task Contract message part。
 - `AgentPanel` 已有 Task Contract card 和 Plan card。
-- 仍未实现一等 contract update tool、contract approval gate 和 evidence coverage 绑定。
+- 仍未实现 contract approval gate 和 evidence coverage 绑定。
 
 ## 设计原则
 
@@ -151,6 +152,13 @@ turn.submit
 - Review 发现 diff 越界。
 - 长任务进入新 feature 或 sprint。
 
+当前已实现边界：
+
+- 模型只能通过 `update_task_contract` 工具提交合同 patch，不能直接改 runtime 内存。
+- runtime 只接受协议已有字段，空更新会返回工具错误。
+- acceptance criteria 的状态目前只允许更新为 `unverified`、`covered`、`failed`、`waived`；这些状态暂时是合同自述，不等价于 Phase G 的 Evidence coverage。
+- 合同更新会发出 `task_contract.updated`，并通过 `message.part.updated` 刷新同一个 Task Contract card，避免 timeline 重复卡片。
+
 ## 与其他模块关系
 
 - Orchestrator 使用合同判断当前阶段和合法行动。
@@ -169,7 +177,8 @@ turn.submit
 3. 在 AgentLoop system prompt 中说明当前合同。
 4. 增加 `update_plan` 工具，让模型维护结构化计划。
 5. AgentPanel 增加合同卡片。
-6. 后续 Phase G 再让 Verification 和 Review 开始引用 acceptanceCriteria。
+6. 增加 `update_task_contract` 工具，让模型在 runtime 校验下维护合同变更。
+7. 后续 Phase G 再让 Verification 和 Review 开始引用 acceptanceCriteria。
 
 ## 测试与验收
 
@@ -179,10 +188,12 @@ turn.submit
 - 修改任务生成至少一个 acceptance criterion。
 - 高风险关键词生成 riskPoint。
 - 合同更新保留旧 id 并更新时间。
+- `update_task_contract` 非法字段或空更新返回 error。
 
 集成测试：
 
 - mock model 先探索再更新 scope。
+- mock model 调用 `update_task_contract` 后产生 `task_contract.updated` 和同一 part 的 `message.part.updated`。
 - 用户拒绝范围扩大时，合同不被更新为越界目标。
 - final report 引用合同验收标准。
 

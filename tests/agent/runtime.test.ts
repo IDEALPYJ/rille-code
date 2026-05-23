@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentContextSnapshot, AgentEvent, AgentSession, AgentTurn } from '../../src/shared/agent/protocol'
 import { createInitialPlanItems, createInitialTaskContract } from '../../src/main/agent/taskContract'
 
@@ -62,6 +62,10 @@ function context(): AgentContextSnapshot {
 }
 
 describe('AgentLoop context integration', () => {
+  beforeEach(() => {
+    callAgentModelMock.mockReset()
+  })
+
   it('emits redacted context.built before calling the model', async () => {
     callAgentModelMock.mockResolvedValueOnce('{"answer":"完成"}')
     const { AgentLoop } = await import('../../src/main/agent/runtime')
@@ -112,5 +116,57 @@ describe('AgentLoop context integration', () => {
     const modelMessages = callAgentModelMock.mock.calls[0][0]
     expect(JSON.stringify(modelMessages)).toContain('Task Contract:')
     expect(JSON.stringify(modelMessages)).toContain('SECRET_DIAG_DO_NOT_PERSIST')
+  })
+
+  it('lets the model update the task contract and refreshes the same message part', async () => {
+    callAgentModelMock
+      .mockResolvedValueOnce(JSON.stringify({
+        tool_calls: [{
+          id: 'tool_contract',
+          name: 'update_task_contract',
+          input: {
+            reason: '收窄目标',
+            contract: { goal: '只修复当前类型错误' },
+          },
+        }],
+      }))
+      .mockResolvedValueOnce('{"answer":"完成"}')
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const runtimeSession = session()
+    const runtimeTurn = turn()
+    const runtimeContext = context()
+    const contract = createInitialTaskContract({ session: runtimeSession, turn: runtimeTurn, text: runtimeTurn.text, context: runtimeContext, timestamp: 1 })
+    const planItems = createInitialPlanItems(contract, 1)
+    const events: AgentEvent[] = []
+
+    const reason = await new AgentLoop({
+      session: runtimeSession,
+      turn: runtimeTurn,
+      text: runtimeTurn.text,
+      context: runtimeContext,
+      taskContract: contract,
+      taskContractPart: { id: 'part_contract', messageId: 'msg_contract' },
+      planItems,
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'deny', reason: 'not needed' }),
+    }).run()
+
+    expect(reason).toBe('completed')
+    const updatedEvent = events.find(event => event.type === 'task_contract.updated')
+    expect(updatedEvent?.type).toBe('task_contract.updated')
+    if (updatedEvent?.type !== 'task_contract.updated') return
+    expect(updatedEvent.contract.goal).toBe('只修复当前类型错误')
+    expect(updatedEvent.reason).toBe('收窄目标')
+
+    const partUpdate = events.find(event =>
+      event.type === 'message.part.updated'
+      && event.part.type === 'task_contract'
+      && event.part.id === 'part_contract',
+    )
+    expect(partUpdate?.type).toBe('message.part.updated')
+    if (partUpdate?.type !== 'message.part.updated' || partUpdate.part.type !== 'task_contract') return
+    expect(partUpdate.part.messageId).toBe('msg_contract')
+    expect(partUpdate.part.contract.goal).toBe('只修复当前类型错误')
   })
 })
