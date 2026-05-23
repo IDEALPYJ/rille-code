@@ -6,9 +6,13 @@ import type {
   AgentToolDefinition,
   AgentToolResult,
   AgentTurn,
+  ToolFailureType,
   EditProposal,
   TaskContract,
   ToolResultView,
+  ToolSideEffect,
+  ToolValidationResult,
+  ToolVisibility,
 } from '../../shared/agent/protocol'
 import { applyEditProposal, createEditProposal } from './editStore'
 import { normalizePlanUpdate, normalizeTaskContractUpdate } from './taskContract'
@@ -45,8 +49,10 @@ export interface ToolExecutionContext {
 
 export interface RegisteredTool {
   definition: AgentToolDefinition
-  modelVisible?: boolean
+  visibility: ToolVisibility
+  sideEffect: ToolSideEffect
   summarize(input: Record<string, unknown>, context: AgentContextSnapshot): string
+  validate(input: Record<string, unknown>): ToolValidationResult
   execute(input: Record<string, unknown>, context: ToolExecutionContext): Promise<ToolResultView>
 }
 
@@ -68,6 +74,76 @@ function str(input: Record<string, unknown>, key: string): string {
 function num(input: Record<string, unknown>, key: string): number | undefined {
   const value = input[key]
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function ok(normalizedInput: Record<string, unknown> = {}): ToolValidationResult {
+  return { ok: true, normalizedInput }
+}
+
+function invalid(error: string): ToolValidationResult {
+  return { ok: false, error }
+}
+
+function validateNoInput(input: Record<string, unknown>): ToolValidationResult {
+  return Object.keys(input).length === 0 ? ok({}) : invalid('不支持额外输入字段。')
+}
+
+function validateStringFields(input: Record<string, unknown>, required: string[], optional: string[] = []): ToolValidationResult {
+  const allowed = new Set([...required, ...optional])
+  for (const key of Object.keys(input)) {
+    if (!allowed.has(key)) return invalid(`不支持输入字段 ${key}。`)
+  }
+  const normalized: Record<string, unknown> = {}
+  for (const key of required) {
+    const value = input[key]
+    if (typeof value !== 'string' || !value.trim()) return invalid(`字段 ${key} 必须是非空字符串。`)
+    normalized[key] = value
+  }
+  for (const key of optional) {
+    const value = input[key]
+    if (value === undefined) continue
+    if (typeof value !== 'string') return invalid(`字段 ${key} 必须是字符串。`)
+    normalized[key] = value
+  }
+  return ok(normalized)
+}
+
+function validatePlanInput(input: Record<string, unknown>): ToolValidationResult {
+  if (!Array.isArray(input.items)) return invalid('字段 items 必须是数组。')
+  if (input.reason !== undefined && typeof input.reason !== 'string') return invalid('字段 reason 必须是字符串。')
+  return ok(input)
+}
+
+function validateObjectInput(input: Record<string, unknown>, key: string): ToolValidationResult {
+  const value = input[key]
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid(`字段 ${key} 必须是对象。`)
+  return ok(input)
+}
+
+function validateCommandInput(input: Record<string, unknown>): ToolValidationResult {
+  for (const key of Object.keys(input)) {
+    if (!['commandLine', 'cwd', 'timeoutMs'].includes(key)) return invalid(`不支持输入字段 ${key}。`)
+  }
+  if (typeof input.commandLine !== 'string' || !input.commandLine.trim()) return invalid('字段 commandLine 必须是非空字符串。')
+  if (input.cwd !== undefined && typeof input.cwd !== 'string') return invalid('字段 cwd 必须是字符串。')
+  if (input.timeoutMs !== undefined && (typeof input.timeoutMs !== 'number' || !Number.isFinite(input.timeoutMs) || input.timeoutMs <= 0)) {
+    return invalid('字段 timeoutMs 必须是正数。')
+  }
+  return ok({
+    commandLine: input.commandLine,
+    ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+    ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+  })
+}
+
+function classifyToolError(error: unknown): ToolFailureType {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/outside workspace|工作区外|out of workspace/i.test(message)) return 'path_outside_workspace'
+  if (/enoent|no such file|not found|cannot find/i.test(message)) return 'path_not_found'
+  if (/timed out|timeout|超时/i.test(message)) return 'timeout'
+  if (/workspace|工作区/i.test(message)) return 'environment_missing'
+  if (/conflict|冲突/i.test(message)) return 'conflict'
+  return 'tool_failed'
 }
 
 function diagnostics(context: AgentContextSnapshot): ToolResultView {
@@ -118,6 +194,9 @@ export const toolRegistry: RegisteredTool[] = [
       isReadOnly: true,
       risk: 'low',
     },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: validateNoInput,
     summarize: () => '当前编辑器',
     execute: async (_input, { context }) => activeEditor(context),
   },
@@ -130,6 +209,9 @@ export const toolRegistry: RegisteredTool[] = [
       isReadOnly: true,
       risk: 'low',
     },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: validateNoInput,
     summarize: () => '打开文件列表',
     execute: async (_input, { context }) => openFiles(context),
   },
@@ -142,6 +224,9 @@ export const toolRegistry: RegisteredTool[] = [
       isReadOnly: true,
       risk: 'low',
     },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: validateNoInput,
     summarize: () => '诊断快照',
     execute: async (_input, { context }) => diagnostics(context),
   },
@@ -175,6 +260,9 @@ export const toolRegistry: RegisteredTool[] = [
       isReadOnly: true,
       risk: 'low',
     },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: validatePlanInput,
     summarize: input => {
       const items = Array.isArray(input.items) ? input.items : []
       return str(input, 'reason') || `更新 ${items.length} 个计划项`
@@ -213,6 +301,9 @@ export const toolRegistry: RegisteredTool[] = [
       isReadOnly: true,
       risk: 'low',
     },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: input => validateObjectInput(input, 'contract'),
     summarize: input => str(input, 'reason') || '更新任务合同',
     execute: async (input, context) => {
       if (!context.taskContract || !context.updateTaskContract) {
@@ -240,6 +331,9 @@ export const toolRegistry: RegisteredTool[] = [
       isReadOnly: true,
       risk: 'low',
     },
+    visibility: 'model',
+    sideEffect: 'workspace_read',
+    validate: input => validateStringFields(input, [], ['dirPath']),
     summarize: input => str(input, 'dirPath') || 'workspace root',
     execute: async (input, { context }) => {
       const workspace = requireWorkspace(context.workspace)
@@ -261,6 +355,9 @@ export const toolRegistry: RegisteredTool[] = [
       isReadOnly: true,
       risk: 'low',
     },
+    visibility: 'model',
+    sideEffect: 'workspace_read',
+    validate: input => validateStringFields(input, ['filePath']),
     summarize: input => str(input, 'filePath'),
     execute: async (input, { context }) => {
       const workspace = requireWorkspace(context.workspace)
@@ -281,6 +378,9 @@ export const toolRegistry: RegisteredTool[] = [
       isReadOnly: true,
       risk: 'low',
     },
+    visibility: 'model',
+    sideEffect: 'workspace_read',
+    validate: input => validateStringFields(input, ['query']),
     summarize: input => str(input, 'query'),
     execute: async (input, { context }) => {
       const workspace = requireWorkspace(context.workspace)
@@ -298,6 +398,9 @@ export const toolRegistry: RegisteredTool[] = [
       isReadOnly: true,
       risk: 'low',
     },
+    visibility: 'model',
+    sideEffect: 'workspace_read',
+    validate: validateNoInput,
     summarize: () => 'git status',
     execute: async (_input, { context }) => {
       const workspace = requireWorkspace(context.workspace)
@@ -314,6 +417,9 @@ export const toolRegistry: RegisteredTool[] = [
       isReadOnly: true,
       risk: 'low',
     },
+    visibility: 'model',
+    sideEffect: 'workspace_read',
+    validate: input => validateStringFields(input, [], ['filePath']),
     summarize: input => str(input, 'filePath') || 'unstaged diff',
     execute: async (input, { context }) => {
       const workspace = requireWorkspace(context.workspace)
@@ -331,6 +437,9 @@ export const toolRegistry: RegisteredTool[] = [
       isReadOnly: false,
       risk: 'medium',
     },
+    visibility: 'model',
+    sideEffect: 'workspace_write',
+    validate: input => validateStringFields(input, ['filePath', 'modifiedContent'], ['rationale']),
     summarize: input => str(input, 'filePath'),
     execute: async (input, { session, turn, context, emitProposal }) => {
       const workspace = requireWorkspace(context.workspace)
@@ -369,7 +478,9 @@ export const toolRegistry: RegisteredTool[] = [
       isReadOnly: false,
       risk: 'high',
     },
-    modelVisible: false,
+    visibility: 'runtime',
+    sideEffect: 'workspace_write',
+    validate: input => validateStringFields(input, ['proposalId']),
     summarize: input => str(input, 'proposalId'),
     execute: async (input, { context }) => {
       const proposal = await applyEditProposal(str(input, 'proposalId'), context.workspace, context)
@@ -387,6 +498,48 @@ export const toolRegistry: RegisteredTool[] = [
   },
   {
     definition: {
+      name: 'ask_user',
+      title: '询问用户',
+      description: 'Ask the user for structured clarification. Input: { "question": string, "reason"?: string }.',
+      inputSchema: { type: 'object', required: ['question'], properties: { question: { type: 'string' }, reason: { type: 'string' } }, additionalProperties: false },
+      isReadOnly: true,
+      risk: 'low',
+    },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: input => validateStringFields(input, ['question'], ['reason']),
+    summarize: input => str(input, 'question'),
+    execute: async input => ({
+      output: `需要用户确认：${str(input, 'question')}`,
+      structured: { question: str(input, 'question'), reason: str(input, 'reason') || null },
+      status: 'error',
+      error: 'user_input_required',
+      failureType: 'cancelled',
+    }),
+  },
+  {
+    definition: {
+      name: 'select_files',
+      title: '请求选择文件',
+      description: 'Ask the user to confirm or select files for scope. Input: { "reason": string, "patterns"?: string }.',
+      inputSchema: { type: 'object', required: ['reason'], properties: { reason: { type: 'string' }, patterns: { type: 'string' } }, additionalProperties: false },
+      isReadOnly: true,
+      risk: 'low',
+    },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: input => validateStringFields(input, ['reason'], ['patterns']),
+    summarize: input => str(input, 'reason'),
+    execute: async input => ({
+      output: `需要用户确认文件范围：${str(input, 'reason')}`,
+      structured: { reason: str(input, 'reason'), patterns: str(input, 'patterns') || null },
+      status: 'error',
+      error: 'file_selection_required',
+      failureType: 'cancelled',
+    }),
+  },
+  {
+    definition: {
       name: 'run_command',
       title: '运行命令',
       description: 'Run a non-interactive workspace command. Input: { "commandLine": string, "cwd"?: string, "timeoutMs"?: number }.',
@@ -394,6 +547,9 @@ export const toolRegistry: RegisteredTool[] = [
       isReadOnly: false,
       risk: 'high',
     },
+    visibility: 'model',
+    sideEffect: 'process',
+    validate: validateCommandInput,
     summarize: input => str(input, 'commandLine'),
     execute: async (input, { context }) => {
       const workspace = requireWorkspace(context.workspace)
@@ -410,19 +566,27 @@ export const toolRegistry: RegisteredTool[] = [
 
 const registryByName = new Map(toolRegistry.map(tool => [tool.definition.name, tool]))
 
+function publicDefinition(tool: RegisteredTool): AgentToolDefinition {
+  return {
+    ...tool.definition,
+    visibility: tool.visibility,
+    sideEffect: tool.sideEffect,
+  }
+}
+
 export function getToolDefinitions(): AgentToolDefinition[] {
-  return toolRegistry.map(tool => tool.definition).sort((a, b) => a.name.localeCompare(b.name))
+  return toolRegistry.map(publicDefinition).sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export function getModelVisibleToolDefinitions(): AgentToolDefinition[] {
   return toolRegistry
-    .filter(tool => tool.modelVisible !== false)
-    .map(tool => tool.definition)
+    .filter(tool => tool.visibility === 'model')
+    .map(publicDefinition)
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export function isModelVisibleTool(name: string): boolean {
-  return registryByName.get(name)?.modelVisible !== false
+  return registryByName.get(name)?.visibility === 'model'
 }
 
 export function getRegisteredTool(name: string): RegisteredTool | null {
@@ -436,19 +600,34 @@ export function createRuntimeToolCall(name: string, input: Record<string, unknow
 export async function executeToolCall(call: RuntimeToolCall, context: ToolExecutionContext): Promise<AgentToolResult> {
   const tool = getRegisteredTool(call.name)
   if (!tool) {
-    return { callId: call.id, toolName: call.name, input: call.input, output: `未知工具 ${call.name}`, error: 'unknown_tool', status: 'error' }
+    return { callId: call.id, toolName: call.name, input: call.input, output: `未知工具 ${call.name}`, error: 'unknown_tool', failureType: 'unknown_tool', status: 'error' }
   }
-  try {
-    const result = await tool.execute(call.input, context)
-    return { ...result, callId: call.id, toolName: call.name, input: call.input }
-  } catch (error) {
+  const validation = tool.validate(call.input)
+  if (!validation.ok) {
     return {
       callId: call.id,
       toolName: call.name,
       input: call.input,
-      output: error instanceof Error ? error.message : String(error),
-      error: 'tool_failed',
+      output: validation.error || '工具输入无效。',
+      error: 'invalid_input',
+      failureType: 'invalid_input',
       status: 'error',
+    }
+  }
+  const normalizedInput = validation.normalizedInput ?? call.input
+  try {
+    const result = await tool.execute(normalizedInput, context)
+    return { ...result, callId: call.id, toolName: call.name, input: normalizedInput }
+  } catch (error) {
+    const failureType = classifyToolError(error)
+    return {
+      callId: call.id,
+      toolName: call.name,
+      input: normalizedInput,
+      output: error instanceof Error ? error.message : String(error),
+      error: failureType,
+      failureType,
+      status: failureType === 'timeout' ? 'timeout' : failureType === 'conflict' ? 'conflict' : 'error',
     }
   }
 }

@@ -12,8 +12,10 @@ import type {
   ApprovalRequest,
   EditProposal,
   MessagePart,
+  Observation,
 } from '../../shared/agent/protocol'
 import { applyEditProposal, createRollbackProposal, rejectEditProposal } from './editStore'
+import { PermissionGrantStore } from './permissions'
 import { AgentLoop } from './runtime'
 import { appendSessionEvent, readSessionEvents, saveSessionMeta } from './sessionStore'
 import { createInitialPlanItems, createInitialTaskContract } from './taskContract'
@@ -31,11 +33,30 @@ function createMessageId(role: 'user' | 'assistant' | 'system'): string {
   return `msg_${role}_${randomUUID()}`
 }
 
+function editObservation(sessionId: string, turnId: string, proposal: EditProposal, message: string): Observation {
+  return {
+    id: `observation_${randomUUID()}`,
+    sessionId,
+    turnId,
+    source: 'edit',
+    status: proposal.state === 'applied' ? 'ok' : proposal.state === 'conflicted' ? 'blocked' : 'error',
+    summary: message,
+    data: {
+      proposalId: proposal.id,
+      filePath: proposal.filePath,
+      state: proposal.state,
+      rollbackOf: proposal.rollbackOf,
+    },
+    createdAt: now(),
+  }
+}
+
 export class AgentThread {
   private session: AgentSession
   private activeTurn: AgentTurn | null = null
   private abortController: AbortController | null = null
   private approvals = new Map<string, { resolve: (decision: ApprovalDecision) => void; request: ApprovalRequest }>()
+  private readonly grants = new PermissionGrantStore()
 
   constructor(
     private readonly sender: WebContents,
@@ -147,6 +168,7 @@ export class AgentThread {
         ? `编辑提案 ${proposal.id} 与当前文件内容冲突，未写入。`
         : `编辑提案 ${proposal.id} 当前状态为 ${proposal.state}。`
     this.emitEditResult(proposal.turnId, proposal.id, proposal.state, proposal.filePath, message)
+    this.emitObservation(editObservation(this.session.id, proposal.turnId, proposal, message))
     if (proposal.state === 'applied') {
       await this.runVerification(proposal.turnId)
     }
@@ -156,7 +178,9 @@ export class AgentThread {
   rejectEdit(proposalId: string, reason?: string) {
     const proposal = rejectEditProposal(proposalId, reason)
     this.emit({ type: 'edit.proposed', sessionId: this.session.id, turnId: proposal.turnId, proposal })
-    this.emitEditResult(proposal.turnId, proposal.id, proposal.state, proposal.filePath, reason ? `已拒绝：${reason}` : '已拒绝编辑提案。')
+    const message = reason ? `已拒绝：${reason}` : '已拒绝编辑提案。'
+    this.emitEditResult(proposal.turnId, proposal.id, proposal.state, proposal.filePath, message)
+    this.emitObservation(editObservation(this.session.id, proposal.turnId, proposal, message))
     return proposal
   }
 
@@ -253,6 +277,7 @@ export class AgentThread {
         signal: this.abortController.signal,
         emit: event => this.emit(event),
         requestApproval: request => this.requestApproval(request),
+        grants: this.grants,
       }).run()
       if (this.abortController.signal.aborted) {
         this.activeTurn = { ...turn, status: 'interrupted' }
@@ -294,6 +319,10 @@ export class AgentThread {
 
   private emitPart(turnId: string, part: MessagePart): void {
     this.emit({ type: 'message.part.created', sessionId: this.session.id, turnId, part })
+  }
+
+  private emitObservation(observation: Observation): void {
+    this.emit({ type: 'observation.created', sessionId: this.session.id, turnId: observation.turnId, observation })
   }
 
   private emitEditResult(turnId: string, proposalId: string, state: EditProposal['state'], filePath: string, message: string): void {

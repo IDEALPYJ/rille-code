@@ -284,6 +284,14 @@ npm run build
 剩余风险: cache key、tool observation fragment、verification/review fragment、compact boundary 不属于 Phase E 收口，进入 Phase F/G/H。
 下一步: Phase F1，RegisteredTool 增加 visibility、sideEffect、validate 和 runtime-only 明确标记。
 
+日期: 2026-05-23
+完成范围: Phase F Tool / Policy Hardening
+涉及文件: `src/shared/agent/protocol.ts`、`src/main/agent/tools.ts`、`src/main/agent/permissions.ts`、`src/main/agent/runtime.ts`、`src/main/agent/thread.ts`、`src/renderer/components/agent/AgentPanel.tsx`、`tests/agent/tools.test.ts`、`tests/agent/permissions.test.ts`、`tests/agent/runtime.test.ts`、`tests/agent/sessionStore.test.ts`、`plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`、`plan/01_CURRENT_BASELINE.md`、`plan/06_TOOL_RUNTIME.md`、`plan/07_POLICY_SAFETY.md`、`plan/14_IMPLEMENTATION_ROADMAP.md`
+验证命令: `npm test`、`npm run typecheck`、`npm run build`、`rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+结果: `npm test` 为 11 files / 52 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查无输出；总控 checklist 可列出当前完成与未完成项。
+剩余风险: artifactRef、protected paths、secret redaction、持久 workspace grant、Evidence/Review gate 和完整 ask/select UI 不属于 Phase F 收口，进入 Phase G/J 或后续 Policy hardening。
+下一步: Phase G1，扩展 VerificationStatus 为 passed、failed、skipped、partial、blocked、stale、waived。
+
 ## 停止线
 
 出现以下情况时停止扩大实现范围：

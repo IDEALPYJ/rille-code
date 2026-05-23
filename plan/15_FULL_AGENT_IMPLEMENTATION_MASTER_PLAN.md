@@ -318,8 +318,8 @@ interface SubagentContract {
 | Phase D | 已完成 | Task Contract + Structured Plan | 已作为当前基线 |
 | Phase D/E Hardening | 已完成 | 补齐 Task Contract 更新、dirty buffer 防覆盖、旧 approval resume 和 context summary 基础 | 已作为当前稳定基线 |
 | Phase E | 已完成 | Final Context Engine Foundation | 已作为当前 Context 基线 |
-| Phase F | 未开始 | Tool Runtime + Policy Foundation | 下一步执行 F1：RegisteredTool 增加 visibility、sideEffect、validate 和 runtime-only 明确标记 |
-| Phase G | 未开始 | Verification + Review Gate | 从 Evidence 和 before-stop hook 开始 |
+| Phase F | 已完成 | Tool Runtime + Policy Foundation | 已作为当前 Tool / Policy 基线 |
+| Phase G | 未开始 | Verification + Review Gate | 下一步执行 G1：扩展 VerificationStatus |
 | Phase H | 未开始 | Memory + Long-running State | 从 Handoff 和 Progress 开始 |
 | Phase I | 未开始 | Observability + Eval | 从 TraceEvent 和 debug export 开始 |
 | Phase J | 未开始 | UX + Skills/Subagents | 从 Evidence UI 和 skills discovery 开始 |
@@ -350,14 +350,14 @@ interface SubagentContract {
 
 ### Phase F: Tool Runtime + Policy Foundation
 
-- [ ] F1. RegisteredTool 增加 visibility、sideEffect、validate 和 runtime-only 明确标记。
-- [ ] F2. ToolResult 转 Observation，并持久化 tool/policy/edit observation。
-- [ ] F3. 增加 `.rille/policy.json` loader、schema 和默认策略。
-- [ ] F4. 增加 PermissionGrant、grant scope、expiresAt 和 approval audit。
-- [ ] F5. policy denial 进入 Observation，deny 后避免重复请求同一风险动作。
-- [ ] F6. 增加 ask_user 和 select_files 工具。
-- [ ] F7. 补充 tool validation、policy loader、grant、denial replay 测试。
-- [ ] F8. 更新 01、06、07、14、15 文档并记录验证结果。
+- [x] F1. RegisteredTool 增加 visibility、sideEffect、validate 和 runtime-only 明确标记。
+- [x] F2. ToolResult 转 Observation，并持久化 tool/policy/edit observation。
+- [x] F3. 增加 `.rille/policy.json` loader、schema 和默认策略。
+- [x] F4. 增加 PermissionGrant、grant scope、expiresAt 和 approval audit。
+- [x] F5. policy denial 进入 Observation，deny 后避免重复请求同一风险动作。
+- [x] F6. 增加 ask_user 和 select_files 工具。
+- [x] F7. 补充 tool validation、policy loader、grant、denial replay 测试。
+- [x] F8. 更新 01、06、07、14、15 文档并记录验证结果。
 
 ### Phase G: Verification + Review Gate
 
@@ -525,6 +525,19 @@ interface SubagentContract {
 剩余风险: 本轮没有实现 Phase F 的 Tool metadata、Observation、`.rille/policy.json` grant；没有实现 Phase G 的 Evidence、VerificationCoverage、ReviewFinding 和 before-stop final gate。
 下一步: Phase F1，RegisteredTool 增加 visibility、sideEffect、validate 和 runtime-only 明确标记。
 
+### Phase F / Tool Runtime + Policy Foundation 完成记录
+
+步骤: F1-F8
+状态: 已完成
+完成日期: 2026-05-23
+涉及模块: protocol、tools、permissions、runtime、thread、AgentPanel、tool/permission/runtime/sessionStore tests、Phase F 文档
+实现摘要: 已新增 ToolVisibility、ToolSideEffect、ToolValidationResult、ToolFailureType、Observation、PolicyRule、PolicyDecision、PermissionGrant 和 `observation.created` 事件；`RegisteredTool` 现在显式声明 visibility、sideEffect、validate，`executeToolCall()` 会先做 runtime input validation 并返回标准 failureType；runtime 会为 tool result、policy denial、edit apply/reject 持久化 Observation；权限层支持 `.rille/policy.json` 的 `agent.permissions` 和 `agent.verification.commands`，并按 hard deny、visibility、validation、grant、risk、project rule、permission mode 决策；approval now carries runtime、matchedRule、grantOptions，UI 支持 Allow session；新增 `ask_user` 和 `select_files` 基础工具。
+测试文件: `tests/agent/tools.test.ts`、`tests/agent/permissions.test.ts`、`tests/agent/runtime.test.ts`、`tests/agent/sessionStore.test.ts`
+验证命令: `npm test`、`npm run typecheck`、`npm run build`、`rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+验证结果: `npm test` 为 11 files / 52 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查无输出；checklist 检查可列出当前完成与未完成项。
+剩余风险: Phase F 只实现 session 内存 grant，没有持久 workspace grant；`ask_user` 和 `select_files` 先返回 blocking/error observation，完整交互 UI 留到 Phase J；Observation 已持久化但还没有 Phase G 的 Evidence/VerificationCoverage 和 before-stop gate。
+下一步: Phase G1，扩展 VerificationStatus 为 passed、failed、skipped、partial、blocked、stale、waived。
+
 ## 全局测试策略
 
 每次代码实现必须运行：
@@ -556,17 +569,17 @@ rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md
 
 ## 下一步指针
 
-当前下一步是 Phase F1：
+当前下一步是 Phase G1：
 
 ```text
-RegisteredTool 增加 visibility、sideEffect、validate 和 runtime-only 明确标记。
+扩展 VerificationStatus 为 passed、failed、skipped、partial、blocked、stale、waived。
 ```
 
-Phase F1 完成后必须同步更新：
+Phase G1 完成后必须同步更新：
 
 - `plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
 - `plan/01_CURRENT_BASELINE.md`
-- `plan/06_TOOL_RUNTIME.md`
+- `plan/09_VERIFICATION.md`
 - `plan/14_IMPLEMENTATION_ROADMAP.md`
 
 ## 停止线

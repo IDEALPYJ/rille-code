@@ -161,6 +161,68 @@ export type ContextFragmentType =
   | 'memory_ref'
   | 'handoff'
 export type ContextFragmentSection = 'stable_prefix' | 'dynamic_suffix'
+export type ToolVisibility = 'model' | 'runtime' | 'ui'
+export type ToolSideEffect = 'none' | 'workspace_read' | 'workspace_write' | 'process' | 'network' | 'external'
+export type ToolFailureType =
+  | 'invalid_input'
+  | 'unknown_tool'
+  | 'permission_denied'
+  | 'path_not_found'
+  | 'path_outside_workspace'
+  | 'conflict'
+  | 'timeout'
+  | 'environment_missing'
+  | 'output_too_large'
+  | 'cancelled'
+  | 'tool_failed'
+export type PolicyPermission = 'file.read' | 'file.write' | 'command.run' | 'git.write' | 'network.access' | 'memory.write'
+export type PolicyAction = 'allow' | 'ask' | 'deny'
+export type GrantScope = 'once' | 'session'
+
+export interface ToolValidationResult {
+  ok: boolean
+  normalizedInput?: Record<string, unknown>
+  error?: string
+}
+
+export interface PolicyRule {
+  id: string
+  permission: PolicyPermission
+  pattern: string
+  action: PolicyAction
+  risk?: RiskLevel
+  reason?: string
+}
+
+export interface PermissionGrant {
+  id: string
+  permission: PolicyPermission
+  pattern: string
+  action: 'allow' | 'deny'
+  scope: GrantScope
+  expiresAt?: number
+  createdAt: number
+}
+
+export interface PolicyDecision {
+  action: PolicyAction
+  risk: RiskLevel
+  reason: string
+  matchedRule?: string
+  grant?: PermissionGrant
+  alternatives?: string[]
+}
+
+export interface Observation {
+  id: string
+  sessionId: string
+  turnId: string
+  source: 'tool' | 'policy' | 'edit' | 'verification' | 'review' | 'user' | 'runtime'
+  status: 'ok' | 'error' | 'denied' | 'blocked' | 'stale'
+  summary: string
+  data?: Record<string, unknown>
+  createdAt: number
+}
 
 export interface ContractScopeItem {
   kind: ContractScopeKind
@@ -312,6 +374,7 @@ export interface ToolResultView {
   structured?: Record<string, unknown>
   truncated?: boolean
   error?: string
+  failureType?: ToolFailureType
   status?: 'ok' | 'error' | 'denied' | 'timeout' | 'conflict'
   exitCode?: number | null
   timedOut?: boolean
@@ -325,6 +388,8 @@ export interface AgentToolDefinition {
   inputSchema: Record<string, unknown>
   isReadOnly: boolean
   risk: 'low' | 'medium' | 'high' | 'critical'
+  visibility?: ToolVisibility
+  sideEffect?: ToolSideEffect
 }
 
 export interface AgentToolCall {
@@ -377,6 +442,9 @@ export interface ApprovalRequest {
   risk: 'low' | 'medium' | 'high' | 'critical'
   target?: string
   details?: Record<string, unknown>
+  matchedRule?: string
+  runtime?: AgentWorkspaceLocation | null
+  grantOptions?: GrantScope[]
   createdAt: number
 }
 
@@ -438,6 +506,7 @@ export type AgentEvent =
   | { type: 'message.part.updated'; sessionId: string; turnId?: string; part: MessagePart }
   | { type: 'tool.started'; sessionId: string; turnId: string; call: ToolCallView }
   | { type: 'tool.completed'; sessionId: string; turnId: string; callId: string; result: ToolResultView }
+  | { type: 'observation.created'; sessionId: string; turnId: string; observation: Observation }
   | { type: 'approval.requested'; sessionId: string; turnId: string; request: ApprovalRequest }
   | { type: 'approval.resolved'; sessionId: string; turnId: string; requestId: string; decision: ApprovalDecision }
   | { type: 'edit.proposed'; sessionId: string; turnId: string; proposal: EditProposal }

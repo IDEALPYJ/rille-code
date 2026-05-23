@@ -160,4 +160,32 @@ describe('sessionStore', () => {
     expect(events).toContainEqual(event)
     expect(JSON.stringify(events)).not.toContain('prompt')
   })
+
+  it('replays observation events', async () => {
+    userData = mkdtempSync(join(tmpdir(), 'rille-session-'))
+    const store = await import('../../src/main/agent/sessionStore')
+    const meta = session()
+    const activeTurn = turn(meta.id)
+    const event: AgentEvent = {
+      type: 'observation.created',
+      sessionId: meta.id,
+      turnId: activeTurn.id,
+      observation: {
+        id: 'observation_policy_denied',
+        sessionId: meta.id,
+        turnId: activeTurn.id,
+        source: 'policy',
+        status: 'denied',
+        summary: 'Policy deny: command too risky',
+        data: { toolName: 'run_command', failureType: 'permission_denied' },
+        createdAt: 12,
+      },
+    }
+
+    await store.appendSessionEvent({ type: 'session.created', session: meta })
+    await store.appendSessionEvent({ type: 'turn.started', sessionId: meta.id, turn: activeTurn })
+    await store.appendSessionEvent(event)
+
+    await expect(store.readSessionEvents(meta.id)).resolves.toContainEqual(event)
+  })
 })

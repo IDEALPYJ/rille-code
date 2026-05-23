@@ -24,17 +24,19 @@ Policy 负责判断 Agent 在什么条件下可以看什么、做什么、修改
 
 - `AgentPermissionMode = plan | ask | accept_edits | auto | bypass`。
 - `classifyCommandRisk` 分类 read_only/test/install/write_workspace/git_write/network/destructive/deploy。
-- `decidePermission` 判断 allow/ask/deny。
+- `decidePermission` 判断 allow/ask/deny，并按 hard deny、tool visibility、input validation、grant、risk、project rule、permission mode 决策。
 - `DenialTracker` 防止重复拒绝循环。
 - runtime-only tool 对模型请求直接 deny。
+- `.rille/policy.json` 支持 `agent.permissions` 规则和 `agent.verification.commands` 兼容规则。
+- `PermissionGrantStore` 支持 once/session grant。
+- ApprovalRequest 会携带 runtime、matchedRule、grantOptions。
+- Policy denial 会转为 `Observation` 并持久化。
 
 当前缺口：
 
-- 没有项目级 policy 文件。
-- 没有 grant scope 和有效期。
-- Approval 信息还不够完整。
-- Policy denial 没有统一 Observation。
-- Context 可见性和 Memory 写入还未经过 Policy。
+- grant 仍是 session 内存版，没有持久 workspace grant。
+- Context protected paths、secret redaction 和 Memory 写入还未经过 Policy。
+- Approval audit 已有事件和 Observation，但还没有独立导出视图。
 
 ## 设计原则
 
@@ -80,7 +82,7 @@ export interface PermissionGrant {
   pattern: string
   permission: PolicyRule['permission']
   action: 'allow' | 'deny'
-  scope: 'once' | 'session' | 'workspace'
+  scope: 'once' | 'session'
   expiresAt?: number
   createdAt: number
 }
@@ -95,9 +97,8 @@ tool request
   -> match grant
   -> classify risk
   -> match project rule
-  -> combine task contract scope
   -> allow / ask / deny
-  -> emit policy trace
+  -> emit observation / later trace
   -> if ask, create approval request
   -> if deny, create policy denial observation
 ```
@@ -138,13 +139,13 @@ tool request
 
 ## 实现步骤
 
-1. 增加 policy file loader。
-2. 定义 built-in hard deny 列表。
-3. 增加 grant store，先 session 内存，后持久化。
-4. 将 decidePermission 拆为 risk classification、rule matching、grant matching。
-5. ApprovalRequest 增加 matchedRule、runtime、grantOptions。
-6. Policy denial 转为 Observation。
-7. Context Engine 接入 protected paths 和 secret redaction。
+1. 已增加 policy file loader。
+2. 已定义 built-in hard deny 列表，destructive/deploy 不允许 policy 覆盖。
+3. 已增加 session 内存 grant store；持久 workspace grant 留待后续。
+4. 已将 decidePermission 拆为 risk classification、rule matching、grant matching。
+5. 已为 ApprovalRequest 增加 matchedRule、runtime、grantOptions。
+6. 已将 Policy denial 转为 Observation。
+7. Context Engine protected paths 和 secret redaction 留待后续。
 
 ## 测试与验收
 
@@ -153,14 +154,18 @@ tool request
 - destructive 和 deploy 默认 deny。
 - policy allow command 能覆盖 ask。
 - grant once 只生效一次。
-- protected path read 被过滤或 ask。
+- protected path read 被过滤或 ask（后续 protected paths 阶段）。
 - denial 返回 alternatives。
 
 集成测试：
 
 - `.rille/policy.json` 允许 `npm run typecheck` 自动运行。
 - 用户 deny 后模型下一轮看到 denial observation。
-- high risk command 不提供永久授权。
+- high risk command 只提供 session grant，不提供 workspace 永久授权。
+
+## 完成记录
+
+- 2026-05-23：Phase F 已完成 Policy foundation。`decidePermission()` 现在会加载 `.rille/policy.json`，兼容 `agent.permissions` 和 `agent.verification.commands`；destructive/deploy 仍 hard deny；session grant 支持 once/session 匹配；ApprovalRequest 携带 runtime、matchedRule、grantOptions；deny 会给 alternatives 并转为 Observation；UI 支持 Allow once / Allow session。剩余 protected paths、secret redaction、memory policy 和持久 workspace grant 进入后续阶段。
 
 手工验收：
 

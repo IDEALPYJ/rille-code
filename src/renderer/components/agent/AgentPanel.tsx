@@ -494,7 +494,7 @@ function ApprovalCard({
   onDecision,
 }: {
   request: ApprovalRequest
-  onDecision: (requestId: string, allow: boolean) => void
+  onDecision: (request: ApprovalRequest, action: 'allow_once' | 'always_allow' | 'deny') => void
 }) {
   return (
     <div className={'agent-approval-card risk-' + request.risk}>
@@ -510,8 +510,11 @@ function ApprovalCard({
           </div>
         )}
         <div className="agent-approval-actions">
-          <button type="button" onClick={() => onDecision(request.id, true)}>Allow once</button>
-          <button type="button" onClick={() => onDecision(request.id, false)}>Deny</button>
+          <button type="button" onClick={() => onDecision(request, 'allow_once')}>Allow once</button>
+          {request.grantOptions?.includes('session') && (
+            <button type="button" onClick={() => onDecision(request, 'always_allow')}>Allow session</button>
+          )}
+          <button type="button" onClick={() => onDecision(request, 'deny')}>Deny</button>
         </div>
       </div>
     </div>
@@ -859,11 +862,18 @@ export function AgentPanel(props: Props) {
     }
   }, [refreshModels])
 
-  const respondApproval = useCallback(async (requestId: string, allow: boolean) => {
-    await window.rille.agentRespondApproval(requestId, allow ? { action: 'allow_once' } : { action: 'deny', reason: '用户拒绝。' })
+  const respondApproval = useCallback(async (request: ApprovalRequest, action: 'allow_once' | 'always_allow' | 'deny') => {
+    await window.rille.agentRespondApproval(
+      request.id,
+      action === 'allow_once'
+        ? { action: 'allow_once' }
+        : action === 'always_allow'
+          ? { action: 'always_allow', pattern: request.target || request.reason }
+          : { action: 'deny', reason: '用户拒绝。' },
+    )
     setApprovals(prev => {
       const next = { ...prev }
-      delete next[requestId]
+      delete next[request.id]
       return next
     })
   }, [])

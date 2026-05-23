@@ -22,13 +22,13 @@
 
 | 能力 | 当前状态 | 主要文件 |
 | --- | --- | --- |
-| Shared protocol | 有 AgentOp、AgentEvent、MessagePart、AgentRunStage、VerificationResult、EditProposal、TaskContract、AgentPlanItem、ContextFragment、ContextTrace、ContextBuildResult；`edit.apply` 可携带当前 IDE context snapshot 用于写盘前 dirty guard | `src/shared/agent/protocol.ts` |
+| Shared protocol | 有 AgentOp、AgentEvent、MessagePart、AgentRunStage、VerificationResult、EditProposal、TaskContract、AgentPlanItem、ContextFragment、ContextTrace、ContextBuildResult、Observation、PolicyDecision、PermissionGrant；`edit.apply` 可携带当前 IDE context snapshot 用于写盘前 dirty guard | `src/shared/agent/protocol.ts` |
 | Session runtime | 有 AgentThread，管理 session、turn、Task Contract 初始化与更新、Plan 初始化、interrupt、approval、edit apply/reject/rollback；resume `waiting_approval` 会恢复为 idle 并让旧 approval 失效 | `src/main/agent/thread.ts`, `src/main/agent/taskContract.ts` |
-| Agent loop | 有 AgentLoop，支持 ContextBuildResult -> contract/plan -> model -> JSON tool calls -> permission -> tool execution -> result feedback -> plan/contract update，并持久化 redacted context trace | `src/main/agent/runtime.ts`, `src/main/agent/contextBuilder.ts` |
+| Agent loop | 有 AgentLoop，支持 ContextBuildResult -> contract/plan -> model -> JSON tool calls -> permission/policy/grant -> tool execution -> Observation/result feedback -> plan/contract update，并持久化 redacted context trace | `src/main/agent/runtime.ts`, `src/main/agent/contextBuilder.ts` |
 | Model adapter | 有 TextJsonToolAdapter 和 JSON action parser，system prompt 会注入 Task Contract / Plan 边界 | `src/main/agent/modelAdapter.ts` |
 | Provider | 支持 OpenAI-compatible、Anthropic、Gemini、Ollama/custom 基础调用 | `src/main/agent/provider.ts`, `src/main/agent/config.ts` |
-| Tool registry | 有 active editor、open files、diagnostics、update_plan、update_task_contract、list/read/search、git、propose edit、runtime-only apply、run command；read/propose 会优先使用 canonical path 匹配到的 dirty active buffer | `src/main/agent/tools.ts` |
-| Permission | 有 plan/ask/accept_edits/auto/bypass、command risk classifier、拒绝循环检测 | `src/main/agent/permissions.ts` |
+| Tool registry | 有 active editor、open files、diagnostics、update_plan、update_task_contract、ask_user、select_files、list/read/search、git、propose edit、runtime-only apply、run command；每个 RegisteredTool 都有 visibility、sideEffect、validate；read/propose 会优先使用 canonical path 匹配到的 dirty active buffer | `src/main/agent/tools.ts` |
+| Permission | 有 plan/ask/accept_edits/auto/bypass、command risk classifier、`.rille/policy.json` loader、session PermissionGrant、拒绝循环检测和 policy denial Observation | `src/main/agent/permissions.ts` |
 | Workspace | 有 local / ssh / wsl 路由、workspace path guard 和 canonical workspace path helper | `src/main/agent/workspace.ts` |
 | Edit store | 有 full-file proposal、conflict check、dirty snapshot guard、apply/reject、rollback proposal | `src/main/agent/editStore.ts` |
 | Verification | 有 VerifierRunner，发现验证命令并在 apply 后运行首个可用命令 | `src/main/agent/verifier.ts` |
@@ -49,8 +49,9 @@
   -> TextJsonToolAdapter 构造 messages
   -> provider 调用模型
   -> adapter 解析 JSON tool_calls
-  -> PermissionEngine 判断 allow / ask / deny
+  -> PermissionEngine 结合 hard deny / validation / grant / policy / mode 判断 allow / ask / deny
   -> ToolRuntime 执行工具
+  -> 持久化 tool / policy / edit Observation
   -> propose_file_edit 生成 EditProposal
   -> UI 展示 diff
   -> 用户 apply / reject / rollback
@@ -67,7 +68,7 @@
 ```text
 npm test
   11 files passed
-  44 tests passed
+  52 tests passed
 
 npm run typecheck
   passed
@@ -80,10 +81,10 @@ npm run build
 
 1. Task Contract 已有 Phase D 初版和模型驱动的 `update_task_contract` 更新能力，但还没有用户确认 gate，也没有和 evidence coverage 深度绑定。
 2. Plan card 已有 Phase D 初版，但还没有 blocking gate、repair context 和跨 turn plan continuity。
-3. Context Engine Foundation 已完成 Phase E：有 `ContextFragment` / `ContextTrace` / `ContextBuildResult` 协议、collectors、完整 project rules 读取顺序、stable/dynamic 确定性排序、budget-aware trimming、AgentLoop `context.built` trace event、replay 测试和 UI latest context summary；cache key、tool observation fragment、verification/review fragment、compact boundary 留给 Phase F/G/H。
+3. Context Engine Foundation 已完成 Phase E：有 `ContextFragment` / `ContextTrace` / `ContextBuildResult` 协议、collectors、完整 project rules 读取顺序、stable/dynamic 确定性排序、budget-aware trimming、AgentLoop `context.built` trace event、replay 测试和 UI latest context summary；cache key、verification/review fragment、compact boundary 留给 Phase G/H。
 4. Model Gateway 仍以文本 JSON protocol 为主，没有原生 tool calling、streaming、usage、fallback trace。
-5. Tool result 已结构化，但还没有统一 Observation 类型和 repair context。
-6. Policy 以内置规则为主；旧 approval resume 已不会恢复成可点击 pending 状态，但仍没有项目级规则、grant scope、有效期和完整 approval audit。
+5. Tool result 已结构化并会转为 Observation，但还没有 artifactRef 存储和完整 repair context。
+6. Policy 已有项目级 `.rille/policy.json`、session grant、approval runtime/matchedRule/grantOptions 和 denial Observation；仍没有持久 workspace grant、protected paths 过滤和 secret redaction 全链路治理。
 7. Verification 只有 passed/failed/skipped，缺少 evidence coverage 和 partial/blocked/stale/waived。
 8. Review 还不是独立质量门。
 9. Memory、Long-running、Trace、Eval 还主要是设计预留。
@@ -95,8 +96,8 @@ npm run build
 - `03_ORCHESTRATOR_AGENT_LOOP.md` 以 AgentThread / AgentLoop 为基线。
 - `04_MODEL_GATEWAY.md` 以 TextJsonToolAdapter 和 provider 为基线。
 - `05_CONTEXT_ENGINE.md` 以 buildAgentContextPrompt 为基线。
-- `06_TOOL_RUNTIME.md` 以 toolRegistry 为基线。
-- `07_POLICY_SAFETY.md` 以 decidePermission 和 classifyCommandRisk 为基线。
+- `06_TOOL_RUNTIME.md` 以 toolRegistry、ToolValidationResult 和 Observation 为基线。
+- `07_POLICY_SAFETY.md` 以 decidePermission、classifyCommandRisk、policy loader 和 PermissionGrantStore 为基线。
 - `08_EXECUTION_RUNTIME.md` 以 workspace helpers 为基线。
 - `09_VERIFICATION.md` 以 VerifierRunner 为基线。
 - `13_PRODUCT_UX.md` 以 AgentPanel 为基线。

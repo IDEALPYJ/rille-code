@@ -169,4 +169,67 @@ describe('AgentLoop context integration', () => {
     expect(partUpdate.part.messageId).toBe('msg_contract')
     expect(partUpdate.part.contract.goal).toBe('只修复当前类型错误')
   })
+
+  it('emits policy and tool observations for denied tools', async () => {
+    callAgentModelMock
+      .mockResolvedValueOnce(JSON.stringify({
+        tool_calls: [{
+          id: 'tool_apply',
+          name: 'apply_file_edit',
+          input: { proposalId: 'proposal_1' },
+        }],
+      }))
+      .mockResolvedValueOnce('{"answer":"blocked"}')
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const events: AgentEvent[] = []
+
+    const reason = await new AgentLoop({
+      session: session(),
+      turn: turn(),
+      text: 'apply edit',
+      context: context(),
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'deny', reason: 'not needed' }),
+    }).run()
+
+    expect(reason).toBe('completed')
+    const observations = events.filter(event => event.type === 'observation.created')
+    expect(observations.some(event => event.type === 'observation.created' && event.observation.source === 'policy' && event.observation.status === 'denied')).toBe(true)
+    expect(observations.some(event => event.type === 'observation.created' && event.observation.source === 'tool' && event.observation.status === 'denied')).toBe(true)
+  })
+
+  it('turns always_allow approvals into session grants', async () => {
+    callAgentModelMock
+      .mockResolvedValueOnce(JSON.stringify({
+        tool_calls: [{
+          id: 'tool_command_1',
+          name: 'run_command',
+          input: { commandLine: 'npm run typecheck' },
+        }],
+      }))
+      .mockResolvedValueOnce(JSON.stringify({
+        tool_calls: [{
+          id: 'tool_command_2',
+          name: 'run_command',
+          input: { commandLine: 'npm run build' },
+        }],
+      }))
+      .mockResolvedValueOnce('{"answer":"done"}')
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const requestApproval = vi.fn(async () => ({ action: 'always_allow' as const, pattern: 'ignored-ui-pattern' }))
+
+    const reason = await new AgentLoop({
+      session: session(),
+      turn: turn(),
+      text: 'run commands',
+      context: context(),
+      signal: new AbortController().signal,
+      emit: vi.fn(),
+      requestApproval,
+    }).run()
+
+    expect(reason).toBe('completed')
+    expect(requestApproval).toHaveBeenCalledTimes(1)
+  })
 })

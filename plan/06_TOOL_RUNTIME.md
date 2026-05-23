@@ -29,6 +29,10 @@ model-visible：
 get_active_editor
 get_open_files
 read_diagnostics
+update_plan
+update_task_contract
+ask_user
+select_files
 list_directory
 read_file
 search_files
@@ -44,15 +48,14 @@ runtime-only：
 apply_file_edit
 ```
 
-当前 `executeToolCall` 已统一捕获异常并返回 `AgentToolResult`。
+当前 `RegisteredTool` 已显式声明 `visibility`、`sideEffect` 和 `validate`；`executeToolCall` 会先做 runtime input validation，再执行工具，并以 `AgentToolResult` 返回标准 `failureType`。
 
 当前缺口：
 
-- 没有统一 ToolFailure 分类。
-- 没有 Observation 类型。
-- 大输出没有 artifact ref。
-- 工具 schema 校验依赖模型遵守，没有 runtime schema validator。
-- 结构化交互工具不足，例如 ask_user、update_plan、select_files。
+- 大输出已有 truncated marker，但没有 artifactRef 外部存储。
+- ToolObservation 已用统一 `Observation` 事件落地，但还没有独立 artifact store。
+- `ask_user` 和 `select_files` 已有基础工具形态，但完整用户交互 UI 留到 Phase J。
+- Observation 还没有进入 Phase G 的 evidence coverage 和 repair gate。
 
 ## 设计原则
 
@@ -118,22 +121,23 @@ ModelDecision.request_tool_calls
   -> Policy decision
   -> Execution Runtime route
   -> capture output / error / timeout
-  -> create ToolObservation
+  -> create Observation
   -> emit tool.completed
-  -> feed observation into next context
+  -> emit observation.created
+  -> feed observation into next repair context in later phases
 ```
 
 ### 新增工具
 
 ```text
 ask_user
-  用于结构化澄清，不让模型用 Markdown 伪造用户选择。
+  用于结构化澄清，不让模型用 Markdown 伪造用户选择。Phase F 先返回 blocking result / Observation，完整 UI 留到 Phase J。
 
 update_plan
   用于结构化更新 plan card。
 
 select_files
-  用于请求用户选择文件或确认范围。
+  用于请求用户选择文件或确认范围。Phase F 先返回 blocking result / Observation，完整 UI 留到 Phase J。
 
 inspect_symbol
   用于后续 LSP/symbol 能力。
@@ -160,13 +164,13 @@ find_references
 
 ## 实现步骤
 
-1. 为 RegisteredTool 增加 visibility 和 sideEffect。
-2. 增加 runtime input validator。
-3. 将 ToolResultView 转换为 ToolObservation。
-4. 为失败分类补标准字段。
-5. 增加 artifactRef 支持。
-6. 增加 ask_user 和 update_plan 工具。
-7. 将 ToolObservation 写入 session event。
+1. 已为 RegisteredTool 增加 visibility、sideEffect 和 validate。
+2. 已增加 runtime input validator。
+3. 已将 ToolResultView 转换为 Observation。
+4. 已为失败分类补标准字段。
+5. artifactRef 支持仍待 artifact store。
+6. 已增加 ask_user、select_files，并保留 update_plan。
+7. 已将 tool / policy / edit Observation 写入 session event。
 
 ## 测试与验收
 
@@ -175,13 +179,17 @@ find_references
 - runtime-only tool 被模型请求时拒绝。
 - invalid input 返回 invalid_input。
 - path outside workspace 返回结构化失败。
-- output too large 产生 artifact ref 或 truncated marker。
+- output too large 产生 truncated marker；artifactRef 留待后续 artifact store。
 
 集成测试：
 
 - mock model 调用 propose_file_edit，产生 diff proposal observation。
 - denied command 进入 observation，不重复请求。
-- ask_user 阻塞 loop 直到用户回答。
+- ask_user 产生 blocking result / Observation；完整阻塞交互留到 Phase J。
+
+## 完成记录
+
+- 2026-05-23：Phase F 已完成 Tool Runtime foundation。协议层新增 ToolVisibility、ToolSideEffect、ToolValidationResult、ToolFailureType 和 Observation；工具注册表已迁移到 visibility/sideEffect/validate；runtime validation 会在执行前拦截 invalid input；tool、policy、edit 结果会持久化 `observation.created`；新增 `ask_user` 和 `select_files` 基础工具。剩余 artifactRef、完整 ask/select UI、repair/evidence gate 进入后续 Phase。
 
 手工验收：
 

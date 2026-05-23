@@ -4,7 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentContextSnapshot, AgentPlanItem, AgentSession, AgentTurn, TaskContract } from '../../src/shared/agent/protocol'
-import { executeToolCall, getModelVisibleToolDefinitions } from '../../src/main/agent/tools'
+import { executeToolCall, getModelVisibleToolDefinitions, getToolDefinitions, toolRegistry } from '../../src/main/agent/tools'
 import { createInitialTaskContract } from '../../src/main/agent/taskContract'
 
 let root = ''
@@ -62,6 +62,35 @@ afterEach(async () => {
 })
 
 describe('update_plan tool', () => {
+  it('exposes Phase F tool metadata and validators', () => {
+    for (const tool of toolRegistry) {
+      expect(tool.visibility).toMatch(/^(model|runtime|ui)$/)
+      expect(tool.sideEffect).toMatch(/^(none|workspace_read|workspace_write|process|network|external)$/)
+      expect(typeof tool.validate).toBe('function')
+    }
+    const definitions = getToolDefinitions()
+    expect(definitions.every(tool => tool.visibility && tool.sideEffect)).toBe(true)
+    expect(getModelVisibleToolDefinitions().some(tool => tool.name === 'apply_file_edit')).toBe(false)
+    expect(getModelVisibleToolDefinitions().some(tool => tool.name === 'ask_user')).toBe(true)
+    expect(getModelVisibleToolDefinitions().some(tool => tool.name === 'select_files')).toBe(true)
+  })
+
+  it('rejects invalid input before tool execution', async () => {
+    const result = await executeToolCall(
+      { id: 'tool_read_invalid', name: 'read_file', input: { filePath: 42 } },
+      {
+        session: session(),
+        turn: turn(),
+        context: context(),
+        emitProposal: vi.fn(),
+      },
+    )
+
+    expect(result.status).toBe('error')
+    expect(result.error).toBe('invalid_input')
+    expect(result.failureType).toBe('invalid_input')
+  })
+
   it('is model-visible and updates runtime plan state', async () => {
     expect(getModelVisibleToolDefinitions().some(tool => tool.name === 'update_plan')).toBe(true)
     const currentItems: AgentPlanItem[] = [

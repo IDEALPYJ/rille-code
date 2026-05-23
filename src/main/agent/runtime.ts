@@ -10,6 +10,8 @@ import type {
   ApprovalDecision,
   ApprovalRequest,
   MessagePart,
+  Observation,
+  PolicyDecision,
   TaskContract,
   ToolCallView,
   ToolResultView,
@@ -18,7 +20,7 @@ import type {
 import { readAgentConfigSnapshot } from './config'
 import { buildAgentContext, DEFAULT_CONTEXT_BUDGET_TOKENS } from './contextBuilder'
 import { callAgentModel, type AgentChatMessage } from './provider'
-import { decidePermission, deniedToolResult, DenialTracker, permissionPattern } from './permissions'
+import { decidePermission, deniedToolResult, DenialTracker, PermissionGrantStore, permissionForCall, permissionPattern } from './permissions'
 import { executeToolCall, getRegisteredTool, type RuntimeToolCall } from './tools'
 import { TextJsonToolAdapter } from './modelAdapter'
 
@@ -34,6 +36,7 @@ interface RuntimeOptions {
   signal: AbortSignal
   emit: (event: AgentEvent) => void
   requestApproval: (request: ApprovalRequest) => Promise<ApprovalDecision>
+  grants?: PermissionGrantStore
 }
 
 function now(): number {
@@ -78,12 +81,70 @@ function hasVerificationFailure(results: Array<{ call: RuntimeToolCall; result: 
   })
 }
 
+function observationStatus(result: ToolResultView): Observation['status'] {
+  if (result.status === 'denied') return 'denied'
+  if (result.status === 'conflict' || result.status === 'timeout') return 'blocked'
+  if (result.error || result.status === 'error') return 'error'
+  return 'ok'
+}
+
+function observationFromToolResult(sessionId: string, turnId: string, call: ToolCallView, result: ToolResultView): Observation {
+  return {
+    id: `observation_${randomUUID()}`,
+    sessionId,
+    turnId,
+    source: 'tool',
+    status: observationStatus(result),
+    summary: `${call.title}: ${result.output.slice(0, 240)}`,
+    data: {
+      callId: call.id,
+      toolName: call.name,
+      status: result.status || 'ok',
+      error: result.error,
+      failureType: result.failureType,
+      truncated: result.truncated,
+      exitCode: result.exitCode,
+      durationMs: result.durationMs,
+      structured: result.structured,
+    },
+    createdAt: now(),
+  }
+}
+
+function observationFromPolicy(
+  sessionId: string,
+  turnId: string,
+  call: RuntimeToolCall,
+  decision: PolicyDecision,
+): Observation {
+  return {
+    id: `observation_${randomUUID()}`,
+    sessionId,
+    turnId,
+    source: 'policy',
+    status: decision.action === 'deny' ? 'denied' : decision.action === 'ask' ? 'blocked' : 'ok',
+    summary: `Policy ${decision.action}: ${decision.reason}`,
+    data: {
+      callId: call.id,
+      toolName: call.name,
+      input: call.input,
+      risk: decision.risk,
+      matchedRule: decision.matchedRule,
+      grant: decision.grant,
+      alternatives: decision.alternatives,
+    },
+    createdAt: now(),
+  }
+}
+
 export class AgentLoop {
   private readonly adapter = new TextJsonToolAdapter()
+  private readonly grants: PermissionGrantStore
   private taskContract?: TaskContract
   private planItems: AgentPlanItem[]
 
   constructor(private readonly options: RuntimeOptions) {
+    this.grants = options.grants ?? new PermissionGrantStore()
     this.taskContract = options.taskContract
     this.planItems = [...(options.planItems ?? [])]
   }
@@ -208,10 +269,18 @@ export class AgentLoop {
         const toolPart: Extract<MessagePart, { type: 'tool' }> = { id: createPartId(), messageId: assistantMessageId, type: 'tool', call: runningCall, state: 'running', createdAt: now() }
         this.emitPart(toolPart)
 
-        const permission = decidePermission({ call, mode: this.options.session.permissionMode, sessionId: this.options.session.id, turnId: this.options.turn.id })
+        const permission = await decidePermission({
+          call,
+          mode: this.options.session.permissionMode,
+          sessionId: this.options.session.id,
+          turnId: this.options.turn.id,
+          context: this.options.context,
+          grants: this.grants,
+        })
         if (permission.action === 'deny') {
-          const result = deniedToolResult(call, permission.reason)
+          const result = deniedToolResult(call, permission.reason, permission.policyDecision.alternatives)
           results.push({ call, result })
+          this.emitObservation(observationFromPolicy(this.options.session.id, this.options.turn.id, call, permission.policyDecision))
           if (denialTracker.record(permissionPattern(call))) {
             return 'permission_denied_loop'
           }
@@ -228,9 +297,22 @@ export class AgentLoop {
           if (decision.action === 'deny') {
             const result = deniedToolResult(call, decision.reason || '用户拒绝。')
             results.push({ call, result })
+            this.emitObservation(observationFromPolicy(this.options.session.id, this.options.turn.id, call, {
+              action: 'deny',
+              risk: permission.policyDecision.risk,
+              reason: decision.reason || '用户拒绝。',
+              alternatives: permission.policyDecision.alternatives,
+            }))
             if (denialTracker.record(permissionPattern(call))) return 'permission_denied_loop'
             this.completeToolPart(toolPart, runningCall, result)
             continue
+          }
+          if (decision.action === 'always_allow') {
+            this.grants.add({
+              permission: permissionForCall(call),
+              pattern: permissionPattern(call),
+              scope: 'session',
+            })
           }
         }
 
@@ -276,6 +358,7 @@ export class AgentLoop {
   private completeToolPart(part: Extract<MessagePart, { type: 'tool' }>, runningCall: ToolCallView, result: ToolResultView) {
     const completedCall: ToolCallView = { ...runningCall, state: result.error ? 'failed' : 'completed', completedAt: now() }
     this.options.emit({ type: 'tool.completed', sessionId: this.options.session.id, turnId: this.options.turn.id, callId: runningCall.id, result })
+    this.emitObservation(observationFromToolResult(this.options.session.id, this.options.turn.id, runningCall, result))
     this.updatePart({
       ...part,
       call: completedCall,
@@ -286,6 +369,10 @@ export class AgentLoop {
 
   private emitPart(part: MessagePart): void {
     this.options.emit({ type: 'message.part.created', sessionId: this.options.session.id, turnId: this.options.turn.id, part })
+  }
+
+  private emitObservation(observation: Observation): void {
+    this.options.emit({ type: 'observation.created', sessionId: this.options.session.id, turnId: this.options.turn.id, observation })
   }
 
   private updatePart(part: MessagePart): void {
