@@ -513,6 +513,13 @@ function MessagePartView({
   if (part.type === 'evidence_coverage') return <EvidenceCoveragePart part={part} />
   if (part.type === 'review') return <ReviewPart part={part} />
   if (part.type === 'edit_result') return <EditResultPart part={part} />
+  if (part.type === 'handoff') {
+    return (
+      <div className="agent-message assistant">
+        <MarkdownMessage text={`## Handoff\n\n${part.handoff.summary}\n\n**下一步**: ${part.handoff.nextSteps.join(', ') || '无'}`} />
+      </div>
+    )
+  }
   if (part.type === 'file') {
     return (
       <div className="agent-file-part">

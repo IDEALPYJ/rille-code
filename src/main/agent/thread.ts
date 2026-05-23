@@ -1,5 +1,7 @@
 import type { WebContents } from 'electron'
 import { randomUUID } from 'crypto'
+import { existsSync } from 'fs'
+import { join } from 'path'
 import type {
   AgentContextSnapshot,
   AgentEvent,
@@ -12,6 +14,7 @@ import type {
   ApprovalRequest,
   Evidence,
   EditProposal,
+  Handoff,
   MessagePart,
   Observation,
 } from '../../shared/agent/protocol'
@@ -58,6 +61,7 @@ export class AgentThread {
   private activeTurn: AgentTurn | null = null
   private abortController: AbortController | null = null
   private approvals = new Map<string, { resolve: (decision: ApprovalDecision) => void; request: ApprovalRequest }>()
+  private lastHandoff: Handoff | null = null
   private readonly grants = new PermissionGrantStore()
 
   constructor(
@@ -102,6 +106,7 @@ export class AgentThread {
     for (const event of events) {
       if (event.type === 'approval.requested') pendingApprovals.set(event.request.id, event.request)
       if (event.type === 'approval.resolved') pendingApprovals.delete(event.requestId)
+      if (event.type === 'handoff.created') this.lastHandoff = event.handoff
       this.send(event)
     }
     for (const request of pendingApprovals.values()) {
@@ -267,6 +272,13 @@ export class AgentThread {
         createdAt: now(),
       })
 
+      if (this.lastHandoff) {
+        const freshness = this.checkWorkspaceFreshness(this.lastHandoff, context)
+        if (!freshness.fresh) {
+          this.emitStaleWarning(turn.id, freshness.warnings)
+        }
+      }
+
       const reason = await new AgentLoop({
         session: this.session,
         turn,
@@ -276,6 +288,7 @@ export class AgentThread {
         taskContractPart: { id: contractPartId, messageId: contractMessageId },
         planItems,
         planPart: { id: planPartId, messageId: planMessageId },
+        handoff: this.lastHandoff ?? undefined,
         signal: this.abortController.signal,
         emit: event => this.emit(event),
         requestApproval: request => this.requestApproval(request),
@@ -388,6 +401,37 @@ export class AgentThread {
     })
   }
 
+  private checkWorkspaceFreshness(handoff: Handoff, context: AgentContextSnapshot): { fresh: boolean; staleFiles: string[]; warnings: string[] } {
+    const staleFiles: string[] = []
+    const warnings: string[] = []
+    const workspacePath = context.workspace?.path
+    if (!workspacePath || context.workspace?.kind !== 'local') {
+      return { fresh: true, staleFiles: [], warnings: [] }
+    }
+    for (const filePath of handoff.changedFiles) {
+      const fullPath = join(workspacePath, filePath)
+      if (!existsSync(fullPath)) {
+        staleFiles.push(filePath)
+        warnings.push(`文件 ${filePath} 已不存在。`)
+      }
+    }
+    return { fresh: staleFiles.length === 0, staleFiles, warnings }
+  }
+
+  private emitStaleWarning(turnId: string, warnings: string[]): void {
+    if (warnings.length === 0) return
+    const observation: Observation = {
+      id: `observation_${randomUUID()}`,
+      sessionId: this.session.id,
+      turnId,
+      source: 'runtime',
+      status: 'stale',
+      summary: `工作区已变化：${warnings.join(' ')}`,
+      createdAt: now(),
+    }
+    this.emitObservation(observation)
+  }
+
   private requestApproval(request: ApprovalRequest): Promise<ApprovalDecision> {
     this.session = { ...this.session, status: 'waiting_approval', updatedAt: now() }
     this.emit({ type: 'session.updated', session: this.session })
@@ -402,6 +446,7 @@ export class AgentThread {
 
   private emit(event: AgentEvent): void {
     if (event.type === 'session.created' || event.type === 'session.updated') saveSessionMeta(event.session)
+    if (event.type === 'handoff.created') this.lastHandoff = event.handoff
     void appendSessionEvent(event).catch(error => {
       console.warn('Failed to persist agent event', error)
     })

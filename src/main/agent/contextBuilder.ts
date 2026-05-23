@@ -242,6 +242,51 @@ function collectVerificationFragment(input: ContextBuildInput): ContextFragment 
   })
 }
 
+function collectSessionSummaryFragment(input: ContextBuildInput): ContextFragment | null {
+  const contract = input.taskContract
+  const plan = input.planItems
+  if (!contract) return null
+  const completed = plan?.filter(p => p.status === 'completed').length ?? 0
+  const total = plan?.length ?? 0
+  const evidenceCount = input.evidence?.length ?? 0
+  return fragment({
+    id: 'context_session_summary',
+    type: 'session_summary',
+    section: 'stable_prefix',
+    priority: 88,
+    source: 'session_summary',
+    text: [
+      'Session summary:',
+      `Goal: ${contract.goal}`,
+      `Progress: ${completed}/${total} plan items completed`,
+      evidenceCount > 0 ? `Evidence collected: ${evidenceCount} items` : null,
+      `Phase: ${input.phase}`,
+    ].filter(Boolean).join('\n'),
+  })
+}
+
+function collectHandoffFragment(input: ContextBuildInput): ContextFragment | null {
+  const handoff = input.handoff
+  if (!handoff) return null
+  return fragment({
+    id: `context_handoff_${handoff.id}`,
+    type: 'handoff',
+    section: 'stable_prefix',
+    priority: 90,
+    source: handoff.id,
+    text: [
+      'Previous session handoff:',
+      `Summary: ${handoff.summary}`,
+      handoff.completed.length > 0 ? `Completed (verified): ${handoff.completed.join(', ')}` : null,
+      handoff.implementedUnverified.length > 0 ? `Implemented (unverified): ${handoff.implementedUnverified.join(', ')}` : null,
+      handoff.failedAttempts.length > 0 ? `Failed attempts: ${handoff.failedAttempts.join(', ')}` : null,
+      handoff.changedFiles.length > 0 ? `Changed files: ${handoff.changedFiles.join(', ')}` : null,
+      handoff.nextSteps.length > 0 ? `Next steps: ${handoff.nextSteps.join(', ')}` : null,
+      handoff.unresolvedRisks.length > 0 ? `Unresolved risks: ${handoff.unresolvedRisks.join(', ')}` : null,
+    ].filter(Boolean).join('\n'),
+  })
+}
+
 function collectReviewFragment(input: ContextBuildInput): ContextFragment | null {
   const review = input.reviewResult
   if (!review) return null
@@ -300,6 +345,8 @@ async function collectContextFragments(input: ContextBuildInput): Promise<Contex
   const stable = [
     collectTaskContractFragment(input),
     collectPlanFragment(input),
+    collectHandoffFragment(input),
+    collectSessionSummaryFragment(input),
     collectWorkspaceFragment(context),
     await collectProjectRulesFragment(context),
   ].filter((item): item is ContextFragment => Boolean(item))

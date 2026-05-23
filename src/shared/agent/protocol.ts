@@ -388,6 +388,7 @@ export interface ContextBuildInput {
   evidence?: Evidence[]
   verificationCoverage?: VerificationCoverage | null
   reviewResult?: ReviewResult | null
+  handoff?: Handoff
   budgetTokens: number
 }
 
@@ -404,6 +405,46 @@ export interface ContextBuiltSummary {
   excludedCount: number
   totalTokenEstimate: number
   budgetTokens: number
+}
+
+// === Feature / Progress / Handoff ===
+
+export type FeatureStatus = 'not_started' | 'in_progress' | 'implemented_unverified' | 'verified' | 'blocked' | 'dropped'
+
+export interface FeatureItem {
+  id: string
+  title: string
+  status: FeatureStatus
+  acceptanceCriteriaIds: string[]
+  evidenceRefs: string[]
+  riskRefs: string[]
+  updatedAt: number
+}
+
+export interface ProgressState {
+  taskContractId: string
+  activeFeatureId?: string
+  featureList: FeatureItem[]
+  failedAttempts: string[]
+  unresolvedRisks: string[]
+  nextSteps: string[]
+  updatedAt: number
+}
+
+export interface Handoff {
+  id: string
+  sessionId: string
+  turnId: string
+  taskContractId: string
+  summary: string
+  completed: string[]
+  implementedUnverified: string[]
+  failedAttempts: string[]
+  changedFiles: string[]
+  evidenceRefs: string[]
+  unresolvedRisks: string[]
+  nextSteps: string[]
+  createdAt: number
 }
 
 export interface AgentSession {
@@ -501,6 +542,7 @@ export type MessagePart =
   | { id: string; messageId: string; type: 'evidence_coverage'; coverage: VerificationCoverage; evidence: Evidence[]; gate?: VerificationGateResult; createdAt: number }
   | { id: string; messageId: string; type: 'review'; result: ReviewResult; createdAt: number }
   | { id: string; messageId: string; type: 'edit_result'; proposalId: string; state: EditProposal['state']; filePath: string; message: string; createdAt: number }
+  | { id: string; messageId: string; type: 'handoff'; handoff: Handoff; createdAt: number }
 
 export interface ApprovalRequest {
   id: string
@@ -588,5 +630,7 @@ export type AgentEvent =
   | { type: 'verification.completed'; sessionId: string; turnId: string; result: VerificationResult }
   | { type: 'turn.completed'; sessionId: string; turnId: string; reason: TurnStopReason }
   | { type: 'turn.failed'; sessionId: string; turnId: string; reason: TurnStopReason; error: string }
+  | { type: 'progress.updated'; sessionId: string; turnId: string; progress: ProgressState }
+  | { type: 'handoff.created'; sessionId: string; turnId: string; handoff: Handoff }
 
 export type AgentIpcResult<T> = { ok: true; value: T } | { ok: false; error: string }

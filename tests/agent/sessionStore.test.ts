@@ -236,4 +236,55 @@ describe('sessionStore', () => {
     for (const event of events) await store.appendSessionEvent(event)
     await expect(store.readSessionEvents(meta.id)).resolves.toEqual(events)
   })
+
+  it('persists and replays progress.updated events', async () => {
+    const store = await import('../../src/main/agent/sessionStore')
+    const meta = session()
+    const activeTurn = turn(meta.id)
+    const progress = {
+      taskContractId: 'contract_1',
+      activeFeatureId: 'feat_1',
+      featureList: [
+        { id: 'feat_1', title: '探索代码', status: 'in_progress' as const, acceptanceCriteriaIds: [], evidenceRefs: [], riskRefs: [], updatedAt: 1 },
+        { id: 'feat_2', title: '修复类型错误', status: 'not_started' as const, acceptanceCriteriaIds: [], evidenceRefs: [], riskRefs: [], updatedAt: 1 },
+      ],
+      failedAttempts: [],
+      unresolvedRisks: [],
+      nextSteps: ['修复类型错误'],
+      updatedAt: 1,
+    }
+    const events: AgentEvent[] = [
+      { type: 'session.created', session: meta },
+      { type: 'progress.updated', sessionId: meta.id, turnId: activeTurn.id, progress },
+    ]
+    for (const event of events) await store.appendSessionEvent(event)
+    await expect(store.readSessionEvents(meta.id)).resolves.toEqual(events)
+  })
+
+  it('persists and replays handoff.created events', async () => {
+    const store = await import('../../src/main/agent/sessionStore')
+    const meta = session()
+    const activeTurn = turn(meta.id)
+    const handoff = {
+      id: 'handoff_1',
+      sessionId: meta.id,
+      turnId: activeTurn.id,
+      taskContractId: 'contract_1',
+      summary: '任务中断。1 项已验证，1 项待验证。',
+      completed: ['探索代码'],
+      implementedUnverified: ['修复类型错误'],
+      failedAttempts: [],
+      changedFiles: ['/repo/src/main.ts'],
+      evidenceRefs: [],
+      unresolvedRisks: [],
+      nextSteps: ['运行 typecheck 验证修改'],
+      createdAt: 1,
+    }
+    const events: AgentEvent[] = [
+      { type: 'session.created', session: meta },
+      { type: 'handoff.created', sessionId: meta.id, turnId: activeTurn.id, handoff },
+    ]
+    for (const event of events) await store.appendSessionEvent(event)
+    await expect(store.readSessionEvents(meta.id)).resolves.toEqual(events)
+  })
 })

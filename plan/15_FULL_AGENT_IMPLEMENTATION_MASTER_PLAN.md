@@ -320,7 +320,7 @@ interface SubagentContract {
 | Phase E | 已完成 | Final Context Engine Foundation | 已作为当前 Context 基线 |
 | Phase F | 已完成 | Tool Runtime + Policy Foundation | 已作为当前 Tool / Policy 基线 |
 | Phase G | 已完成 | Verification + Review Gate | 已作为当前 Verification / Review 基线 |
-| Phase H | 未开始 | Memory + Long-running State | 下一步执行 H1：增加 FeatureProgressItem、ProgressState、Handoff 协议与事件 |
+| Phase H | 已完成 | Memory + Long-running State | 已作为当前 Memory/Long-running 基线 |
 | Phase I | 未开始 | Observability + Eval | 从 TraceEvent 和 debug export 开始 |
 | Phase J | 未开始 | UX + Skills/Subagents | 从 Evidence UI 和 skills discovery 开始 |
 
@@ -372,13 +372,13 @@ interface SubagentContract {
 
 ### Phase H: Memory + Long-running State
 
-- [ ] H1. 增加 FeatureProgressItem、ProgressState、Handoff 协议与事件。
-- [ ] H2. pause/resume 时生成和恢复 handoff。
-- [ ] H3. resume 时检查 workspace freshness 和 evidence stale。
-- [ ] H4. 区分 verified、implemented_unverified、blocked、stale 状态。
-- [ ] H5. 增加 compact boundary 和 session summary。
-- [ ] H6. 补充 handoff、resume stale、progress replay 测试。
-- [ ] H7. 更新 01、11、14、15 文档并记录验证结果。
+- [x] H1. 增加 FeatureProgressItem、ProgressState、Handoff 协议与事件。
+- [x] H2. pause/resume 时生成和恢复 handoff。
+- [x] H3. resume 时检查 workspace freshness 和 evidence stale。
+- [x] H4. 区分 verified、implemented_unverified、blocked、stale 状态。
+- [x] H5. 增加 compact boundary 和 session summary。
+- [x] H6. 补充 handoff、resume stale、progress replay 测试。
+- [x] H7. 更新 01、11、14、15 文档并记录验证结果。
 
 ### Phase I: Observability + Eval
 
@@ -551,6 +551,19 @@ interface SubagentContract {
 剩余风险: 用户 waiver 只有协议状态预留，尚无交互 UI；Review 是 rule-based，不接 reviewer model/advisor；Evidence output 仍走现有截断策略，没有 artifactRef 存储；stale evidence 检查只预留状态，完整 workspace freshness 留给 Phase H。
 下一步: Phase H1，增加 FeatureProgressItem、ProgressState、Handoff 协议与事件。
 
+### Phase H / Memory + Long-running State 完成记录
+
+步骤: H1-H7
+状态: 已完成
+完成日期: 2026-05-23
+涉及模块: protocol、runtime、thread、contextBuilder、AgentPanel、sessionStore tests、runtime tests、contextBuilder tests、Phase H 文档
+实现摘要: 已新增 FeatureItem、ProgressState、Handoff 协议类型及 progress.updated、handoff.created 事件和 handoff MessagePart；AgentLoop 每 turn 结束时通过 finalize() 生成进度状态和 Handoff；AgentLoop.buildProgressState() 按 verificationCoverage 区分 verified 与 implemented_unverified，completed 但无 covered 证据的 plan item 不会自动变成 verified；thread 在 replayHistory 和 emit 中捕获 lastHandoff 以支持跨 turn 恢复，submitTurn 时将 handoff 注入 ContextBuildInput（phase='resume'）；thread.checkWorkspaceFreshness() 检查 handoff.changedFiles 是否存在并发出 stale observation；contextBuilder 新增 collectHandoffFragment（stable_prefix priority 90）和 collectSessionSummaryFragment（stable_prefix priority 88），handoff 在 resume 时注入稳定前缀；compact boundary 通过 session_summary + 确定性 trimming 实现，低预算时自动用摘要替代动态 fragments。
+测试文件: `tests/agent/sessionStore.test.ts`（+2 handoff/progress 持久化测试）、`tests/agent/runtime.test.ts`（+4 progress/handoff/max_turns 测试）、`tests/agent/contextBuilder.test.ts`（+3 handoff/session_summary 测试）
+验证命令: `npm test`、`npm run typecheck`、`npm run build`、`rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+验证结果: `npm test` 为 12 files / 70 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查无输出；checklist 检查可列出当前完成与未完成项。
+剩余风险: ProjectMemoryEntry 只设计未实现，没有持久化 memory store；handoff 仅在 turn 边界生成，长任务中途暂停无中间 checkpoint；stale evidence 检查只验证文件存在性，不比较 git hash/diff；workspace freshness 仅对 local workspace 有效，SSH/WSL 跳过检查；compact boundary 只在 token 预算紧张时依靠 trimming 自然排除，没有显式 compact 触发逻辑。
+下一步: Phase I1，增加 TraceEvent 和 AgentUsage 协议与事件。
+
 ## 全局测试策略
 
 每次代码实现必须运行：
@@ -582,17 +595,17 @@ rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md
 
 ## 下一步指针
 
-当前下一步是 Phase H1：
+当前下一步是 Phase I1：
 
 ```text
-增加 FeatureProgressItem、ProgressState、Handoff 协议与事件。
+增加 TraceEvent 和 AgentUsage 协议与事件。
 ```
 
-Phase H1 完成后必须同步更新：
+Phase I1 完成后必须同步更新：
 
 - `plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
 - `plan/01_CURRENT_BASELINE.md`
-- `plan/11_MEMORY_LONG_RUNNING.md`
+- `plan/12_OBSERVABILITY_EVAL.md`
 - `plan/14_IMPLEMENTATION_ROADMAP.md`
 
 ## 停止线

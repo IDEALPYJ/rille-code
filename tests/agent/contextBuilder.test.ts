@@ -120,6 +120,7 @@ describe('buildAgentContext', () => {
     expect(types).toEqual([
       'task_contract',
       'plan',
+      'session_summary',
       'workspace',
       'active_editor',
       'diagnostics',
@@ -161,6 +162,7 @@ describe('buildAgentContext', () => {
     expect(result.fragments.map(item => item.type)).toEqual([
       'task_contract',
       'plan',
+      'session_summary',
       'project_rules',
       'workspace',
       'active_editor',
@@ -186,7 +188,7 @@ describe('buildAgentContext', () => {
     const excludedTypes = result.trace.excluded.map(item => item.type)
 
     expect(includedTypes).toEqual(['task_contract'])
-    expect(excludedTypes).toEqual(['plan', 'workspace', 'active_editor', 'diagnostics', 'open_files'])
+    expect(excludedTypes).toEqual(['plan', 'session_summary', 'workspace', 'active_editor', 'diagnostics', 'open_files'])
     expect(result.prompt).toContain('Task Contract:')
     expect(result.prompt).not.toContain('Structured Plan:')
     expect(result.prompt).not.toContain('Open files:')
@@ -272,5 +274,47 @@ describe('buildAgentContext', () => {
     expect(fragment?.text).toContain('# README.md')
     expect(result.fragments.some(item => item.type === 'workspace')).toBe(true)
     expect(result.fragments.some(item => item.type === 'diagnostics')).toBe(true)
+  })
+
+  it('injects handoff fragment in stable_prefix when handoff is provided', async () => {
+    const handoff = {
+      id: 'handoff_test',
+      sessionId: 'session_context',
+      turnId: 'turn_context',
+      taskContractId: 'contract_context',
+      summary: 'Previous task progress summary.',
+      completed: ['探索代码'],
+      implementedUnverified: ['修复类型错误'],
+      failedAttempts: [],
+      changedFiles: ['/repo/src/main.ts'],
+      evidenceRefs: [],
+      unresolvedRisks: [],
+      nextSteps: ['运行 typecheck'],
+      createdAt: 1,
+    }
+    const result = await buildAgentContext(input({ handoff }))
+
+    const handoffFragment = result.fragments.find(item => item.type === 'handoff')
+    expect(handoffFragment).toBeDefined()
+    expect(handoffFragment?.section).toBe('stable_prefix')
+    expect(handoffFragment?.text).toContain('Previous session handoff:')
+    expect(handoffFragment?.text).toContain('探索代码')
+    expect(handoffFragment?.text).toContain('修复类型错误')
+    expect(handoffFragment?.text).toContain('/repo/src/main.ts')
+    expect(handoffFragment?.text).toContain('运行 typecheck')
+  })
+
+  it('omits handoff fragment when no handoff is provided', async () => {
+    const result = await buildAgentContext(input())
+    expect(result.fragments.some(item => item.type === 'handoff')).toBe(false)
+  })
+
+  it('includes session_summary fragment with task progress', async () => {
+    const result = await buildAgentContext(input())
+    const summaryFragment = result.fragments.find(item => item.type === 'session_summary')
+    expect(summaryFragment).toBeDefined()
+    expect(summaryFragment?.text).toContain('Session summary:')
+    expect(summaryFragment?.text).toContain('修复当前类型错误')
+    expect(summaryFragment?.text).toContain('Progress:')
   })
 })

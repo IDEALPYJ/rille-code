@@ -102,7 +102,9 @@ function shellTokens(commandLine: string): string[] {
 }
 
 export function needsShell(commandLine: string): boolean {
-  return /[|&;<>()`]|>>?|\\n|\$\(/.test(commandLine)
+  if (/[|&;<>()`]|>>?|\\n|\$\(/.test(commandLine)) return true
+  // npm/npx/yarn/pnpm are .cmd wrappers on Windows and need a shell
+  return /^(npm|npx|yarn|pnpm)(\s|$)/.test(commandLine.trim())
 }
 
 function execFileText(command: string, args: string[], cwd: string): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {

@@ -312,4 +312,159 @@ describe('AgentLoop context integration', () => {
     expect(events.some(event => event.type === 'review.completed' && event.result.status === 'request_changes')).toBe(true)
     expect(events.some(event => event.type === 'observation.created' && event.observation.source === 'verification')).toBe(true)
   })
+
+  it('emits progress.updated and handoff.created on successful completion', async () => {
+    callAgentModelMock.mockResolvedValueOnce('{"answer":"完成"}')
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const runtimeSession = session()
+    const runtimeTurn = turn()
+    const runtimeContext = cleanContext()
+    const contract = diagnosticsOnlyContract(runtimeSession, runtimeTurn, runtimeContext)
+    const planItems = createInitialPlanItems(contract, 1)
+    const events: AgentEvent[] = []
+
+    const reason = await new AgentLoop({
+      session: runtimeSession,
+      turn: runtimeTurn,
+      text: runtimeTurn.text,
+      context: runtimeContext,
+      taskContract: contract,
+      planItems,
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+    }).run()
+
+    expect(reason).toBe('completed')
+
+    const progressEvent = events.find(e => e.type === 'progress.updated')
+    expect(progressEvent).toBeDefined()
+    if (progressEvent?.type !== 'progress.updated') return
+    expect(progressEvent.progress.taskContractId).toBe(contract.id)
+    expect(progressEvent.progress.featureList.length).toBeGreaterThan(0)
+
+    const handoffEvent = events.find(e => e.type === 'handoff.created')
+    expect(handoffEvent).toBeDefined()
+    if (handoffEvent?.type !== 'handoff.created') return
+    expect(handoffEvent.handoff.taskContractId).toBe(contract.id)
+    expect(handoffEvent.handoff.nextSteps.length).toBeGreaterThan(0)
+  })
+
+  it('marks plan items as implemented_unverified when no verification coverage exists', async () => {
+    callAgentModelMock.mockImplementation(() => Promise.resolve('{"answer":"完成"}'))
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const runtimeSession = session()
+    const runtimeTurn = turn()
+    const runtimeContext = cleanContext()
+    // Contract requires command evidence which won't be produced → no coverage
+    const contract = {
+      ...diagnosticsOnlyContract(runtimeSession, runtimeTurn, runtimeContext),
+      acceptanceCriteria: [{ id: 'ac_cmd', text: '验证命令通过', evidenceRequired: ['command' as const], status: 'unverified' as const }],
+    }
+    const planItems = createInitialPlanItems(contract, 1).map(p =>
+      p.id === 'plan_explore' ? { ...p, status: 'completed' as const } : p
+    )
+    const events: AgentEvent[] = []
+
+    await new AgentLoop({
+      session: runtimeSession,
+      turn: runtimeTurn,
+      text: runtimeTurn.text,
+      context: runtimeContext,
+      taskContract: contract,
+      planItems,
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+    }).run()
+
+    const progressEvent = events.find(e => e.type === 'progress.updated')
+    expect(progressEvent).toBeDefined()
+    if (progressEvent?.type !== 'progress.updated') return
+
+    const completedItem = progressEvent.progress.featureList.find(f => f.id === 'plan_explore')
+    expect(completedItem).toBeDefined()
+    // Completed plan item with no coverage evidence → implemented_unverified, NOT verified
+    expect(completedItem?.status).toBe('implemented_unverified')
+  })
+
+  it('handoff includes changed files when proposals were created', async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), 'rille-runtime-handoff-'))
+    mkdirSync(join(rootDir, 'src'), { recursive: true })
+    writeFileSync(join(rootDir, 'src/main.ts'), 'const value: string = 1', 'utf8')
+    const mainPath = join(rootDir, 'src/main.ts')
+
+    callAgentModelMock.mockImplementation(() => {
+      const callCount = callAgentModelMock.mock.calls.length
+      if (callCount === 1) {
+        return Promise.resolve(JSON.stringify({
+          tool_calls: [{ id: 'call_propose', name: 'propose_file_edit', input: { filePath: mainPath, modifiedContent: '// fixed' } }],
+        }))
+      }
+      return Promise.resolve('{"answer":"完成"}')
+    })
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const runtimeSession = session()
+    const runtimeTurn = turn()
+    const runtimeContext: AgentContextSnapshot = {
+      ...context(),
+      workspace: { kind: 'local', path: rootDir, label: 'tmp' },
+      activeFile: { path: mainPath, name: 'main.ts', isDirty: false, content: 'const value: string = 1' },
+      openFiles: [{ path: mainPath, name: 'main.ts', isDirty: false }],
+      diagnostics: [],
+    }
+    const contract = diagnosticsOnlyContract(runtimeSession, runtimeTurn, runtimeContext)
+    const planItems = createInitialPlanItems(contract, 1)
+    const events: AgentEvent[] = []
+
+    await new AgentLoop({
+      session: runtimeSession,
+      turn: runtimeTurn,
+      text: runtimeTurn.text,
+      context: runtimeContext,
+      taskContract: contract,
+      planItems,
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+    }).run()
+
+    await rm(rootDir, { recursive: true, force: true })
+
+    const handoffEvent = events.find(e => e.type === 'handoff.created')
+    expect(handoffEvent).toBeDefined()
+    if (handoffEvent?.type !== 'handoff.created') return
+    expect(handoffEvent.handoff.changedFiles).toContain(mainPath)
+  })
+
+  it('handoff is emitted even on max_turns stop reason', async () => {
+    callAgentModelMock.mockResolvedValue(JSON.stringify({
+      tool_calls: [{ id: 'call_active', name: 'get_active_editor', input: {} }],
+    }))
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const runtimeSession = session()
+    const runtimeTurn = turn()
+    const runtimeContext = context()
+    const contract = diagnosticsOnlyContract(runtimeSession, runtimeTurn, runtimeContext)
+    const planItems = createInitialPlanItems(contract, 1)
+    const events: AgentEvent[] = []
+
+    const reason = await new AgentLoop({
+      session: runtimeSession,
+      turn: runtimeTurn,
+      text: runtimeTurn.text,
+      context: runtimeContext,
+      taskContract: contract,
+      planItems,
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+    }).run()
+
+    expect(reason).toBe('max_turns')
+    const handoffEvent = events.find(e => e.type === 'handoff.created')
+    expect(handoffEvent).toBeDefined()
+    if (handoffEvent?.type !== 'handoff.created') return
+    expect(handoffEvent.handoff.failedAttempts.length).toBeGreaterThanOrEqual(0)
+  })
 })

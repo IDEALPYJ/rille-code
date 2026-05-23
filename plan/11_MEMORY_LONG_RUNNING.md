@@ -30,11 +30,19 @@ Memory 和 Long-running 模块负责让 Agent 在未来任务中复用可靠知�
 
 当前缺口：
 
-- 没有 project memory。
-- 没有 Feature List、Progress、Handoff。
-- 没有 checkpoint refs。
+- 没有 project memory（ProjectMemoryEntry 协议和持久 store）。
 - 没有 memory source refs、stale、superseded、conflict 状态。
-- Resume 时未检查 handoff 与 workspace 是否冲突。
+- 没有 checkpoint refs 和中间暂停的 progress snapshot。
+
+Phase H 已实现：
+
+- FeatureItem、ProgressState、Handoff 协议与事件。
+- Turn 结束时自动生成 progress 和 handoff。
+- Resume 时注入 handoff fragment 到 context。
+- Workspace freshness 检查（local workspace，验证 changedFiles 存在性）。
+- verified vs implemented_unverified 区分（基于 verificationCoverage）。
+- session_summary fragment 和 compact boundary（通过 trimming 自然实现）。
+- 测试覆盖：handoff/progress 持久化、progress state 转换、handoff fragment 注入。
 
 ## 设计原则
 

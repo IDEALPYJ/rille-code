@@ -73,7 +73,6 @@ export class VerifierRunner {
       commandLine: command.command,
       timeoutMs: 120_000,
       outputLimitBytes: 50 * 1024,
-      shellMode: false,
     })
     return {
       id: `verification_${randomUUID()}`,

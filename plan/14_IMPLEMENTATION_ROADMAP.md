@@ -300,6 +300,14 @@ npm run build
 剩余风险: waiver UI、stale workspace freshness、artifactRef 存储和 reviewer model/advisor 不属于 Phase G 收口，进入 Phase H/J 或后续 Review hardening。
 下一步: Phase H1，增加 FeatureProgressItem、ProgressState、Handoff 协议与事件。
 
+日期: 2026-05-23
+完成范围: Phase H Memory / Long-running State
+涉及文件: `src/shared/agent/protocol.ts`、`src/main/agent/runtime.ts`、`src/main/agent/thread.ts`、`src/main/agent/contextBuilder.ts`、`src/renderer/components/agent/AgentPanel.tsx`、`tests/agent/runtime.test.ts`、`tests/agent/sessionStore.test.ts`、`tests/agent/contextBuilder.test.ts`、`plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`、`plan/01_CURRENT_BASELINE.md`、`plan/11_MEMORY_LONG_RUNNING.md`、`plan/14_IMPLEMENTATION_ROADMAP.md`
+验证命令: `npm test`、`npm run typecheck`、`npm run build`、`rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+结果: `npm test` 为 12 files / 70 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查无输出；总控 checklist 可列出当前完成与未完成项。
+剩余风险: ProjectMemoryEntry 只设计未实现；handoff 仅在 turn 边界生成；stale evidence 检查仅验证文件存在性（不比较 git diff）；workspace freshness 仅 local workspace；compact 无显式触发逻辑。
+下一步: Phase I1，增加 TraceEvent 和 AgentUsage 协议与事件。
+
 ## 停止线
 
 出现以下情况时停止扩大实现范围：

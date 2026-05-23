@@ -10,9 +10,13 @@ import type {
   ApprovalDecision,
   ApprovalRequest,
   Evidence,
+  FeatureItem,
+  FeatureStatus,
+  Handoff,
   MessagePart,
   Observation,
   PolicyDecision,
+  ProgressState,
   ReviewResult,
   TaskContract,
   ToolCallView,
@@ -46,6 +50,7 @@ interface RuntimeOptions {
   taskContractPart?: { id: string; messageId: string }
   planItems?: AgentPlanItem[]
   planPart?: { id: string; messageId: string }
+  handoff?: Handoff
   signal: AbortSignal
   emit: (event: AgentEvent) => void
   requestApproval: (request: ApprovalRequest) => Promise<ApprovalDecision>
@@ -159,6 +164,8 @@ export class AgentLoop {
   private verificationCoverage: VerificationCoverage | null = null
   private reviewResult: ReviewResult | null = null
   private proposedFiles = new Set<string>()
+  private changedFiles: string[] = []
+  private failedAttempts: string[] = []
   private gateRepairInjected = false
   private finalVerificationAttempted = false
 
@@ -180,7 +187,7 @@ export class AgentLoop {
         text: '请先配置 Agent 模型和 API Key，然后再提交任务。Ollama 可不填 API Key。',
         createdAt: now(),
       })
-      return 'completed'
+      return this.finalize('completed')
     }
 
     this.emitStage(assistantMessageId, 'building_context', '读取模型配置和 IDE 上下文')
@@ -220,7 +227,7 @@ export class AgentLoop {
     }))
 
     const contextResult = await buildAgentContext({
-      phase: 'planning',
+      phase: this.options.handoff ? 'resume' : 'planning',
       session: this.options.session,
       turn: this.options.turn,
       contextSnapshot: this.options.context,
@@ -229,6 +236,7 @@ export class AgentLoop {
       evidence: this.evidence,
       verificationCoverage: this.verificationCoverage,
       reviewResult: this.reviewResult,
+      handoff: this.options.handoff,
       budgetTokens: DEFAULT_CONTEXT_BUDGET_TOKENS,
     })
     this.options.emit({
@@ -256,10 +264,10 @@ export class AgentLoop {
     const denialTracker = new DenialTracker()
 
     for (let iteration = 0; iteration < 12; iteration += 1) {
-      if (this.options.signal.aborted) return 'interrupted'
+      if (this.options.signal.aborted) return this.finalize('interrupted')
       this.emitStage(assistantMessageId, 'calling_model', `第 ${iteration + 1} 轮模型调用`)
       const modelText = await callAgentModel(messages, { signal: this.options.signal })
-      if (this.options.signal.aborted) return 'interrupted'
+      if (this.options.signal.aborted) return this.finalize('interrupted')
       const action = this.adapter.parseAction(modelText)
 
       if (action.type === 'answer') {
@@ -275,7 +283,7 @@ export class AgentLoop {
               createdAt: now(),
             })
             this.emitStage(assistantMessageId, 'failed', gate.summary)
-            return 'tool_failed'
+            return this.finalize('tool_failed')
           }
           this.gateRepairInjected = true
           messages.push({
@@ -299,7 +307,7 @@ export class AgentLoop {
           createdAt: now(),
         })
         this.emitStage(assistantMessageId, 'completed', '模型给出最终答复')
-        return 'completed'
+        return this.finalize('completed')
       }
 
       if (action.text) {
@@ -317,7 +325,7 @@ export class AgentLoop {
       const results: Array<{ call: RuntimeToolCall; result: unknown }> = []
       this.emitStage(assistantMessageId, 'executing_tools', `执行 ${action.toolCalls.length} 个工具调用`)
       for (const call of action.toolCalls) {
-        if (this.options.signal.aborted) return 'interrupted'
+        if (this.options.signal.aborted) return this.finalize('interrupted')
         const runningCall = toolView(call, 'running')
         this.options.emit({ type: 'tool.started', sessionId: this.options.session.id, turnId: this.options.turn.id, call: runningCall })
         const toolPart: Extract<MessagePart, { type: 'tool' }> = { id: createPartId(), messageId: assistantMessageId, type: 'tool', call: runningCall, state: 'running', createdAt: now() }
@@ -334,9 +342,10 @@ export class AgentLoop {
         if (permission.action === 'deny') {
           const result = deniedToolResult(call, permission.reason, permission.policyDecision.alternatives)
           results.push({ call, result })
+          this.failedAttempts.push(`${call.name}: ${permission.reason}`)
           this.emitObservation(observationFromPolicy(this.options.session.id, this.options.turn.id, call, permission.policyDecision))
           if (denialTracker.record(permissionPattern(call))) {
-            return 'permission_denied_loop'
+            return this.finalize('permission_denied_loop')
           }
           this.completeToolPart(toolPart, runningCall, result)
           continue
@@ -351,13 +360,14 @@ export class AgentLoop {
           if (decision.action === 'deny') {
             const result = deniedToolResult(call, decision.reason || '用户拒绝。')
             results.push({ call, result })
+            this.failedAttempts.push(`${call.name}: ${decision.reason || '用户拒绝。'}`)
             this.emitObservation(observationFromPolicy(this.options.session.id, this.options.turn.id, call, {
               action: 'deny',
               risk: permission.policyDecision.risk,
               reason: decision.reason || '用户拒绝。',
               alternatives: permission.policyDecision.alternatives,
             }))
-            if (denialTracker.record(permissionPattern(call))) return 'permission_denied_loop'
+            if (denialTracker.record(permissionPattern(call))) return this.finalize('permission_denied_loop')
             this.completeToolPart(toolPart, runningCall, result)
             continue
           }
@@ -378,6 +388,9 @@ export class AgentLoop {
           planItems: this.planItems,
           emitProposal: proposal => {
             this.proposedFiles.add(proposal.filePath)
+            if (!this.changedFiles.includes(proposal.filePath)) {
+              this.changedFiles.push(proposal.filePath)
+            }
             this.options.emit({ type: 'edit.proposed', sessionId: this.options.session.id, turnId: this.options.turn.id, proposal })
             this.emitPart({
               id: createPartId(),
@@ -409,7 +422,7 @@ export class AgentLoop {
     }
 
     this.emitStage(assistantMessageId, 'failed', '达到最大迭代次数')
-    return 'max_turns'
+    return this.finalize('max_turns')
   }
 
   private completeToolPart(part: Extract<MessagePart, { type: 'tool' }>, runningCall: ToolCallView, result: ToolResultView) {
@@ -561,6 +574,7 @@ export class AgentLoop {
         createdAt,
       })
     }
+    this.emitProgress()
     return this.planItems
   }
 
@@ -596,5 +610,108 @@ export class AgentLoop {
       detail,
       createdAt: now(),
     })
+  }
+
+  private buildProgressState(): ProgressState {
+    const coverageCriteria = this.verificationCoverage?.criteria ?? []
+    const featureList: FeatureItem[] = this.planItems.map(item => {
+      let status: FeatureStatus = 'not_started'
+      if (item.status === 'in_progress') {
+        status = 'in_progress'
+      } else if (item.status === 'completed') {
+        const hasCoveredEvidence = coverageCriteria.some(c => c.status === 'covered')
+        status = hasCoveredEvidence ? 'verified' : 'implemented_unverified'
+      } else if (item.status === 'blocked') {
+        status = 'blocked'
+      } else if (item.status === 'skipped') {
+        status = 'dropped'
+      }
+      return {
+        id: item.id,
+        title: item.title,
+        status,
+        acceptanceCriteriaIds: this.taskContract?.acceptanceCriteria.map(c => c.id) ?? [],
+        evidenceRefs: this.evidence.filter(e => e.status === 'passed').map(e => e.id),
+        riskRefs: this.taskContract?.riskPoints.map(r => r.id) ?? [],
+        updatedAt: now(),
+      }
+    })
+
+    return {
+      taskContractId: this.taskContract?.id ?? '',
+      activeFeatureId: featureList.find(f => f.status === 'in_progress')?.id,
+      featureList,
+      failedAttempts: [...this.failedAttempts],
+      unresolvedRisks: this.taskContract?.riskPoints
+        .filter(r => r.risk === 'high' || r.risk === 'critical')
+        .map(r => r.id) ?? [],
+      nextSteps: this.planItems
+        .filter(p => p.status === 'pending' || p.status === 'in_progress')
+        .map(p => p.title),
+      updatedAt: now(),
+    }
+  }
+
+  private buildHandoff(reason: TurnStopReason): Handoff {
+    const progress = this.buildProgressState()
+    const verified = progress.featureList
+      .filter(f => f.status === 'verified')
+      .map(f => f.title)
+    const unverified = progress.featureList
+      .filter(f => f.status === 'implemented_unverified')
+      .map(f => f.title)
+
+    return {
+      id: `handoff_${randomUUID()}`,
+      sessionId: this.options.session.id,
+      turnId: this.options.turn.id,
+      taskContractId: this.taskContract?.id ?? '',
+      summary: reason === 'completed'
+        ? `任务完成。${verified.length} 项已验证，${unverified.length} 项待验证。`
+        : reason === 'interrupted'
+          ? `任务被中断。${verified.length} 项已验证，${unverified.length} 项待验证。`
+          : `任务结束（${reason}）。${verified.length} 项已验证，${unverified.length} 项待验证。`,
+      completed: verified,
+      implementedUnverified: unverified,
+      failedAttempts: [...this.failedAttempts],
+      changedFiles: [...this.changedFiles],
+      evidenceRefs: this.evidence.map(e => e.id),
+      unresolvedRisks: progress.unresolvedRisks,
+      nextSteps: progress.nextSteps,
+      createdAt: now(),
+    }
+  }
+
+  private emitHandoff(reason: TurnStopReason): void {
+    const handoff = this.buildHandoff(reason)
+    this.options.emit({
+      type: 'handoff.created',
+      sessionId: this.options.session.id,
+      turnId: this.options.turn.id,
+      handoff,
+    })
+    this.emitPart({
+      id: createPartId(),
+      messageId: createMessageId('assistant'),
+      type: 'handoff',
+      handoff,
+      createdAt: now(),
+    })
+  }
+
+  private emitProgress(): void {
+    const progress = this.buildProgressState()
+    this.options.emit({
+      type: 'progress.updated',
+      sessionId: this.options.session.id,
+      turnId: this.options.turn.id,
+      progress,
+    })
+  }
+
+  private finalize(reason: TurnStopReason): TurnStopReason {
+    this.emitProgress()
+    this.emitHandoff(reason)
+    return reason
   }
 }
