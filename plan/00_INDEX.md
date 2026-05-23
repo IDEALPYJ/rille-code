@@ -4,6 +4,8 @@
 
 本目录是 RilleCode Agent 后续实现的模块化设计入口。每个核心模块独立成文，方便逐一实现、评审和更新。
 
+执行推进时以 `15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md` 为唯一总控看板。每次完成一个实现步骤后，先更新 15 号文档的完成标记、验证结果、完成记录和下一步指针，再同步对应模块文档。
+
 这套文档解决：
 
 - 把 Agent 设计拆成可执行模块，而不是单一巨型总纲。
@@ -22,20 +24,21 @@
 
 建议按这个顺序阅读和实现：
 
-1. `01_CURRENT_BASELINE.md`：先确认当前系统已经具备什么。
-2. `02_TASK_CONTRACT.md`：定义任务边界和验收标准。
-3. `03_ORCHESTRATOR_AGENT_LOOP.md`：定义主循环和完成门禁。
-4. `04_MODEL_GATEWAY.md`：隔离 provider 和模型输出。
-5. `05_CONTEXT_ENGINE.md`：重构上下文构造。
-6. `06_TOOL_RUNTIME.md`：治理工具和 Observation。
-7. `07_POLICY_SAFETY.md`：引入项目级权限和安全策略。
-8. `08_EXECUTION_RUNTIME.md`：稳住 local / WSL / SSH 执行环境。
-9. `09_VERIFICATION.md`：建立 evidence-driven completion。
-10. `10_REVIEW_QUALITY.md`：建立独立质量门。
-11. `11_MEMORY_LONG_RUNNING.md`：支持长任务和可治理记忆。
-12. `12_OBSERVABILITY_EVAL.md`：支持 trace、debug、replay 和 eval。
-13. `13_PRODUCT_UX.md`：把复杂状态翻译成可控工作台。
-14. `14_IMPLEMENTATION_ROADMAP.md`：按 Phase D-I 分阶段落地。
+1. `15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`：执行总控、完成标记、验收记录和下一步指针。
+2. `01_CURRENT_BASELINE.md`：先确认当前系统已经具备什么。
+3. `02_TASK_CONTRACT.md`：定义任务边界和验收标准。
+4. `03_ORCHESTRATOR_AGENT_LOOP.md`：定义主循环和完成门禁。
+5. `04_MODEL_GATEWAY.md`：隔离 provider 和模型输出。
+6. `05_CONTEXT_ENGINE.md`：重构上下文构造。
+7. `06_TOOL_RUNTIME.md`：治理工具和 Observation。
+8. `07_POLICY_SAFETY.md`：引入项目级权限和安全策略。
+9. `08_EXECUTION_RUNTIME.md`：稳住 local / WSL / SSH 执行环境。
+10. `09_VERIFICATION.md`：建立 evidence-driven completion。
+11. `10_REVIEW_QUALITY.md`：建立独立质量门。
+12. `11_MEMORY_LONG_RUNNING.md`：支持长任务和可治理记忆。
+13. `12_OBSERVABILITY_EVAL.md`：支持 trace、debug、replay 和 eval。
+14. `13_PRODUCT_UX.md`：把复杂状态翻译成可控工作台。
+15. `14_IMPLEMENTATION_ROADMAP.md`：阶段说明和历史完成记录；执行状态以 15 号文档为准。
 
 ## 模块依赖图
 
@@ -70,6 +73,15 @@ Verification 与 Review 都必须回到 Task Contract 和 Evidence。
 8. 长任务靠 progress、handoff、checkpoint 和 evidence 维持连续性。
 9. Trace 是 debug、eval、resume 和用户信任的基础。
 10. 先把单 Agent 闭环做硬，再引入 Skills、Advisor 和 Subagents。
+
+## 执行规则
+
+1. 完全体协议和架构从一开始纳入设计，避免临时 MVP 形态反复推翻。
+2. 编码按可验证小步推进，每一步都要有测试或明确手工验收记录。
+3. 新增协议必须补 JSONL replay 兼容测试。
+4. 新增 runtime 行为必须补 unit 或 integration 测试。
+5. 新增 UI 状态必须能从 event replay 恢复。
+6. 每步完成后必须更新 `15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`。
 
 ## 统一文档结构
 

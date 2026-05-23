@@ -16,7 +16,7 @@ import type {
   TurnStopReason,
 } from '../../shared/agent/protocol'
 import { readAgentConfigSnapshot } from './config'
-import { buildAgentContextPrompt } from './contextBuilder'
+import { buildAgentContext, DEFAULT_CONTEXT_BUDGET_TOKENS } from './contextBuilder'
 import { callAgentModel, type AgentChatMessage } from './provider'
 import { decidePermission, deniedToolResult, DenialTracker, permissionPattern } from './permissions'
 import { executeToolCall, getRegisteredTool, type RuntimeToolCall } from './tools'
@@ -131,10 +131,33 @@ export class AgentLoop {
       })
     }
 
-    const contextPrompt = await buildAgentContextPrompt(this.options.context)
+    const contextResult = await buildAgentContext({
+      phase: 'planning',
+      session: this.options.session,
+      turn: this.options.turn,
+      contextSnapshot: this.options.context,
+      taskContract: this.options.taskContract,
+      planItems: this.planItems,
+      budgetTokens: DEFAULT_CONTEXT_BUDGET_TOKENS,
+    })
+    this.options.emit({
+      type: 'context.built',
+      sessionId: this.options.session.id,
+      turnId: this.options.turn.id,
+      summary: {
+        phase: 'planning',
+        fragmentCount: contextResult.trace.included.length + contextResult.trace.excluded.length,
+        includedCount: contextResult.trace.included.length,
+        excludedCount: contextResult.trace.excluded.length,
+        totalTokenEstimate: contextResult.trace.totalTokenEstimate,
+        budgetTokens: contextResult.trace.budgetTokens,
+      },
+      trace: contextResult.trace,
+      createdAt: now(),
+    })
     const messages: AgentChatMessage[] = this.adapter.buildMessages({
       session: this.options.session,
-      contextPrompt,
+      contextPrompt: contextResult.prompt,
       userTask: this.options.text,
       taskContract: this.options.taskContract,
       planItems: this.planItems,

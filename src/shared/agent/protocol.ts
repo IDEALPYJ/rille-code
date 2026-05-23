@@ -141,6 +141,26 @@ export type TaskAssumptionStatus = 'open' | 'confirmed' | 'rejected' | 'stale'
 export type TaskContractStatus = 'draft' | 'active' | 'updated' | 'completed' | 'blocked'
 export type StructuredPlanStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'skipped'
 export type StructuredPlanSource = 'runtime' | 'model' | 'user'
+export type ContextBuildPhase = 'planning' | 'exploration' | 'coding' | 'repair' | 'verification' | 'review' | 'resume'
+export type ContextFragmentType =
+  | 'system'
+  | 'tool_schema'
+  | 'project_rules'
+  | 'task_contract'
+  | 'plan'
+  | 'workspace'
+  | 'active_editor'
+  | 'open_files'
+  | 'git'
+  | 'diagnostics'
+  | 'tool_observation'
+  | 'edit_proposal'
+  | 'verification'
+  | 'review'
+  | 'session_summary'
+  | 'memory_ref'
+  | 'handoff'
+export type ContextFragmentSection = 'stable_prefix' | 'dynamic_suffix'
 
 export interface ContractScopeItem {
   kind: ContractScopeKind
@@ -200,6 +220,60 @@ export interface AgentPlanItem {
   source: StructuredPlanSource
   evidence?: string
   updatedAt: number
+}
+
+export interface ContextFragment {
+  id: string
+  type: ContextFragmentType
+  section: ContextFragmentSection
+  priority: number
+  source: string
+  text: string
+  trusted: boolean
+  cacheKey?: string
+  stale?: boolean
+  tokenEstimate?: number
+}
+
+export interface ContextTraceItem {
+  id: string
+  type: ContextFragmentType
+  section: ContextFragmentSection
+  source: string
+  reason: string
+  tokenEstimate?: number
+}
+
+export interface ContextTrace {
+  included: ContextTraceItem[]
+  excluded: ContextTraceItem[]
+  totalTokenEstimate: number
+  budgetTokens: number
+}
+
+export interface ContextBuildInput {
+  phase: ContextBuildPhase
+  session: AgentSession
+  turn: AgentTurn
+  contextSnapshot: AgentContextSnapshot
+  taskContract?: TaskContract
+  planItems?: AgentPlanItem[]
+  budgetTokens: number
+}
+
+export interface ContextBuildResult {
+  fragments: ContextFragment[]
+  prompt: string
+  trace: ContextTrace
+}
+
+export interface ContextBuiltSummary {
+  phase: ContextBuildPhase
+  fragmentCount: number
+  includedCount: number
+  excludedCount: number
+  totalTokenEstimate: number
+  budgetTokens: number
 }
 
 export interface AgentSession {
@@ -359,6 +433,7 @@ export type AgentEvent =
   | { type: 'task_contract.created'; sessionId: string; turnId: string; contract: TaskContract }
   | { type: 'task_contract.updated'; sessionId: string; turnId: string; contract: TaskContract; reason: string; source: StructuredPlanSource }
   | { type: 'plan.updated'; sessionId: string; turnId: string; items: AgentPlanItem[]; reason?: string; source: StructuredPlanSource; createdAt: number }
+  | { type: 'context.built'; sessionId: string; turnId: string; summary: ContextBuiltSummary; trace: ContextTrace; createdAt: number }
   | { type: 'message.part.created'; sessionId: string; turnId?: string; part: MessagePart }
   | { type: 'message.part.updated'; sessionId: string; turnId?: string; part: MessagePart }
   | { type: 'tool.started'; sessionId: string; turnId: string; call: ToolCallView }

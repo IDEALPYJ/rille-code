@@ -22,9 +22,9 @@
 
 | 能力 | 当前状态 | 主要文件 |
 | --- | --- | --- |
-| Shared protocol | 有 AgentOp、AgentEvent、MessagePart、AgentRunStage、VerificationResult、EditProposal、TaskContract、AgentPlanItem | `src/shared/agent/protocol.ts` |
+| Shared protocol | 有 AgentOp、AgentEvent、MessagePart、AgentRunStage、VerificationResult、EditProposal、TaskContract、AgentPlanItem、ContextFragment、ContextTrace、ContextBuildResult | `src/shared/agent/protocol.ts` |
 | Session runtime | 有 AgentThread，管理 session、turn、Task Contract 初始化、Plan 初始化、interrupt、approval、edit apply/reject/rollback | `src/main/agent/thread.ts`, `src/main/agent/taskContract.ts` |
-| Agent loop | 有 AgentLoop，支持 context -> contract/plan -> model -> JSON tool calls -> permission -> tool execution -> result feedback -> plan update | `src/main/agent/runtime.ts` |
+| Agent loop | 有 AgentLoop，支持 ContextBuildResult -> contract/plan -> model -> JSON tool calls -> permission -> tool execution -> result feedback -> plan update，并持久化 redacted context trace | `src/main/agent/runtime.ts`, `src/main/agent/contextBuilder.ts` |
 | Model adapter | 有 TextJsonToolAdapter 和 JSON action parser，system prompt 会注入 Task Contract / Plan 边界 | `src/main/agent/modelAdapter.ts` |
 | Provider | 支持 OpenAI-compatible、Anthropic、Gemini、Ollama/custom 基础调用 | `src/main/agent/provider.ts`, `src/main/agent/config.ts` |
 | Tool registry | 有 active editor、open files、diagnostics、update_plan、list/read/search、git、propose edit、runtime-only apply、run command | `src/main/agent/tools.ts` |
@@ -34,7 +34,7 @@
 | Verification | 有 VerifierRunner，发现验证命令并在 apply 后运行首个可用命令 | `src/main/agent/verifier.ts` |
 | Persistence | 有 userData JSONL events、meta、summary、schemaVersion、sequence | `src/main/agent/sessionStore.ts` |
 | Agent UI | 有 timeline、Task Contract card、Plan card、tool group、stage、approval、diff、edit result、verification 展示 | `src/renderer/components/agent/AgentPanel.tsx` |
-| Tests | 有 Vitest 覆盖 task contract、tools、edit、model adapter、permission、session store、verifier、workspace | `tests/agent/*` |
+| Tests | 有 Vitest 覆盖 task contract、tools、edit、model adapter、permission、session store、runtime、context builder、verifier、workspace | `tests/agent/*` |
 
 ## 当前基础闭环
 
@@ -43,7 +43,8 @@
   -> AgentThread 创建 turn
   -> 创建轻量 TaskContract 和初始 AgentPlanItem
   -> 持久化 task_contract.created / plan.updated 和对应 MessagePart
-  -> AgentLoop 构造 context
+  -> AgentLoop 构造 ContextBuildResult
+  -> 持久化 redacted context.built trace
   -> TextJsonToolAdapter 注入合同、计划和 IDE 上下文
   -> TextJsonToolAdapter 构造 messages
   -> provider 调用模型
@@ -65,8 +66,8 @@
 
 ```text
 npm test
-  8 files passed
-  22 tests passed
+  10 files passed
+  35 tests passed
 
 npm run typecheck
   passed
@@ -79,7 +80,7 @@ npm run build
 
 1. Task Contract 已有 Phase D 初版，但还没有模型或用户驱动的 contract update gate，也没有和 evidence coverage 深度绑定。
 2. Plan card 已有 Phase D 初版，但还没有 blocking gate、repair context 和跨 turn plan continuity。
-3. ContextBuilder 仍是字符串拼接，没有 fragment、priority、budget、cache key 和 context trace。
+3. Context Engine Foundation 已完成 Phase E：有 `ContextFragment` / `ContextTrace` / `ContextBuildResult` 协议、collectors、完整 project rules 读取顺序、stable/dynamic 确定性排序、budget-aware trimming、AgentLoop `context.built` trace event 和 replay 测试；cache key、tool observation fragment、verification/review fragment、compact boundary 留给 Phase F/G/H。
 4. Model Gateway 仍以文本 JSON protocol 为主，没有原生 tool calling、streaming、usage、fallback trace。
 5. Tool result 已结构化，但还没有统一 Observation 类型和 repair context。
 6. Policy 以内置规则为主，没有项目级规则、grant scope、有效期和完整 approval audit。

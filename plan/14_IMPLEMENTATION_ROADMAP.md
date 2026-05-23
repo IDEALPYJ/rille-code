@@ -4,6 +4,8 @@
 
 本文件定义从当前基线继续推进的实现顺序。路线图从 Phase D 开始，因为当前系统已经具备单 Agent 基础闭环、diff proposal、runtime-only apply、post-apply verification 和基础测试覆盖。
 
+执行状态、完成标记、验收结果和下一步指针以 `15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md` 为准。本文件保留阶段说明和历史完成记录，作为总控计划的背景材料。
+
 ## 总体顺序
 
 ```text
@@ -12,7 +14,8 @@ Phase E: Context Engine
 Phase F: Tool / Policy
 Phase G: Verification / Review
 Phase H: Memory / Long-running / Trace / Eval
-Phase I: UX polish + Skills / Advisor / Subagents
+Phase I: Observability + Eval
+Phase J: UX polish + Skills / Advisor / Subagents
 ```
 
 原则：
@@ -169,7 +172,36 @@ npm run typecheck
 npm run build
 ```
 
-## Phase I: UX Polish + Skills / Advisor / Subagents
+## Phase I: Observability + Eval
+
+目标：让 Agent 过程可复盘、可导出、可评估。
+
+实现内容：
+
+- 增加 TraceEvent。
+- 增加 AgentUsage。
+- 覆盖 context、model、tool、policy、execution、verification、review trace。
+- 增加 debug export。
+- 建立 eval case 目录和 replay runner。
+- 增加 trajectory 指标。
+
+验收：
+
+```text
+一次任务可导出 redacted trace。
+模型调用 usage 可追踪。
+eval replay 能覆盖成功、失败、修复和拒绝场景。
+```
+
+测试：
+
+```text
+npm test
+npm run typecheck
+npm run build
+```
+
+## Phase J: UX Polish + Skills / Advisor / Subagents
 
 目标：在单 Agent 可靠后增加专业能力和高级协作。
 
@@ -225,6 +257,32 @@ npm run build
 剩余风险:
 下一步:
 ```
+
+## 阶段完成记录
+
+日期: 2026-05-23
+完成范围: Phase E4 Project Rules 读取顺序
+涉及文件: `src/main/agent/contextBuilder.ts`、`tests/agent/contextBuilder.test.ts`、`plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`、`plan/01_CURRENT_BASELINE.md`、`plan/05_CONTEXT_ENGINE.md`、`plan/14_IMPLEMENTATION_ROADMAP.md`
+验证命令: `npm test`、`npm run typecheck`、`npm run build`、`rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+结果: `npm test` 为 9 files / 31 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查无输出；总控 checklist 可列出当前完成与未完成项。
+剩余风险: Context Engine 仍未实现 deterministic trimming、cache key、AgentLoop `context.built` event、observation/evidence fragment。
+下一步: Phase E5，实现 stable_prefix / dynamic_suffix 分区排序收敛、deterministic trimming 和 trace excluded 记录。
+
+日期: 2026-05-23
+完成范围: Phase E5 stable_prefix / dynamic_suffix 分区排序和 deterministic trimming
+涉及文件: `src/main/agent/contextBuilder.ts`、`tests/agent/contextBuilder.test.ts`、`plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`、`plan/01_CURRENT_BASELINE.md`、`plan/05_CONTEXT_ENGINE.md`、`plan/14_IMPLEMENTATION_ROADMAP.md`
+验证命令: `npm test`、`npm run typecheck`、`npm run build`、`rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+结果: `npm test` 为 9 files / 33 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查无输出；总控 checklist 可列出当前完成与未完成项。
+剩余风险: AgentLoop 尚未直接使用 `ContextBuildResult`，也未持久化 `context.built` trace；cache key、observation/evidence fragment 仍待后续阶段。
+下一步: Phase E6，AgentLoop 使用 `ContextBuildResult`，并持久化 context trace 摘要。
+
+日期: 2026-05-23
+完成范围: Phase E6-E8 Context Engine Foundation 收口
+涉及文件: `src/main/agent/runtime.ts`、`src/main/agent/contextBuilder.ts`、`tests/agent/runtime.test.ts`、`tests/agent/sessionStore.test.ts`、`tests/agent/contextBuilder.test.ts`、`plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`、`plan/01_CURRENT_BASELINE.md`、`plan/05_CONTEXT_ENGINE.md`、`plan/14_IMPLEMENTATION_ROADMAP.md`
+验证命令: `npm test`、`npm run typecheck`、`npm run build`、`rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+结果: `npm test` 为 10 files / 35 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查无输出；总控 checklist 可列出当前完成与未完成项。
+剩余风险: cache key、tool observation fragment、verification/review fragment、compact boundary 不属于 Phase E 收口，进入 Phase F/G/H。
+下一步: Phase F1，RegisteredTool 增加 visibility、sideEffect、validate 和 runtime-only 明确标记。
 
 ## 停止线
 
@@ -288,3 +346,138 @@ npm run build: passed
 下一步:
 
 - 进入 Phase E：将 `buildAgentContextPrompt()` 拆成 `ContextFragment` pipeline，并把 Task Contract / Plan 放入稳定前缀。
+
+## Phase E1 完成记录
+
+日期: 2026-05-22
+
+完成范围:
+
+- 在共享协议中新增 `ContextBuildPhase`、`ContextFragmentType`、`ContextFragment`、`ContextTraceItem`、`ContextTrace`、`ContextBuildInput`、`ContextBuildResult`、`ContextBuiltSummary`。
+- 新增 `context.built` 事件，约定只持久化 summary 和 trace，不持久化完整 prompt。
+- 补充 JSONL replay 兼容测试。
+
+涉及文件:
+
+- `src/shared/agent/protocol.ts`
+- `tests/agent/sessionStore.test.ts`
+- `plan/01_CURRENT_BASELINE.md`
+- `plan/05_CONTEXT_ENGINE.md`
+- `plan/14_IMPLEMENTATION_ROADMAP.md`
+- `plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+
+验证命令:
+
+```text
+npm test
+npm run typecheck
+npm run build
+```
+
+结果:
+
+```text
+npm test: 8 files / 23 tests passed
+npm run typecheck: passed
+npm run build: passed
+```
+
+剩余风险:
+
+- `buildAgentContextPrompt()` 仍未拆分，ContextFragment pipeline 尚未实际生产 prompt。
+- `context.built` 尚未由 AgentLoop 发出。
+
+下一步:
+
+- 执行 Phase E2：将 `buildAgentContextPrompt()` 拆成 `buildAgentContext()` 和兼容 wrapper。
+
+## Phase E2 完成记录
+
+日期: 2026-05-22
+
+完成范围:
+
+- 新增 `buildAgentContext(input)`，返回 `ContextBuildResult`。
+- 保留 `buildAgentContextPrompt(context)` 作为兼容 wrapper。
+- 将旧 prompt 包装成 legacy-compatible context fragment 和 trace，为后续 collector 拆分提供稳定入口。
+- 补充 context builder 单元测试，确认 wrapper 输出保持一致，trace 不保存完整 prompt。
+
+涉及文件:
+
+- `src/main/agent/contextBuilder.ts`
+- `tests/agent/contextBuilder.test.ts`
+- `plan/01_CURRENT_BASELINE.md`
+- `plan/05_CONTEXT_ENGINE.md`
+- `plan/14_IMPLEMENTATION_ROADMAP.md`
+- `plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+
+验证命令:
+
+```text
+npm test
+npm run typecheck
+npm run build
+```
+
+结果:
+
+```text
+npm test: 9 files / 25 tests passed
+npm run typecheck: passed
+npm run build: passed
+```
+
+剩余风险:
+
+- `buildAgentContext()` 仍使用单个 legacy workspace fragment，尚未拆成 task contract、plan、workspace、active editor、diagnostics、git collectors。
+- `context.built` 尚未由 AgentLoop 发出。
+
+下一步:
+
+- 执行 Phase E3：实现 task contract、plan、workspace、active editor、open files、diagnostics、git collectors。
+
+## Phase E3 完成记录
+
+日期: 2026-05-23
+
+完成范围:
+
+- 将 `buildAgentContext()` 拆成 task_contract、plan、workspace、active_editor、open_files、diagnostics、git collectors。
+- prompt 改为由 fragments 渲染，stable_prefix 在 dynamic_suffix 前。
+- 保留 `buildAgentContextPrompt(context)` 兼容 wrapper，并让 wrapper 走 `buildAgentContext()` 的最小 input。
+- 保留 E4 前的 legacy project rules 行为，避免项目文档注入倒退。
+- 补充 context builder 单元测试，覆盖 collector 类型、顺序、诊断上限、git fallback、trace 安全和 wrapper 一致性。
+
+涉及文件:
+
+- `src/main/agent/contextBuilder.ts`
+- `tests/agent/contextBuilder.test.ts`
+- `plan/01_CURRENT_BASELINE.md`
+- `plan/05_CONTEXT_ENGINE.md`
+- `plan/14_IMPLEMENTATION_ROADMAP.md`
+- `plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+
+验证命令:
+
+```text
+npm test
+npm run typecheck
+npm run build
+```
+
+结果:
+
+```text
+npm test: 9 files / 29 tests passed
+npm run typecheck: passed
+npm run build: passed
+```
+
+剩余风险:
+
+- project rules 仍是 `CLAUDE.md`、`AGENTS.md`、`README.md` legacy 列表，尚未实现完整 E4 顺序。
+- deterministic trimming 和 AgentLoop 发 `context.built` 仍待 E5/E6。
+
+下一步:
+
+- 执行 Phase E4：实现 project rules 读取顺序：AGENTS.md、CLAUDE.md、RILLE.md、.rille/rules.md、.rille/rules/*.md、README.md、.rille/local.md。

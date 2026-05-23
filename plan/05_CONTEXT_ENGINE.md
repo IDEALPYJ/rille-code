@@ -31,10 +31,13 @@ Context Engine 负责为每一次模型调用构造最合适的工作集。
 
 当前缺口：
 
-- 输出是单一字符串。
-- 没有 fragment 类型、priority、budget、cache key。
-- 项目规则读取范围有限。
-- 没有 context trace。
+- 共享协议已经有 `ContextFragment`、`ContextTrace`、`ContextBuildInput`、`ContextBuildResult` 和 `context.built` 事件骨架。
+- `buildAgentContext(input)` 已经返回 `ContextBuildResult`，`buildAgentContextPrompt(context)` 作为兼容 wrapper 保留。
+- 当前 `buildAgentContext()` 已有 task_contract、plan、workspace、active_editor、open_files、diagnostics、git collectors。
+- project rules collector 已按完整读取顺序支持 `AGENTS.md`、`CLAUDE.md`、`RILLE.md`、`.rille/rules.md`、`.rille/rules/*.md`、`README.md`、`.rille/local.md`；`.rille/rules/*.md` 只读取 markdown 并按文件名稳定升序。
+- 已实现 stable/dynamic 确定性排序和 budget-aware deterministic trimming，trace 会记录 included 与 excluded。
+- 尚未实现 cache key。
+- AgentLoop 已直接使用 `ContextBuildResult`，并会在模型调用前持久化 redacted `context.built` summary 和 trace。
 - 没有按 phase 组织 context。
 - 工具结果不经过 context selection。
 
@@ -157,13 +160,14 @@ README.md
 ## 实现步骤
 
 1. 新增 `ContextFragment` 和 `ContextBuildResult` 类型。
-2. 将现有 `buildAgentContextPrompt` 拆为 candidate collectors。
-3. 实现 stable prefix / dynamic suffix 排序。
-4. 增加项目规则读取顺序。
-5. 实现 deterministic trimming。
-6. 将 tool result 和 verification result 变成 observation fragment。
+2. 将现有 `buildAgentContextPrompt` 拆为 `buildAgentContext()` 和兼容 wrapper。
+3. 实现 task contract、plan、workspace、active editor、open files、diagnostics、git collectors。
+4. 实现 stable prefix / dynamic suffix 初始排序。
+5. 增加项目规则读取顺序。
+6. 实现 deterministic trimming。
 7. 增加 context trace event。
-8. 增加 compact boundary 和 session summary。
+8. 将 tool result 和 verification result 变成 observation fragment。
+9. 增加 compact boundary 和 session summary。
 
 ## 测试与验收
 
@@ -185,6 +189,12 @@ README.md
 
 - 长会话多次读文件后，prompt 不无限膨胀。
 - 修改后验证失败，下一轮优先看到失败 evidence。
+
+当前完成记录：
+
+- 2026-05-23：E4 已完成 project rules 完整读取顺序。普通规则文件缺失或读取失败会跳过；`.rille/rules` 缺失或不可读会跳过；目录内只读取 `.md` 文件并排序；fragment source 保留实际命中文件路径。剩余 E5-E8：deterministic trimming、AgentLoop context trace event、observation/evidence fragments、compact boundary。
+- 2026-05-23：E5 已完成 stable_prefix / dynamic_suffix 确定性排序与 budget-aware trimming。排序规则为 section、priority、source、id；预算耗尽时低优先级 fragment 进入 trace excluded；极小预算保留最高优先级 fragment，避免空 prompt。剩余 E6-E8：AgentLoop context trace event、observation/evidence fragments、compact boundary。
+- 2026-05-23：E6-E8 已完成 Phase E 收口。AgentLoop 使用 `ContextBuildResult.prompt` 调用模型，并在模型调用前持久化 `context.built`；trace 只保存 fragment 元数据，不保存完整 prompt 或 fragment text。剩余 observation/evidence/review fragments 和 compact boundary 分别进入 Phase F/G/H。
 
 ## 反模式
 
