@@ -29,6 +29,11 @@ vi.mock('../../src/main/agent/provider', () => ({
     if (typeof result === 'string') return { text: result, usage: undefined }
     return result
   },
+  callAgentModelWithTools: async (...args: unknown[]) => {
+    const textResult = await callAgentModelMock(...args)
+    if (typeof textResult === 'string') return { text: textResult, usage: undefined }
+    return textResult
+  },
 }))
 
 function session(): AgentSession {

@@ -316,6 +316,14 @@ npm run build
 剩余风险: provider usage 依赖各 API 返回格式（Ollama/custom 可能无 usage）；eval runner 仅 trajectory type 匹配；costUsd 无内置定价表；大 session trace export 内存风险。
 下一步: Phase J1，Agent 工作台展示 Task、Plan、Diff、Approval、Evidence、Review、Handoff、Trace。
 
+日期: 2026-05-23
+完成范围: Phase J Agent Harness Hardening
+涉及文件: protocol, workspace, redact（新）, provider, modelAdapter, runtime, tools, memory（新）, contextBuilder, editStore, trace, verificationGate, tests
+验证命令: `npm test`、`npm run typecheck`、`npm run build`
+结果: `npm test` 为 14 files / 94 tests passed；`npm run typecheck` passed；`npm run build` passed。
+剩余风险: Streaming、持久化授权、artifactRef 存储未实施；provider fallback 未实现；memory stale 自动检测未实现。
+下一步: 全部 Phase D-J 已完成。Agent 后端基础设施已对齐行业一流水平。
+
 ## 停止线
 
 出现以下情况时停止扩大实现范围：

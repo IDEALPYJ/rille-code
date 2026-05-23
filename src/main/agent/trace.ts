@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import { redactSecrets } from './redact'
 import type {
   AgentUsage,
   ContextTrace,
@@ -82,6 +83,10 @@ export function redactTraceEvent(event: TraceEvent): TraceEvent {
     case 'policy.decided': {
       const decision = { ...event.decision, grant: undefined }
       return { ...event, decision }
+    }
+    case 'verification.ran': {
+      const result = { ...event.result, output: redactSecrets(event.result.output) }
+      return { ...event, result }
     }
     default:
       return event

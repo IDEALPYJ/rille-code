@@ -8,6 +8,7 @@ import type {
   AgentTurn,
   ToolFailureType,
   EditProposal,
+  ProjectMemoryKind,
   TaskContract,
   ToolResultView,
   ToolSideEffect,
@@ -18,6 +19,7 @@ import { applyEditProposal, createEditProposal } from './editStore'
 import { normalizePlanUpdate, normalizeTaskContractUpdate } from './taskContract'
 import {
   canonicalWorkspacePath,
+  isProtectedPath,
   needsShell,
   requireWorkspace,
   withinWorkspace,
@@ -439,7 +441,13 @@ export const toolRegistry: RegisteredTool[] = [
     },
     visibility: 'model',
     sideEffect: 'workspace_write',
-    validate: input => validateStringFields(input, ['filePath', 'modifiedContent'], ['rationale']),
+    validate: input => {
+      const base = validateStringFields(input, ['filePath', 'modifiedContent'], ['rationale'])
+      if (!base.ok) return base
+      const filePath = (input as Record<string, unknown>).filePath as string | undefined
+      if (filePath && isProtectedPath(filePath)) return { ok: false, error: `受保护路径不可编辑: ${filePath}` }
+      return base
+    },
     summarize: input => str(input, 'filePath'),
     execute: async (input, { session, turn, context, emitProposal }) => {
       const workspace = requireWorkspace(context.workspace)
@@ -560,6 +568,52 @@ export const toolRegistry: RegisteredTool[] = [
         outputLimitBytes: 50 * 1024,
         shellMode: needsShell(str(input, 'commandLine')),
       })
+    },
+  },
+  {
+    definition: {
+      name: 'create_memory',
+      title: '创建项目记忆',
+      description: 'Save a project-level memory entry. Input: { "kind": "command"|"convention"|"decision"|"known_issue"|"workflow", "text": string, "sourceRefs": string[] }.',
+      inputSchema: { type: 'object', required: ['kind', 'text', 'sourceRefs'], properties: { kind: { type: 'string' }, text: { type: 'string' }, sourceRefs: { type: 'array', items: { type: 'string' } } }, additionalProperties: false },
+      isReadOnly: false,
+      risk: 'low',
+    },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: input => {
+      const base = validateStringFields(input, ['kind', 'text'], [])
+      if (!base.ok) return base
+      const kind = (input as Record<string, unknown>).kind as string
+      if (!['command', 'convention', 'decision', 'known_issue', 'workflow', 'handoff'].includes(kind)) {
+        return { ok: false, error: `无效的记忆类型: ${kind}` }
+      }
+      const sourceRefs = (input as Record<string, unknown>).sourceRefs as string[] | undefined
+      if (!sourceRefs || sourceRefs.length === 0) {
+        return { ok: false, error: 'sourceRefs 不能为空' }
+      }
+      return { ok: true, normalizedInput: input as Record<string, unknown> }
+    },
+    summarize: input => `创建 ${str(input, 'kind')} 记忆: ${str(input, 'text').slice(0, 80)}`,
+    execute: async (input, { context }) => {
+      const workspacePath = context.workspace?.path
+      if (!workspacePath) throw new Error('需要工作区才能创建项目记忆。')
+      const { MemoryStore } = await import('./memory')
+      const store = new MemoryStore(workspacePath)
+      store.load()
+      const entry = store.add(
+        str(input, 'kind') as ProjectMemoryKind,
+        str(input, 'text'),
+        (input.sourceRefs as string[]) || [],
+      )
+      return {
+        callId: '',
+        toolName: 'create_memory',
+        input: input as Record<string, unknown>,
+        output: `已创建 ${entry.kind} 记忆: ${entry.text.slice(0, 120)}`,
+        structured: entry as unknown as Record<string, unknown>,
+        status: 'ok' as const,
+      }
     },
   },
 ]

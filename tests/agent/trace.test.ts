@@ -145,3 +145,29 @@ describe('computeTrajectoryMetrics', () => {
     expect(metrics.totalInputTokens).toBe(0)
   })
 })
+
+describe('redactSecrets', () => {
+  it('redacts known API key patterns', async () => {
+    const { redactSecrets } = await import('../../src/main/agent/redact')
+    const input = 'My key is sk-abc123def456ghi789jkl012mno345pqr678stu and github token ghp_abcdefghijklmnopqrstuvwxyz012345'
+    const result = redactSecrets(input)
+    expect(result).not.toContain('sk-abc123def')
+    expect(result).not.toContain('ghp_abcdefghij')
+    expect(result).toContain('[REDACTED:sk-a...]')
+    expect(result).toContain('[REDACTED:ghp_...]')
+  })
+
+  it('redacts generic key=value secrets', async () => {
+    const { redactSecrets } = await import('../../src/main/agent/redact')
+    const input = 'export API_KEY=my-secret-token-value'
+    const result = redactSecrets(input)
+    expect(result).not.toContain('my-secret-token-value')
+    expect(result).toContain('[REDACTED]')
+  })
+
+  it('passes through normal text unchanged', async () => {
+    const { redactSecrets } = await import('../../src/main/agent/redact')
+    const input = 'This is normal output without secrets.'
+    expect(redactSecrets(input)).toBe(input)
+  })
+})

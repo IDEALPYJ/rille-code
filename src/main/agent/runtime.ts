@@ -27,12 +27,13 @@ import type {
 } from '../../shared/agent/protocol'
 import { readAgentConfigSnapshot } from './config'
 import { buildAgentContext, DEFAULT_CONTEXT_BUDGET_TOKENS } from './contextBuilder'
-import { callAgentModel, type AgentChatMessage, type ModelCallResult } from './provider'
+import { callAgentModel, callAgentModelWithTools, type AgentChatMessage, type ModelCallResult } from './provider'
 import { TraceCollector } from './trace'
+import { redactSecrets } from './redact'
 import { decidePermission, deniedToolResult, DenialTracker, PermissionGrantStore, permissionForCall, permissionPattern } from './permissions'
-import { executeToolCall, getRegisteredTool, type RuntimeToolCall } from './tools'
+import { createRuntimeToolCall, executeToolCall, getModelVisibleToolDefinitions, getRegisteredTool, type RuntimeToolCall } from './tools'
 import { VerifierRunner } from './verifier'
-import { TextJsonToolAdapter } from './modelAdapter'
+import { TextJsonToolAdapter, type ModelAction } from './modelAdapter'
 import {
   evaluateVerificationGate,
   evidenceFromDiagnostics,
@@ -100,6 +101,12 @@ function hasVerificationFailure(results: Array<{ call: RuntimeToolCall; result: 
   })
 }
 
+function isIndependentRead(call: RuntimeToolCall): boolean {
+  const tool = getRegisteredTool(call.name)
+  if (!tool) return false
+  return tool.sideEffect === 'none' || tool.sideEffect === 'workspace_read'
+}
+
 function observationStatus(result: ToolResultView): Observation['status'] {
   if (result.status === 'denied') return 'denied'
   if (result.status === 'conflict' || result.status === 'timeout') return 'blocked'
@@ -114,7 +121,7 @@ function observationFromToolResult(sessionId: string, turnId: string, call: Tool
     turnId,
     source: 'tool',
     status: observationStatus(result),
-    summary: `${call.title}: ${result.output.slice(0, 240)}`,
+    summary: redactSecrets(`${call.title}: ${result.output.slice(0, 240)}`),
     data: {
       callId: call.id,
       toolName: call.name,
@@ -272,11 +279,27 @@ export class AgentLoop {
     for (let iteration = 0; iteration < 12; iteration += 1) {
       if (this.options.signal.aborted) return this.finalize('interrupted')
       this.emitStage(assistantMessageId, 'calling_model', `第 ${iteration + 1} 轮模型调用`)
-      const { text: modelText, usage } = await callAgentModel(messages, { signal: this.options.signal })
+      const tools = getModelVisibleToolDefinitions().map(t => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+      }))
+      const { text: modelText, usage, toolCalls: nativeToolCalls } = await callAgentModelWithTools(messages, tools, { signal: this.options.signal })
       if (this.options.signal.aborted) return this.finalize('interrupted')
       this.traceCollector.modelCalled(this.options.session.id, this.options.turn.id, usage)
       if (usage) this.traceCollector.costUpdated(this.options.session.id, this.options.turn.id, usage)
-      const action = this.adapter.parseAction(modelText)
+
+      // Use native tool calls if provider returned them; fall back to JSON text parsing
+      let action: ModelAction
+      if (nativeToolCalls && nativeToolCalls.length > 0) {
+        action = {
+          type: 'tool_calls',
+          toolCalls: nativeToolCalls.map(tc => createRuntimeToolCall(tc.name, tc.input, tc.id)),
+          text: modelText || undefined,
+        }
+      } else {
+        action = this.adapter.parseAction(modelText)
+      }
 
       if (action.type === 'answer') {
         const gate = await this.runFinalGate()
@@ -332,6 +355,10 @@ export class AgentLoop {
 
       const results: Array<{ call: RuntimeToolCall; result: unknown }> = []
       this.emitStage(assistantMessageId, 'executing_tools', `执行 ${action.toolCalls.length} 个工具调用`)
+
+      // Phase 1: check permissions for all tool calls
+      type ToolSlot = { call: RuntimeToolCall; toolPart: Extract<MessagePart, { type: 'tool' }>; runningCall: ToolCallView; allowed: boolean }
+      const slots: ToolSlot[] = []
       for (const call of action.toolCalls) {
         if (this.options.signal.aborted) return this.finalize('interrupted')
         const runningCall = toolView(call, 'running')
@@ -357,6 +384,7 @@ export class AgentLoop {
             return this.finalize('permission_denied_loop')
           }
           this.completeToolPart(toolPart, runningCall, result)
+          slots.push({ call, toolPart, runningCall, allowed: false })
           continue
         }
         if (permission.action === 'ask') {
@@ -378,6 +406,7 @@ export class AgentLoop {
             }))
             if (denialTracker.record(permissionPattern(call))) return this.finalize('permission_denied_loop')
             this.completeToolPart(toolPart, runningCall, result)
+            slots.push({ call, toolPart, runningCall, allowed: false })
             continue
           }
           if (decision.action === 'always_allow') {
@@ -388,36 +417,21 @@ export class AgentLoop {
             })
           }
         }
+        slots.push({ call, toolPart, runningCall, allowed: true })
+      }
 
-        const result = await executeToolCall(call, {
-          session: this.options.session,
-          turn: this.options.turn,
-          context: this.options.context,
-          taskContract: this.taskContract,
-          planItems: this.planItems,
-          emitProposal: proposal => {
-            this.proposedFiles.add(proposal.filePath)
-            if (!this.changedFiles.includes(proposal.filePath)) {
-              this.changedFiles.push(proposal.filePath)
-            }
-            this.options.emit({ type: 'edit.proposed', sessionId: this.options.session.id, turnId: this.options.turn.id, proposal })
-            this.emitPart({
-              id: createPartId(),
-              messageId: assistantMessageId,
-              type: 'diff',
-              proposalId: proposal.id,
-              title: proposal.title,
-              state: proposal.state,
-              createdAt: now(),
-            })
-          },
-          updatePlan: (items, reason) => this.updatePlan(items, reason),
-          updateTaskContract: (contract, reason) => this.updateTaskContract(contract, reason),
-        })
-        results.push({ call, result })
-        const evidence = evidenceFromToolResult({ sessionId: this.options.session.id, turnId: this.options.turn.id, call, result })
-        if (evidence) this.recordEvidence(evidence)
-        this.completeToolPart(toolPart, runningCall, result)
+      // Phase 2: execute allowed tools — parallel for independent reads, sequential for others
+      const readSlots = slots.filter(s => s.allowed && isIndependentRead(s.call))
+      const writeSlots = slots.filter(s => s.allowed && !isIndependentRead(s.call))
+
+      if (readSlots.length > 0) {
+        const readResults = await Promise.all(readSlots.map(s =>
+          this.executeAndRecord(s.call, s.toolPart, s.runningCall)
+        ))
+        results.push(...readResults)
+      }
+      for (const s of writeSlots) {
+        results.push(await this.executeAndRecord(s.call, s.toolPart, s.runningCall))
       }
       messages.push({
         role: 'user',
@@ -432,6 +446,38 @@ export class AgentLoop {
 
     this.emitStage(assistantMessageId, 'failed', '达到最大迭代次数')
     return this.finalize('max_turns')
+  }
+
+  private async executeAndRecord(call: RuntimeToolCall, toolPart: Extract<MessagePart, { type: 'tool' }>, runningCall: ToolCallView): Promise<{ call: RuntimeToolCall; result: unknown }> {
+    const result = await executeToolCall(call, {
+      session: this.options.session,
+      turn: this.options.turn,
+      context: this.options.context,
+      taskContract: this.taskContract,
+      planItems: this.planItems,
+      emitProposal: proposal => {
+        this.proposedFiles.add(proposal.filePath)
+        if (!this.changedFiles.includes(proposal.filePath)) {
+          this.changedFiles.push(proposal.filePath)
+        }
+        this.options.emit({ type: 'edit.proposed', sessionId: this.options.session.id, turnId: this.options.turn.id, proposal })
+        this.emitPart({
+          id: createPartId(),
+          messageId: createMessageId('assistant'),
+          type: 'diff',
+          proposalId: proposal.id,
+          title: proposal.title,
+          state: proposal.state,
+          createdAt: now(),
+        })
+      },
+      updatePlan: (items, reason) => this.updatePlan(items, reason),
+      updateTaskContract: (contract, reason) => this.updateTaskContract(contract, reason),
+    })
+    const evidence = evidenceFromToolResult({ sessionId: this.options.session.id, turnId: this.options.turn.id, call, result })
+    if (evidence) this.recordEvidence(evidence)
+    this.completeToolPart(toolPart, runningCall, result)
+    return { call, result }
   }
 
   private completeToolPart(part: Extract<MessagePart, { type: 'tool' }>, runningCall: ToolCallView, result: ToolResultView) {

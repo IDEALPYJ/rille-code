@@ -10,6 +10,7 @@ import type {
   ContextTrace,
 } from '../../shared/agent/protocol'
 import { workspaceGitStatus, workspaceReadDirectory, workspaceReadFile } from './workspace'
+import { MemoryStore } from './memory'
 
 const PROJECT_RULE_PREFIX_FILES = ['AGENTS.md', 'CLAUDE.md', 'RILLE.md', '.rille/rules.md'] as const
 const PROJECT_RULES_DIRECTORY = '.rille/rules'
@@ -112,6 +113,7 @@ function collectTaskContractFragment(input: ContextBuildInput): ContextFragment 
     section: 'stable_prefix',
     priority: 100,
     source: contract.id,
+    cacheKey: `task_contract:${contract.id}:${contract.updatedAt}`,
     text: [
       'Task Contract:',
       JSON.stringify({
@@ -138,6 +140,7 @@ function collectPlanFragment(input: ContextBuildInput): ContextFragment | null {
     section: 'stable_prefix',
     priority: 90,
     source: 'agent_plan',
+    cacheKey: `plan:${input.planItems.map(p => `${p.id}:${p.status}`).join(',')}`,
     text: [
       'Structured Plan:',
       JSON.stringify(input.planItems.map(item => ({
@@ -265,6 +268,26 @@ function collectSessionSummaryFragment(input: ContextBuildInput): ContextFragmen
   })
 }
 
+function collectMemoryRefsFragment(input: ContextBuildInput): ContextFragment | null {
+  const workspacePath = input.contextSnapshot.workspace?.path
+  if (!workspacePath || input.contextSnapshot.workspace?.kind !== 'local') return null
+  const store = new MemoryStore(workspacePath)
+  store.load()
+  const entries = store.listActive(5)
+  if (entries.length === 0) return null
+  return fragment({
+    id: 'context_memory_refs',
+    type: 'memory_ref',
+    section: 'stable_prefix',
+    priority: 87,
+    source: 'project_memory',
+    text: [
+      'Project Memory:',
+      ...entries.map(e => `[${e.kind}] ${e.text} (refs: ${e.sourceRefs.join(', ')})`),
+    ].join('\n'),
+  })
+}
+
 function collectHandoffFragment(input: ContextBuildInput): ContextFragment | null {
   const handoff = input.handoff
   if (!handoff) return null
@@ -336,6 +359,7 @@ async function collectProjectRulesFragment(context: AgentContextSnapshot): Promi
     section: 'stable_prefix',
     priority: 85,
     source: docs.map(doc => doc.path).join(','),
+    cacheKey: `rules:${docs.map(d => d.path).sort().join(',')}`,
     text: ['Project instructions:', docs.map(doc => doc.text).join('\n\n')].join('\n'),
   })
 }
@@ -347,6 +371,7 @@ async function collectContextFragments(input: ContextBuildInput): Promise<Contex
     collectPlanFragment(input),
     collectHandoffFragment(input),
     collectSessionSummaryFragment(input),
+    collectMemoryRefsFragment(input),
     collectWorkspaceFragment(context),
     await collectProjectRulesFragment(context),
   ].filter((item): item is ContextFragment => Boolean(item))

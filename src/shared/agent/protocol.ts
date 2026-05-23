@@ -447,6 +447,21 @@ export interface Handoff {
   createdAt: number
 }
 
+// === Project Memory ===
+
+export type ProjectMemoryKind = 'command' | 'convention' | 'decision' | 'known_issue' | 'workflow' | 'handoff'
+export type ProjectMemoryStatus = 'active' | 'stale' | 'superseded' | 'conflict'
+
+export interface ProjectMemoryEntry {
+  id: string
+  kind: ProjectMemoryKind
+  text: string
+  sourceRefs: string[]
+  status: ProjectMemoryStatus
+  createdAt: number
+  updatedAt: number
+}
+
 // === Trace / Usage / Eval ===
 
 export interface AgentUsage {
@@ -638,6 +653,10 @@ export type AgentOp =
   | { type: 'edit.rollback'; sessionId: string; proposalId: string }
   | { type: 'permission.update'; sessionId: string; permissionMode: AgentPermissionMode }
   | { type: 'trace.export'; sessionId: string; redacted?: boolean }
+  | { type: 'memory.create'; workspacePath: string; kind: ProjectMemoryKind; text: string; sourceRefs: string[] }
+  | { type: 'memory.update'; workspacePath: string; entryId: string; changes: Partial<Pick<ProjectMemoryEntry, 'text' | 'status' | 'sourceRefs'>> }
+  | { type: 'memory.delete'; workspacePath: string; entryId: string }
+  | { type: 'memory.list'; workspacePath: string }
 
 export type AgentEvent =
   | { type: 'session.created'; session: AgentSession }
@@ -668,5 +687,8 @@ export type AgentEvent =
   | { type: 'handoff.created'; sessionId: string; turnId: string; handoff: Handoff }
   | { type: 'trace.exported'; sessionId: string; format: 'json'; redacted: boolean; traceEvents: TraceEvent[] }
   | { type: 'trace.batch'; sessionId: string; turnId: string; traceEvents: TraceEvent[] }
+  | { type: 'memory.created'; sessionId: string; entry: ProjectMemoryEntry }
+  | { type: 'memory.updated'; sessionId: string; entry: ProjectMemoryEntry }
+  | { type: 'memory.deleted'; sessionId: string; entryId: string; workspacePath: string }
 
 export type AgentIpcResult<T> = { ok: true; value: T } | { ok: false; error: string }

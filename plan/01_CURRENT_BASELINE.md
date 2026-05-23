@@ -74,8 +74,8 @@
 
 ```text
 npm test
-  13 files passed
-  80 tests passed
+  14 files passed
+  94 tests passed
 
 npm run typecheck
   passed

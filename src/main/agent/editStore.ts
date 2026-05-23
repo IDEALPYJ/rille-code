@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'fs/promises'
 import { resolve } from 'path'
 import { randomUUID } from 'crypto'
 import type { AgentContextSnapshot, AgentSession, AgentTurn, AgentWorkspaceLocation, EditProposal } from '../../shared/agent/protocol'
-import { canonicalWorkspacePath, isRemoteWorkspace, withinWorkspace, workspaceReadFile, workspaceWriteFile } from './workspace'
+import { canonicalWorkspacePath, isProtectedPath, isRemoteWorkspace, withinWorkspace, workspaceReadFile, workspaceWriteFile } from './workspace'
 
 const proposals = new Map<string, EditProposal>()
 
@@ -86,6 +86,11 @@ export async function applyEditProposal(proposalId: string, workspace?: AgentWor
   if (!proposal) throw new Error('Edit proposal does not exist.')
   if (proposal.state !== 'pending') return proposal
   if (hasDirtySnapshotConflict(proposal, workspace, context)) {
+    const conflicted: EditProposal = { ...proposal, state: 'conflicted' }
+    proposals.set(proposalId, conflicted)
+    return conflicted
+  }
+  if (isProtectedPath(proposal.filePath)) {
     const conflicted: EditProposal = { ...proposal, state: 'conflicted' }
     proposals.set(proposalId, conflicted)
     return conflicted

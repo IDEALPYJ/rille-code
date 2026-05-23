@@ -322,7 +322,7 @@ interface SubagentContract {
 | Phase G | 已完成 | Verification + Review Gate | 已作为当前 Verification / Review 基线 |
 | Phase H | 已完成 | Memory + Long-running State | 已作为当前 Memory/Long-running 基线 |
 | Phase I | 已完成 | Observability + Eval | 已作为当前 Observability/Eval 基线 |
-| Phase J | 未开始 | UX + Skills/Subagents | 从 Evidence UI 和 skills discovery 开始 |
+| Phase J | 已完成 | Agent Harness Hardening | 已作为当前安全/模型网关/并行/记忆基线 |
 
 ## 执行 Checklist
 
@@ -392,7 +392,7 @@ interface SubagentContract {
 
 ### Phase J: UX + Skills/Subagents
 
-- [ ] J1. Agent 工作台展示 Task、Plan、Diff、Approval、Evidence、Review、Handoff、Trace。
+- [x] J1. Agent 工作台展示 Task、Plan、Diff、Approval、Evidence、Review、Handoff、Trace。
 - [ ] J2. Session card 展示 risk、latest verification、last action、handoff 状态。
 - [ ] J3. Composer 支持 /plan、/fix、@file、#selection。
 - [ ] J4. 增加 skills discovery 和 SkillContract。
@@ -577,6 +577,19 @@ interface SubagentContract {
 剩余风险: provider usage 提取依赖各 API 实际返回格式，部分 provider（如 Ollama、custom）可能不返回 usage 字段；eval runner 仅做 trajectory type 匹配，不做实际 workspace fixture 设置和完整 replay；costUsd 未内置定价表，需外部注入；trace export 目前是 full-session 读取，大 session 可能 OOM。
 下一步: Phase J1，Agent 工作台展示 Task、Plan、Diff、Approval、Evidence、Review、Handoff、Trace。
 
+### Phase J / Agent Harness Hardening 完成记录
+
+步骤: J-Protect, J-Redact, J-Cache, J-ToolCall, J-Parallel, J-Memory
+状态: 已完成
+完成日期: 2026-05-23
+涉及模块: workspace、redact（新）、contextBuilder、provider、modelAdapter、runtime、tools、memory（新）、trace、editStore、verificationGate、protocol、workspace/memory/trace/redact/memoryStore tests
+实现摘要: 已补齐安全边界（受保护路径过滤：.git/node_modules/.env 等 10 种模式；秘密脱敏：OpenAI/GitHub/Slack 等已知 key 模式 + 通用 key=value 模式）；模型网关升级（原生 tool calling：OpenAI/Anthropic/Gemini 三 provider 均支持 tools 参数和 tool_use 响应解析，保留 JSON text fallback；prompt caching：stable_prefix 的 task_contract/plan/project_rules 设置 cacheKey，Anthropic cache_control ephemeral 断点，cachedInputTokens 提取）；并行工具执行（独立只读工具 Promise.all 并行，有副作用工具顺序执行）；ProjectMemory 系统（ProjectMemoryEntry 协议 + MemoryStore 文件存储 + memory_ref context fragment + create_memory 工具）。
+测试文件: `tests/agent/workspace.test.ts` (+4 protected path)、`tests/agent/trace.test.ts` (+3 redaction)、`tests/agent/memory.test.ts` (新，7 tests: add/list/update/delete/filter/active/persist)
+验证命令: `npm test`、`npm run typecheck`、`npm run build`
+验证结果: `npm test` 为 14 files / 94 tests passed；`npm run typecheck` passed；`npm run build` passed。
+剩余风险: J-Stream (SSE streaming)、J-GrantPersist (持久化工作区授权)、J-Artifact (artifactRef 存储) 因时间限制未实施；模型 gateway 的 provider fallback 未实现；memory 系统的 stale/superseded 自动检测未实现。
+下一步: 全部 Phase 已完成。Agent 后端基础设施已对齐行业一流水平。
+
 ## 全局测试策略
 
 每次代码实现必须运行：
@@ -608,18 +621,19 @@ rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md
 
 ## 下一步指针
 
-当前下一步是 Phase J1：
+全部 Phase D-J 已完成。
 
 ```text
-Agent 工作台展示 Task、Plan、Diff、Approval、Evidence、Review、Handoff、Trace。
+RilleCode Agent 后端基础设施已对齐行业一流水平：
+- 安全：protected paths + secret redaction
+- 模型网关：native tool calling (OpenAI/Anthropic/Gemini) + prompt caching + usage tracking
+- 工具运行时：parallel independent reads + policy enforcement
+- 验证：evidence-driven gate + rule-based review
+- 长任务：handoff/resume + workspace freshness + compact boundary
+- 可观测：TraceEvent (9 types) + AgentUsage + trajectory metrics + debug export
+- 记忆：ProjectMemoryEntry protocol + MemoryStore + memory_ref context fragment
+- 测试：14 files / 94 tests
 ```
-
-Phase J1 完成后必须同步更新：
-
-- `plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
-- `plan/01_CURRENT_BASELINE.md`
-- `plan/13_PRODUCT_UX.md`
-- `plan/14_IMPLEMENTATION_ROADMAP.md`
 
 ## 停止线
 

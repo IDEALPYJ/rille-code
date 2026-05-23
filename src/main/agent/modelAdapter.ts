@@ -110,6 +110,82 @@ export function parseTextJsonModelAction(text: string): ModelAction {
   return { type: 'answer', text }
 }
 
+// === Native Tool Calling Helpers ===
+
+export interface NativeToolDef {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
+
+export function buildOpenAITools(tools: NativeToolDef[]): unknown[] {
+  return tools.map(tool => ({
+    type: 'function' as const,
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema,
+    },
+  }))
+}
+
+export function buildAnthropicTools(tools: NativeToolDef[]): unknown[] {
+  return tools.map(tool => ({
+    name: tool.name,
+    description: tool.description,
+    input_schema: tool.inputSchema,
+  }))
+}
+
+export function buildGeminiToolDeclarations(tools: NativeToolDef[]): unknown[] {
+  return tools.map(tool => ({
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.inputSchema,
+  }))
+}
+
+export function parseOpenAIToolCalls(json: unknown): Array<{ id: string; name: string; input: Record<string, unknown> }> {
+  const data = json as { choices?: Array<{ message?: { tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }> }
+  const toolCalls = data.choices?.[0]?.message?.tool_calls
+  if (!toolCalls) return []
+  return toolCalls.map(tc => ({
+    id: tc.id || `call_${Math.random()}`,
+    name: tc.function?.name || '',
+    input: safeJsonParse(tc.function?.arguments || '{}'),
+  }))
+}
+
+export function parseAnthropicToolUses(json: unknown): Array<{ id: string; name: string; input: Record<string, unknown> }> {
+  const data = json as { content?: Array<{ type?: string; id?: string; name?: string; input?: Record<string, unknown> }> }
+  if (!data.content) return []
+  return data.content
+    .filter(block => block.type === 'tool_use')
+    .map(block => ({
+      id: block.id || `call_${Math.random()}`,
+      name: block.name || '',
+      input: block.input || {},
+    }))
+}
+
+export function parseGeminiFunctionCalls(json: unknown): Array<{ id: string; name: string; input: Record<string, unknown> }> {
+  const data = json as { candidates?: Array<{ content?: { parts?: Array<{ functionCall?: { name?: string; args?: Record<string, unknown> } }> } }> }
+  const parts = data.candidates?.[0]?.content?.parts
+  if (!parts) return []
+  return parts
+    .filter(p => p.functionCall)
+    .map(p => ({
+      id: `call_${Math.random()}`,
+      name: p.functionCall!.name || '',
+      input: p.functionCall!.args || {},
+    }))
+}
+
+function safeJsonParse(text: string): Record<string, unknown> {
+  try { return JSON.parse(text) as Record<string, unknown> }
+  catch { return {} }
+}
+
 export class TextJsonToolAdapter implements ModelAdapter {
   buildMessages(input: { session: AgentSession; contextPrompt: string; userTask: string; taskContract?: TaskContract; planItems?: AgentPlanItem[] }): AgentChatMessage[] {
     return [

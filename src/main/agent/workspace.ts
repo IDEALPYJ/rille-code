@@ -63,6 +63,24 @@ export function canonicalWorkspacePath(workspace: AgentWorkspaceLocation, filePa
   return workspace.kind === 'local' ? resolve(absolute) : normalizeRemotePath(absolute).replace(/\/+$/, '') || '/'
 }
 
+const PROTECTED_PATH_PATTERNS: RegExp[] = [
+  /\.git\//,
+  /node_modules\//,
+  /(?:^|\/)\.env$/,
+  /(?:^|\/)\.env\./,
+  /\/\.secrets\//,
+  /\/\.ssh\//,
+  /\/\.aws\//,
+  /\/\.npmrc$/,
+  /\/\.git-credentials$/,
+  /\/package-lock\.json$/,
+]
+
+export function isProtectedPath(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/')
+  return PROTECTED_PATH_PATTERNS.some(pattern => pattern.test(normalized))
+}
+
 function truncateBytes(text: string, maxBytes = DEFAULT_OUTPUT_LIMIT): { output: string; truncated: boolean } {
   const bytes = Buffer.byteLength(text, 'utf8')
   if (bytes <= maxBytes) return { output: text, truncated: false }

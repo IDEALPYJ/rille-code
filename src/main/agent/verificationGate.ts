@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import { redactSecrets } from './redact'
 import type {
   AgentContextSnapshot,
   AgentToolResult,
@@ -53,7 +54,7 @@ export function evidenceFromVerificationResult(result: VerificationResult): Evid
     source: 'command',
     status: result.status,
     summary: result.command ? `${result.command}: ${result.status}` : `verification: ${result.status}`,
-    output: result.output,
+    output: redactSecrets(result.output),
     data: { verifier: result.verifier, command: result.command, exitCode: result.exitCode, durationMs: result.durationMs },
     createdAt: now(),
   }
