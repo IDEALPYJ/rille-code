@@ -39,6 +39,7 @@
 13. `12_OBSERVABILITY_EVAL.md`：支持 trace、debug、replay 和 eval。
 14. `13_PRODUCT_UX.md`：把复杂状态翻译成可控工作台。
 15. `14_IMPLEMENTATION_ROADMAP.md`：阶段说明和历史完成记录；执行状态以 15 号文档为准。
+16. `16_POST_BLOG_GAP_ANALYSIS.md`：基于 27 篇各家 coding agent 博客的差距分析与后续 Phase K-O 规划。
 
 ## 模块依赖图
 
@@ -73,6 +74,11 @@ Verification 与 Review 都必须回到 Task Contract 和 Evidence。
 8. 长任务靠 progress、handoff、checkpoint 和 evidence 维持连续性。
 9. Trace 是 debug、eval、resume 和用户信任的基础。
 10. 先把单 Agent 闭环做硬，再引入 Skills、Advisor 和 Subagents。
+11. Generator 不评估自己的工作，独立 LLM 评估器是质量最后防线。
+12. 上下文隔离是能力倍增器，子智能体让每个 Agent 拥有干净的上下文窗口。
+13. 缓存意识是架构约束而非性能优化。
+14. Eval 是工程的组成部分，不是事后补充。
+15. 模型在进步，脚手架要定期拆除。
 
 ## 执行规则
 

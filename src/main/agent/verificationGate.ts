@@ -209,6 +209,7 @@ export function runRuleBasedReview(input: {
       sessionId: input.sessionId,
       turnId: input.turnId,
       status: 'open',
+      source: 'rule',
       createdAt: now(),
       ...finding,
     })
@@ -315,5 +316,30 @@ export function observationFromReview(result: ReviewResult): Observation {
     summary: result.summary,
     data: { status: result.status, findingIds: result.findingIds, findings: result.findings },
     createdAt: now(),
+  }
+}
+
+export function mergeReviews(ruleReview: ReviewResult, llmReview: ReviewResult | null): ReviewResult {
+  if (!llmReview) return ruleReview
+
+  const ruleFindings = ruleReview.findings.map(f => ({ ...f, source: f.source ?? 'rule' as const }))
+  const llmFindings = llmReview.findings.map(f => ({ ...f, source: 'llm' as const }))
+
+  const allFindings = [...ruleFindings, ...llmFindings]
+
+  const combinedSummary = [
+    ruleReview.summary ? `Rule: ${ruleReview.summary}` : null,
+    llmReview.summary ? `LLM: ${llmReview.summary}` : null,
+  ].filter(Boolean).join(' | ')
+
+  const eitherBlocked = ruleReview.status !== 'approved' || llmReview.status !== 'approved'
+  const status: ReviewResult['status'] = eitherBlocked ? 'request_changes' : 'approved'
+
+  return {
+    ...ruleReview,
+    status,
+    findingIds: allFindings.map(f => f.id),
+    findings: allFindings,
+    summary: combinedSummary || ruleReview.summary || llmReview.summary,
   }
 }

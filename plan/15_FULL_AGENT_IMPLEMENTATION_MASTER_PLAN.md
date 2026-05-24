@@ -322,7 +322,7 @@ interface SubagentContract {
 | Phase G | 已完成 | Verification + Review Gate | 已作为当前 Verification / Review 基线 |
 | Phase H | 已完成 | Memory + Long-running State | 已作为当前 Memory/Long-running 基线 |
 | Phase I | 已完成 | Observability + Eval | 已作为当前 Observability/Eval 基线 |
-| Phase J | 已完成 | Agent Harness Hardening | 已作为当前安全/模型网关/并行/记忆基线 |
+| Phase J | 部分完成 | J1 工作台展示与后端 hardening 已完成；J2-J9 迁移为 Phase K-O backlog | 下一步进入 Phase K evaluator 收口 |
 
 ## 执行 Checklist
 
@@ -393,14 +393,14 @@ interface SubagentContract {
 ### Phase J: UX + Skills/Subagents
 
 - [x] J1. Agent 工作台展示 Task、Plan、Diff、Approval、Evidence、Review、Handoff、Trace。
-- [ ] J2. Session card 展示 risk、latest verification、last action、handoff 状态。
-- [ ] J3. Composer 支持 /plan、/fix、@file、#selection。
-- [ ] J4. 增加 skills discovery 和 SkillContract。
-- [ ] J5. 增加 advisor policy。
-- [ ] J6. 增加 read-only explorer、reviewer、verifier subagents。
-- [ ] J7. 确保 Subagent 输出由主 Agent 合并、裁决和验证。
-- [ ] J8. 补充 UX replay、skills discovery、subagent isolation 测试。
-- [ ] J9. 更新 01、13、14、15 文档并记录验证结果。
+- [ ] J2. Session card 展示 risk、latest verification、last action、handoff 状态。（保留为 UX backlog）
+- [ ] J3. Composer 支持 /plan、/fix、@file、#selection。（保留为 UX backlog）
+- [ ] J4. 增加 skills discovery 和 SkillContract。（迁移到 Phase N/O 执行）
+- [ ] J5. 增加 advisor policy。（迁移到 Phase N 执行）
+- [ ] J6. 增加 read-only explorer、reviewer、verifier subagents。（迁移到 Phase L 执行）
+- [ ] J7. 确保 Subagent 输出由主 Agent 合并、裁决和验证。（迁移到 Phase L 执行）
+- [ ] J8. 补充 UX replay、skills discovery、subagent isolation 测试。（随 J2/J3 与 Phase L/N 分别补齐）
+- [ ] J9. 更新 01、13、14、15 文档并记录验证结果。（随对应 backlog 项落地时更新）
 
 ## 每步固定验收模板
 
@@ -587,8 +587,21 @@ interface SubagentContract {
 测试文件: `tests/agent/workspace.test.ts` (+4 protected path)、`tests/agent/trace.test.ts` (+3 redaction)、`tests/agent/memory.test.ts` (新，7 tests: add/list/update/delete/filter/active/persist)
 验证命令: `npm test`、`npm run typecheck`、`npm run build`
 验证结果: `npm test` 为 14 files / 94 tests passed；`npm run typecheck` passed；`npm run build` passed。
-剩余风险: J-Stream (SSE streaming)、J-GrantPersist (持久化工作区授权)、J-Artifact (artifactRef 存储) 因时间限制未实施；模型 gateway 的 provider fallback 未实现；memory 系统的 stale/superseded 自动检测未实现。
-下一步: 全部 Phase 已完成。Agent 后端基础设施已对齐行业一流水平。
+剩余风险: J2-J9 没有全部完成，已拆分为 UX backlog 与 Phase K-O 后续项；J-Stream (SSE streaming)、J-GrantPersist (持久化工作区授权)、J-Artifact (artifactRef 存储) 因时间限制未实施；模型 gateway 的 provider fallback 未实现；memory 系统的 stale/superseded 自动检测未实现。
+下一步: Phase K，收口 LLM Evaluator MVP，并把 reviewer model 能力从当前可选 gate 硬化为可追踪、可配置、可验证的质量层。
+
+### Phase K / LLM Evaluator MVP 同步记录
+
+步骤: K1-K8
+状态: 已完成
+完成日期: 2026-05-24
+涉及模块: provider、runtime、evaluatorConfig、evaluatorPrompts、evaluatorRunner、verificationGate、protocol、AgentPanel、evaluator/provider/runtime/trace tests、Phase K 文档
+实现摘要: 已在 final gate 中接入可选 LLM evaluator，并抽出 `EvaluatorRunner` 作为独立 runner 边界；`.rille/policy.json` 可配置 evaluator 开关、触发条件、model profile、maxTokens、skepticism、timeout 和 blocking；evaluator prompt 注入 skeptical reviewer 指令、TaskContract、Evidence、changed/proposed files、高风险点和受限 diff 摘要；provider 尊重 evaluator maxTokens；executor/evaluator usage 通过 `purpose` 区分并进入 trace/cost events；ReviewFinding 可标记 `source: 'rule' | 'llm'`，AgentPanel 用 source badge 区分 Rule/AI findings。
+测试文件: `tests/agent/evaluator.test.ts`、`tests/agent/provider.test.ts`、`tests/agent/runtime.test.ts`、`tests/agent/trace.test.ts`
+验证命令: `npm test`、`npm run typecheck`、`npm run build`、`rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`
+验证结果: `npm test` 为 16 files / 138 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查无输出；checklist 检查可列出当前完成与未完成项。
+剩余风险: EvaluatorConfig 按计划保持 runtime 内部配置，尚未提升为 public shared protocol；rule review 与 LLM evaluator 仍为顺序执行；accepted risk/waiver、reviewer subagent 和 advisor 留待后续 Phase。
+下一步: Phase L，设计并实现受主 Agent 控制的 subagent 编排。
 
 ## 全局测试策略
 
@@ -621,18 +634,18 @@ rg -n "\[ \]|\[x\]" plan/15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md
 
 ## 下一步指针
 
-全部 Phase D-J 已完成。
+Phase D-I 已完成；Phase J1 和 J 后端 hardening 已完成；J2-J9 保留为 UX backlog 或迁移到 Phase K-O。下一步是 Phase K：LLM Evaluator + Reviewer Model。
 
 ```text
 RilleCode Agent 后端基础设施已对齐行业一流水平：
 - 安全：protected paths + secret redaction
 - 模型网关：native tool calling (OpenAI/Anthropic/Gemini) + prompt caching + usage tracking
 - 工具运行时：parallel independent reads + policy enforcement
-- 验证：evidence-driven gate + rule-based review
+- 验证：evidence-driven gate + rule-based review + 可选 LLM evaluator MVP
 - 长任务：handoff/resume + workspace freshness + compact boundary
 - 可观测：TraceEvent (9 types) + AgentUsage + trajectory metrics + debug export
 - 记忆：ProjectMemoryEntry protocol + MemoryStore + memory_ref context fragment
-- 测试：14 files / 94 tests
+- 测试：16 files / 138 tests
 ```
 
 ## 停止线

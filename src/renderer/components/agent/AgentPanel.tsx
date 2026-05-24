@@ -319,8 +319,13 @@ function ReviewPart({ part }: { part: Extract<MessagePart, { type: 'review' }> }
         <div className="agent-tool-summary">{part.result.summary}</div>
         {part.result.findings.length > 0 && (
           <div className="agent-approval-details">
-            {part.result.findings.slice(0, 6).map(finding => (
-              <span key={finding.id}>{finding.blocking ? 'blocking' : finding.severity}: {finding.title}</span>
+            {part.result.findings.slice(0, 10).map(finding => (
+              <span key={finding.id}>
+                <span className={'agent-review-source-badge ' + (finding.source === 'llm' ? 'source-llm' : 'source-rule')}>
+                  {finding.source === 'llm' ? 'AI' : 'Rule'}
+                </span>
+                {finding.blocking ? 'blocking' : finding.severity}: {finding.title}
+              </span>
             ))}
           </div>
         )}

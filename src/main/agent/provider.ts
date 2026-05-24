@@ -24,6 +24,7 @@ export interface ModelCallResult {
 interface ProviderRequestOptions {
   signal?: AbortSignal
   tools?: NativeToolDef[]
+  maxTokens?: number
 }
 
 function joinUrl(baseURL: string, path: string): string {
@@ -114,6 +115,7 @@ async function callOpenAIChat(config: ProviderConfigWithSecret, messages: AgentC
     messages,
     temperature: 0.2,
   }
+  if (options.maxTokens) payload.max_tokens = Math.floor(options.maxTokens)
   if (options.tools && options.tools.length > 0) {
     payload.tools = buildOpenAITools(options.tools)
     payload.tool_choice = 'auto'
@@ -156,7 +158,7 @@ async function callAnthropic(config: ProviderConfigWithSecret, messages: AgentCh
       model: config.model,
       system: system ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }] : undefined,
       messages: conversation.map(message => ({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content })),
-      max_tokens: 16_384,
+      max_tokens: options.maxTokens ? Math.floor(options.maxTokens) : 16_384,
       temperature: 0.2,
       ...(options.tools && options.tools.length > 0 ? { tools: buildAnthropicTools(options.tools) } : {}),
     }),
@@ -191,6 +193,7 @@ async function callGemini(config: ProviderConfigWithSecret, messages: AgentChatM
       })),
       generationConfig: {
         temperature: 0.2,
+        ...(options.maxTokens ? { maxOutputTokens: Math.floor(options.maxTokens) } : {}),
       },
       ...(options.tools && options.tools.length > 0 ? { tools: [{ functionDeclarations: buildGeminiToolDeclarations(options.tools) }] } : {}),
     }),

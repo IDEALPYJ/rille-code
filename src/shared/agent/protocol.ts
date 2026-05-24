@@ -276,6 +276,8 @@ export interface ReviewFinding {
   recommendation?: string
   status: 'open' | 'fixed' | 'accepted_risk' | 'dismissed'
   createdAt: number
+  /** Origin of this finding: 'rule' (static rules) or 'llm' (evaluator model). */
+  source?: 'rule' | 'llm'
 }
 
 export interface ReviewResult {
@@ -467,6 +469,7 @@ export interface ProjectMemoryEntry {
 export interface AgentUsage {
   model: string
   providerId: string
+  purpose?: 'executor' | 'evaluator' | 'advisor'
   inputTokens?: number
   outputTokens?: number
   cachedInputTokens?: number

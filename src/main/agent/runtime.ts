@@ -38,10 +38,12 @@ import {
   evaluateVerificationGate,
   evidenceFromDiagnostics,
   evidenceFromToolResult,
+  mergeReviews,
   observationFromReview,
   observationFromVerification,
   runRuleBasedReview,
 } from './verificationGate'
+import { EvaluatorRunner } from './evaluatorRunner'
 
 interface RuntimeOptions {
   session: AgentSession
@@ -286,8 +288,9 @@ export class AgentLoop {
       }))
       const { text: modelText, usage, toolCalls: nativeToolCalls } = await callAgentModelWithTools(messages, tools, { signal: this.options.signal })
       if (this.options.signal.aborted) return this.finalize('interrupted')
-      this.traceCollector.modelCalled(this.options.session.id, this.options.turn.id, usage)
-      if (usage) this.traceCollector.costUpdated(this.options.session.id, this.options.turn.id, usage)
+      const executorUsage = usage ? { ...usage, purpose: 'executor' as const } : undefined
+      this.traceCollector.modelCalled(this.options.session.id, this.options.turn.id, executorUsage)
+      if (executorUsage) this.traceCollector.costUpdated(this.options.session.id, this.options.turn.id, executorUsage)
 
       // Use native tool calls if provider returned them; fall back to JSON text parsing
       let action: ModelAction
@@ -567,15 +570,31 @@ export class AgentLoop {
     if (gate.nextAction === 'run_more_checks' && !this.finalVerificationAttempted) {
       this.finalVerificationAttempted = true
       await this.runAutomaticVerification()
-      return this.finishFinalGate(evaluateVerificationGate({ contract: this.taskContract, evidence: this.evidence, codeChanged }))
+      return await this.finishFinalGate(evaluateVerificationGate({ contract: this.taskContract, evidence: this.evidence, codeChanged }))
     }
-    return this.finishFinalGate(gate)
+    return await this.finishFinalGate(gate)
   }
 
-  private finishFinalGate(gate: VerificationGateResult): VerificationGateResult {
+  private async runLlmEvaluator(codeChanged: boolean): Promise<ReviewResult | null> {
+    const result = await new EvaluatorRunner().run({
+      sessionId: this.options.session.id,
+      turnId: this.options.turn.id,
+      workspace: this.options.context.workspace,
+      codeChanged,
+      contract: this.taskContract,
+      evidence: this.evidence,
+      changedFiles: [...this.changedFiles],
+      proposedFiles: [...this.proposedFiles],
+    })
+    this.traceCollector.modelCalled(this.options.session.id, this.options.turn.id, result.usage)
+    if (result.usage) this.traceCollector.costUpdated(this.options.session.id, this.options.turn.id, result.usage)
+    return result.review
+  }
+
+  private async finishFinalGate(gate: VerificationGateResult): Promise<VerificationGateResult> {
     const codeChanged = this.hasAppliedOrWorkspaceDiffEvidence()
     this.emitCoverage(gate)
-    const review = runRuleBasedReview({
+    const ruleReview = runRuleBasedReview({
       sessionId: this.options.session.id,
       turnId: this.options.turn.id,
       contract: this.taskContract,
@@ -585,6 +604,8 @@ export class AgentLoop {
       proposedFiles: [...this.proposedFiles],
       pendingProposalFiles: [...this.proposedFiles],
     })
+    const llmReview = await this.runLlmEvaluator(codeChanged)
+    const review = mergeReviews(ruleReview, llmReview)
     this.emitReview(review)
     this.traceCollector.reviewCompleted(this.options.session.id, this.options.turn.id, review)
     if (review.status !== 'approved') {

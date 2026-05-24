@@ -31,7 +31,7 @@ Review 模块判断实现是否值得接受，而不只是行为是否可能通�
 
 - 已有 ReviewFinding、ReviewResult 和基础 rule-based review gate。
 - Blocking finding 会进入 Observation 和 repair context。
-- 当前 Review 不接 reviewer model / advisor。
+- 当前 Review 已有可选 LLM evaluator MVP，可将 rule-based finding 与 LLM finding 合并并区分 source；完整 EvaluatorAgent / reviewer subagent / advisor 仍待 Phase K/L/N。
 - accepted risk / waiver 还没有用户交互 UI。
 
 ## 设计原则

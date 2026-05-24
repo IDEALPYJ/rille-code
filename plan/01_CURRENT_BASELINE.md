@@ -26,17 +26,17 @@
 | Session runtime | 有 AgentThread，管理 session、turn、Task Contract 初始化与更新、Plan 初始化、interrupt、approval、edit apply/reject/rollback；resume `waiting_approval` 会恢复为 idle 并让旧 approval 失效 | `src/main/agent/thread.ts`, `src/main/agent/taskContract.ts` |
 | Agent loop | 有 AgentLoop，支持 ContextBuildResult -> contract/plan -> model -> JSON tool calls -> permission/policy/grant -> tool execution -> Evidence/Observation/result feedback -> verification/review before-stop gate -> plan/contract update -> progress/handoff finalize -> trace batch persist，并持久化 redacted context trace | `src/main/agent/runtime.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/verificationGate.ts`, `src/main/agent/trace.ts` |
 | Model adapter | 有 TextJsonToolAdapter 和 JSON action parser，system prompt 会注入 Task Contract / Plan 边界 | `src/main/agent/modelAdapter.ts` |
-| Provider | 支持 OpenAI-compatible、Anthropic、Gemini、Ollama/custom 基础调用；返回 ModelCallResult（text + usage：tokens、latencyMs） | `src/main/agent/provider.ts`, `src/main/agent/config.ts` |
+| Provider | 支持 OpenAI-compatible、Anthropic、Gemini、Ollama/custom 基础调用；OpenAI/Anthropic/Gemini 支持 native tool calling；返回 ModelCallResult（text + usage：tokens、latencyMs、purpose）；支持 prompt caching hints 和 evaluator maxTokens | `src/main/agent/provider.ts`, `src/main/agent/config.ts` |
 | Tool registry | 有 active editor、open files、diagnostics、update_plan、update_task_contract、ask_user、select_files、list/read/search、git、propose edit、runtime-only apply、run command；每个 RegisteredTool 都有 visibility、sideEffect、validate；read/propose 会优先使用 canonical path 匹配到的 dirty active buffer | `src/main/agent/tools.ts` |
 | Permission | 有 plan/ask/accept_edits/auto/bypass、command risk classifier、`.rille/policy.json` loader、session PermissionGrant、拒绝循环检测和 policy denial Observation | `src/main/agent/permissions.ts` |
 | Workspace | 有 local / ssh / wsl 路由、workspace path guard 和 canonical workspace path helper | `src/main/agent/workspace.ts` |
 | Edit store | 有 full-file proposal、conflict check、dirty snapshot guard、apply/reject、rollback proposal | `src/main/agent/editStore.ts` |
 | Verification | 有 VerifierRunner、Evidence、VerificationCoverage、before-stop gate、diagnostics/command/diff evidence 和 failed verification repair context | `src/main/agent/verifier.ts`, `src/main/agent/verificationGate.ts` |
-| Review | 有基础 rule-based review gate，能对 missing verification、failed evidence、疑似越界文件和高风险覆盖缺口生成 blocking finding | `src/main/agent/verificationGate.ts` |
+| Review | 有基础 rule-based review gate，能对 missing verification、failed evidence、疑似越界文件和高风险覆盖缺口生成 blocking finding；当前工作树已有可选 LLM evaluator MVP，可合并 rule/LLM findings 并区分 source | `src/main/agent/verificationGate.ts`, `src/main/agent/evaluatorConfig.ts`, `src/main/agent/evaluatorPrompts.ts` |
 | Persistence | 有 userData JSONL events、meta、summary、schemaVersion、sequence | `src/main/agent/sessionStore.ts` |
 | Memory / Long-running | 有 FeatureItem、ProgressState、Handoff 协议；turn 结束自动生成 progress/handoff 事件；resume 时注入 handoff 到 context；workspace freshness 检查；session_summary fragment | `src/main/agent/runtime.ts`, `src/main/agent/thread.ts`, `src/main/agent/contextBuilder.ts` |
 | Observability / Eval | 有 AgentUsage、TraceEvent（9 种子类型）、EvalCase 协议；provider 返回 usage（tokens + latency）；TraceCollector 在关键决策点收集 trace；finalize 时持久化 trace.batch；redactTraceEvent 脱敏；computeTrajectoryMetrics 聚合指标；exportSessionTrace 导出；eval/ 目录含 runner.ts | `src/main/agent/trace.ts`, `src/main/agent/provider.ts`, `src/main/agent/runtime.ts`, `eval/` |
-| Agent UI | 有 timeline、Task Contract card、Plan card、tool group、stage、approval、diff、edit result、verification、evidence coverage、review findings、handoff 展示；会记录 latest context summary 供后续 Trace UI 使用 | `src/renderer/components/agent/AgentPanel.tsx` |
+| Agent UI | 有 timeline、Task Contract card、Plan card、tool group、stage、approval、diff、edit result、verification、evidence coverage、review findings、rule/LLM review source badge、handoff 展示；会记录 latest context summary 供后续 Trace UI 使用 | `src/renderer/components/agent/AgentPanel.tsx` |
 | Tests | 有 Vitest 覆盖 task contract、tools、edit、model adapter、permission、session store、runtime、context builder、verifier、workspace、progress/handoff、trace/metrics | `tests/agent/*` |
 
 ## 当前基础闭环
@@ -74,8 +74,8 @@
 
 ```text
 npm test
-  14 files passed
-  94 tests passed
+  16 files passed
+  138 tests passed
 
 npm run typecheck
   passed
@@ -89,13 +89,13 @@ npm run build
 1. Task Contract 已有 Phase D 初版和模型驱动的 `update_task_contract` 更新能力，但还没有用户确认 gate，也没有和 evidence coverage 深度绑定。
 2. Plan card 已有 Phase D 初版，但还没有 blocking gate、repair context 和跨 turn plan continuity。
 3. Context Engine Foundation 已完成 Phase E/G/H：有 `ContextFragment` / `ContextTrace` / `ContextBuildResult` 协议、collectors、完整 project rules 读取顺序、stable/dynamic 确定性排序、budget-aware trimming、AgentLoop `context.built` trace event、verification/review/handoff/session_summary fragment、compact boundary via session_summary + trimming、replay 测试和 UI latest context summary；cache key 留给后续阶段。
-4. Model Gateway 仍以文本 JSON protocol 为主，没有原生 tool calling、streaming、usage、fallback trace。
+4. Model Gateway 已有 native tool calling、usage、prompt caching hints 和 evaluator maxTokens；仍缺 streaming、provider fallback trace 和完整 Responses API 适配。
 5. Tool result 已结构化并会转为 Observation；final gate 已能把缺失/失败 coverage 注入 repair context，但还没有 artifactRef 存储和完整 artifact 输出治理。
 6. Policy 已有项目级 `.rille/policy.json`、session grant、approval runtime/matchedRule/grantOptions 和 denial Observation；仍没有持久 workspace grant、protected paths 过滤和 secret redaction 全链路治理。
 7. Verification 已扩展为 evidence/coverage gate，并按最终 Agent 标准阻止 failed/blocked/partial coverage 直接完成；final gate 会在缺少检查时自动触发项目 verifier；stale evidence 的 workspace freshness 检查已通过 Phase H handoff.changedFiles 存在性验证和 stale observation 实现（仅 local workspace）。
-8. Review 已有基础 rule-based gate，会阻止 pending edit proposal、失败 evidence 和疑似越界修改完成；还没有 reviewer model/advisor，也没有 accepted risk/waiver UI。
-9. Memory / Long-running 已完成 Phase H 基础：有 FeatureItem、ProgressState、Handoff 协议，turn 结束自动生成 progress 和 handoff，resume 时注入 handoff 到 context，workspace freshness 检查（local），session_summary collector；ProjectMemoryEntry 和持久 memory store 留待后续。
-10. UI 已可展示 Task Contract、Plan、Evidence coverage 和 Review finding，但还缺 Handoff。
+8. Review 已有基础 rule-based gate，会阻止 pending edit proposal、失败 evidence 和疑似越界修改完成；当前工作树已有可选 LLM evaluator MVP，但还没有完整 EvaluatorAgent / reviewer subagent / advisor，也没有 accepted risk/waiver UI。
+9. Memory / Long-running 已完成 Phase H/J 基础：有 FeatureItem、ProgressState、Handoff 协议，turn 结束自动生成 progress 和 handoff，resume 时注入 handoff 到 context，workspace freshness 检查（local），session_summary collector；ProjectMemoryEntry 与 MemoryStore 已有基础持久化，stale/superseded 自动检测仍待后续。
+10. UI 已可展示 Task Contract、Plan、Evidence coverage、Review finding、rule/LLM source badge 和 Handoff；仍缺 session card risk/latest verification/last action/handoff 状态，以及 /plan、/fix、@file、#selection composer UX。
 
 ## 与其他模块关系
 

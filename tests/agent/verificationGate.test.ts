@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentContextSnapshot, Evidence, TaskContract } from '../../src/shared/agent/protocol'
+import type { AgentContextSnapshot, Evidence, ReviewResult, TaskContract } from '../../src/shared/agent/protocol'
 import {
   computeVerificationCoverage,
   evaluateVerificationGate,
   evidenceFromDiagnostics,
+  mergeReviews,
   runRuleBasedReview,
 } from '../../src/main/agent/verificationGate'
 
@@ -98,5 +99,62 @@ describe('verification gate', () => {
     })
     expect(review.status).toBe('request_changes')
     expect(review.findings.some(item => item.category === 'scope' && item.blocking)).toBe(true)
+  })
+})
+
+describe('mergeReviews', () => {
+  function makeReview(status: ReviewResult['status'], source: 'rule' | 'llm', findingsCount = 0): ReviewResult {
+    return {
+      id: `review_${source}`,
+      sessionId: 's1',
+      turnId: 't1',
+      status,
+      findingIds: [],
+      findings: Array.from({ length: findingsCount }, (_, i) => ({
+        id: `f_${source}_${i}`,
+        sessionId: 's1',
+        turnId: 't1',
+        category: 'correctness' as const,
+        severity: 'medium' as const,
+        blocking: status !== 'approved',
+        title: `Finding ${i}`,
+        body: 'Body',
+        evidenceRefs: [],
+        status: 'open' as const,
+        source,
+        createdAt: 1,
+      })),
+      summary: `${source} summary`,
+      createdAt: 1,
+    }
+  }
+
+  it('returns rule review when llm is null', () => {
+    const rule = makeReview('approved', 'rule', 1)
+    const result = mergeReviews(rule, null)
+    expect(result).toBe(rule)
+  })
+
+  it('merges findings from both sources', () => {
+    const rule = makeReview('approved', 'rule', 1)
+    const llm = makeReview('approved', 'llm', 2)
+    const result = mergeReviews(rule, llm)
+    expect(result.findings).toHaveLength(3)
+  })
+
+  it('upgrades status when llm rejects', () => {
+    const rule = makeReview('approved', 'rule', 0)
+    const llm = makeReview('request_changes', 'llm', 1)
+    const result = mergeReviews(rule, llm)
+    expect(result.status).toBe('request_changes')
+  })
+
+  it('falls back to rule source on missing source field', () => {
+    const rule = makeReview('approved', 'rule', 1)
+    // Simulate old finding without source by building manually
+    rule.findings[0] = { ...rule.findings[0], source: undefined } as any
+    const llm = makeReview('approved', 'llm', 0)
+    const result = mergeReviews(rule, llm)
+    expect(result.findings[0].source).toBe('rule')
   })
 })

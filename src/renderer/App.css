@@ -4288,6 +4288,27 @@ button {
   margin-top: 8px;
 }
 
+.agent-review-source-badge {
+  display: inline-block;
+  padding: 0 4px;
+  margin-right: 2px;
+  font-size: 9px;
+  font-weight: 600;
+  border-radius: 3px;
+  line-height: 1.4;
+  vertical-align: middle;
+}
+
+.agent-review-source-badge.source-llm {
+  background: rgba(99, 102, 241, 0.15);
+  color: rgb(129, 140, 248);
+}
+
+.agent-review-source-badge.source-rule {
+  background: rgba(148, 163, 184, 0.15);
+  color: rgb(148, 163, 184);
+}
+
 .agent-approval-details {
   display: flex;
   flex-wrap: wrap;

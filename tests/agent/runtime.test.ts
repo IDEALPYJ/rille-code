@@ -29,6 +29,11 @@ vi.mock('../../src/main/agent/provider', () => ({
     if (typeof result === 'string') return { text: result, usage: undefined }
     return result
   },
+  callAgentModelWithConfig: async (...args: unknown[]) => {
+    const textResult = await callAgentModelMock(...args)
+    if (typeof textResult === 'string') return { text: textResult, usage: undefined }
+    return textResult
+  },
   callAgentModelWithTools: async (...args: unknown[]) => {
     const textResult = await callAgentModelMock(...args)
     if (typeof textResult === 'string') return { text: textResult, usage: undefined }
@@ -475,5 +480,73 @@ describe('AgentLoop context integration', () => {
     expect(handoffEvent).toBeDefined()
     if (handoffEvent?.type !== 'handoff.created') return
     expect(handoffEvent.handoff.failedAttempts.length).toBeGreaterThanOrEqual(0)
+  })
+})
+
+describe('AgentLoop evaluator integration', () => {
+  it('completes normally when evaluator config is disabled (default)', async () => {
+    const events: AgentEvent[] = []
+    const runtimeSession = session()
+    const runtimeTurn = turn()
+    const runtimeContext = cleanContext()
+    const contract = diagnosticsOnlyContract(runtimeSession, runtimeTurn, runtimeContext)
+    const planItems = createInitialPlanItems(contract, 1)
+
+    callAgentModelMock
+      .mockResolvedValueOnce(JSON.stringify({ answer: '已完成，无代码修改。' }))
+
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const reason = await new AgentLoop({
+      session: runtimeSession,
+      turn: runtimeTurn,
+      text: runtimeTurn.text,
+      context: runtimeContext,
+      taskContract: contract,
+      planItems,
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+    }).run()
+
+    expect(reason).toBe('completed')
+    const reviewEvent = events.find(e => e.type === 'review.completed')
+    expect(reviewEvent).toBeDefined()
+  })
+
+  it('review completes normally with workspace but no evaluator config', async () => {
+    root = mkdtempSync(join(tmpdir(), 'rille-eval-'))
+    const wsDir = join(root, 'eval_ws')
+    mkdirSync(wsDir, { recursive: true })
+
+    const events: AgentEvent[] = []
+    const runtimeSession = session()
+    runtimeSession.workspace = { kind: 'local', path: wsDir, label: 'eval_ws' }
+    const runtimeTurn = turn()
+    const runtimeContext = cleanContext()
+    runtimeContext.workspace = runtimeSession.workspace
+    const contract = diagnosticsOnlyContract(runtimeSession, runtimeTurn, runtimeContext)
+    const planItems = createInitialPlanItems(contract, 1)
+
+    callAgentModelMock
+      .mockResolvedValueOnce(JSON.stringify({ answer: '修复完成。' }))
+
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const reason = await new AgentLoop({
+      session: runtimeSession,
+      turn: runtimeTurn,
+      text: runtimeTurn.text,
+      context: runtimeContext,
+      taskContract: contract,
+      planItems,
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+    }).run()
+
+    expect(reason).toBe('completed')
+    const reviewEvent = events.find(e => e.type === 'review.completed')
+    expect(reviewEvent).toBeDefined()
+    if (reviewEvent?.type !== 'review.completed') return
+    expect(reviewEvent.result.status).toBe('approved')
   })
 })

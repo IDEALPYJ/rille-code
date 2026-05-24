@@ -321,8 +321,8 @@ npm run build
 涉及文件: protocol, workspace, redact（新）, provider, modelAdapter, runtime, tools, memory（新）, contextBuilder, editStore, trace, verificationGate, tests
 验证命令: `npm test`、`npm run typecheck`、`npm run build`
 结果: `npm test` 为 14 files / 94 tests passed；`npm run typecheck` passed；`npm run build` passed。
-剩余风险: Streaming、持久化授权、artifactRef 存储未实施；provider fallback 未实现；memory stale 自动检测未实现。
-下一步: 全部 Phase D-J 已完成。Agent 后端基础设施已对齐行业一流水平。
+剩余风险: Phase J 只完成 J1 与后端 hardening；Session card、Composer slash/file/selection UX、Skills、Advisor、Subagents 尚未完成，已迁移到 UX backlog 与 Phase K-O；Streaming、持久化授权、artifactRef 存储未实施；provider fallback 未实现；memory stale 自动检测未实现。
+下一步: Phase K，收口 LLM Evaluator MVP，并把 J2-J9 中的 Skills/Subagents/Advisor 项按 Phase L/N 推进。
 
 ## 停止线
 
