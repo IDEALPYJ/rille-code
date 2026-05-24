@@ -1,10 +1,15 @@
 import type { WebContents } from 'electron'
-import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, EditProposal } from '../../shared/agent/protocol'
+import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, EditProposal, ExecutionSandbox, RuntimeProcessSummary, RuntimeStateArtifact } from '../../shared/agent/protocol'
 import { deleteAgentModelProfile, listAgentModelProfiles, readAgentConfigSnapshot, saveAgentConfig, saveAgentModelProfile, selectAgentModelProfile } from './config'
 import { testAgentProvider } from './provider'
 import { AgentThread } from './thread'
 import { exportSessionTrace } from './trace'
-import { deleteSessionStore, findLastSession, listSessionSummaries, readSessionMeta, renameSessionMeta, saveSessionMeta } from './sessionStore'
+import { appendSessionEvent, archiveSessionMeta, deleteSessionStore, findLastSession, listSessionSummaries, readSessionMeta, renameSessionMeta, saveSessionMeta } from './sessionStore'
+import { listArtifacts, readArtifact } from './artifactStore'
+import { cleanupRuntimeProcesses, listRuntimeProcesses, stopRuntimeProcess } from './processRegistry'
+import { createCheckpoint, restoreCheckpointAsProposal } from './checkpointStore'
+import { captureRuntimeState } from './runtimeState'
+import { createWorktreeSandbox, disposeSandbox } from './worktreeSandbox'
 
 const threads = new Map<string, AgentThread>()
 
@@ -39,6 +44,7 @@ export async function resumeAgentSession(sender: WebContents, op: Extract<AgentO
     if (!thread) {
       const meta = readSessionMeta(op.sessionId)
       if (!meta) throw new Error('Agent session does not exist.')
+      if (meta.status === 'archived') throw new Error('归档会话不能恢复，请先取消归档。')
       const restored: AgentSession = { ...meta, status: meta.status === 'running' || meta.status === 'waiting_approval' ? 'idle' : meta.status }
       if (restored.status !== meta.status) saveSessionMeta(restored)
       thread = new AgentThread(sender, restored.workspace, restored.permissionMode, restored)
@@ -89,6 +95,31 @@ export function deleteAgentSession(op: Extract<AgentOp, { type: 'session.delete'
   }
 }
 
+export function archiveAgentSession(op: Extract<AgentOp, { type: 'session.archive' }>): AgentIpcResult<AgentSession | null> {
+  try {
+    const thread = threads.get(op.sessionId)
+    cleanupRuntimeProcesses(op.sessionId)
+    if (thread) return ok(thread.archive())
+    const session = archiveSessionMeta(op.sessionId, true)
+    if (session) void appendSessionEvent({ type: 'session.archived', session })
+    return ok(session)
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export function unarchiveAgentSession(op: Extract<AgentOp, { type: 'session.unarchive' }>): AgentIpcResult<AgentSession | null> {
+  try {
+    const thread = threads.get(op.sessionId)
+    if (thread) return ok(thread.unarchive())
+    const session = archiveSessionMeta(op.sessionId, false)
+    if (session) void appendSessionEvent({ type: 'session.unarchived', session })
+    return ok(session)
+  } catch (error) {
+    return fail(error)
+  }
+}
+
 export async function submitAgentTurn(op: Extract<AgentOp, { type: 'turn.submit' }>): Promise<AgentIpcResult<AgentTurn>> {
   try {
     return ok(await requireThread(op.sessionId).submitTurn(op.text, op.context))
@@ -97,10 +128,51 @@ export async function submitAgentTurn(op: Extract<AgentOp, { type: 'turn.submit'
   }
 }
 
-export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<AgentSession | EditProposal | boolean | null>> {
+type AgentDispatchValue =
+  | AgentSession
+  | EditProposal
+  | boolean
+  | null
+  | ArtifactPayload
+  | ArtifactRef[]
+  | RuntimeProcessSummary[]
+  | RuntimeProcessSummary
+  | CheckpointRef
+  | ExecutionSandbox
+  | RuntimeStateArtifact
+  | { traceEvents: unknown[] }
+
+export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<AgentDispatchValue>> {
   try {
     if (op.type === 'session.rename') return renameAgentSession(op)
+    if (op.type === 'session.archive') return archiveAgentSession(op)
+    if (op.type === 'session.unarchive') return unarchiveAgentSession(op)
     if (op.type === 'session.delete') return deleteAgentSession(op)
+    if (op.type === 'artifact.read') {
+      const artifact = readArtifact(op.sessionId, op.artifactId)
+      if (!artifact) throw new Error('Artifact does not exist.')
+      return ok(artifact)
+    }
+    if (op.type === 'artifact.list') return ok(listArtifacts(op.sessionId))
+    if (op.type === 'runtime.process.list') return ok(listRuntimeProcesses(op.sessionId))
+    if (op.type === 'runtime.process.stop') {
+      const process = stopRuntimeProcess(op.processId)
+      if (!process) throw new Error('Runtime process does not exist.')
+      return ok(process)
+    }
+    if (op.type === 'checkpoint.create') return ok(await createCheckpoint(op))
+    if (op.type === 'checkpoint.restoreAsProposal') {
+      const session = readSessionMeta(op.sessionId)
+      if (!session) throw new Error('Agent session does not exist.')
+      const turn: AgentTurn = { id: `turn_checkpoint_${Date.now()}`, sessionId: op.sessionId, text: 'Restore checkpoint as proposal', createdAt: Date.now(), status: 'completed' }
+      return ok(await restoreCheckpointAsProposal(op.checkpointId, session, turn, op.filePath))
+    }
+    if (op.type === 'sandbox.create') return ok(await createWorktreeSandbox(op))
+    if (op.type === 'sandbox.dispose') return ok(await disposeSandbox(op.sessionId, op.sandboxId))
+    if (op.type === 'runtime.state.capture') {
+      const { state } = await captureRuntimeState({ sessionId: op.sessionId, turnId: op.turnId, workspace: op.workspace })
+      return ok(state)
+    }
     if (op.type === 'edit.apply') {
       return ok(await requireThread(op.sessionId).applyEdit(op.proposalId, op.context))
     }
@@ -115,7 +187,7 @@ export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<Agent
       return ok(true)
     }
     if (op.type === 'trace.export') {
-      return ok({ traceEvents: await exportSessionTrace(op.sessionId, op.redacted !== false) } as unknown as AgentSession)
+      return ok({ traceEvents: await exportSessionTrace(op.sessionId, op.redacted !== false) })
     }
     if ('sessionId' in op) {
       return ok(requireThread(op.sessionId).handle(op))

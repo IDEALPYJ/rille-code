@@ -59,6 +59,14 @@ export function renameSessionMeta(sessionId: string, title: string): AgentSessio
   return next
 }
 
+export function archiveSessionMeta(sessionId: string, archived: boolean): AgentSession | null {
+  const meta = readSessionMeta(sessionId)
+  if (!meta) return null
+  const next: AgentSession = { ...meta, status: archived ? 'archived' : 'idle', updatedAt: Date.now() }
+  saveSessionMeta(next)
+  return next
+}
+
 export function deleteSessionStore(sessionId: string): boolean {
   const dir = sessionDir(sessionId)
   if (!existsSync(dir)) return false
@@ -73,7 +81,7 @@ export async function appendSessionEvent(event: AgentEvent): Promise<void> {
   const sequence = (sessionSequences.get(sessionId) || 0) + 1
   sessionSequences.set(sessionId, sequence)
   await appendFile(eventsPath(sessionId), `${JSON.stringify({ schemaVersion: SESSION_EVENT_SCHEMA_VERSION, sequence, timestamp: Date.now(), event } satisfies StoredLine)}\n`, 'utf8')
-  if (event.type === 'session.created' || event.type === 'session.updated') saveSessionMeta(event.session)
+  if (event.type === 'session.created' || event.type === 'session.updated' || event.type === 'session.archived' || event.type === 'session.unarchived') saveSessionMeta(event.session)
 }
 
 export async function readSessionEvents(sessionId: string): Promise<AgentEvent[]> {
@@ -143,6 +151,7 @@ export function listSessionSummaries(): AgentSessionSummary[] {
 
 export function findLastSession(workspacePath?: string | null): AgentSession | null {
   const summaries = listSessionSummaries()
-  const selected = workspacePath ? summaries.find(item => item.workspace?.path === workspacePath) : summaries[0]
+  const active = summaries.filter(item => item.status !== 'archived')
+  const selected = workspacePath ? active.find(item => item.workspace?.path === workspacePath) : active[0]
   return selected ? readSessionMeta(selected.id) : null
 }

@@ -109,6 +109,8 @@ export interface VerificationResult {
   command?: string
   status: VerificationStatus
   output: string
+  artifact?: ArtifactRef
+  artifactRef?: string
   truncated?: boolean
   exitCode?: number | null
   durationMs?: number
@@ -116,11 +118,94 @@ export interface VerificationResult {
 }
 
 export interface AgentWorkspaceLocation {
-  kind: 'local' | 'ssh' | 'wsl'
+  kind: 'local' | 'ssh' | 'wsl' | 'worktree'
   path: string
   label: string
   connectionId?: string
   targetId?: string
+  origin?: AgentWorkspaceLocation
+  sandboxId?: string
+}
+
+export type ArtifactKind = 'text' | 'json' | 'binary' | 'command_output' | 'verification_output' | 'runtime_state' | 'trace' | 'checkpoint'
+
+export interface ArtifactRef {
+  id: string
+  sessionId: string
+  turnId?: string
+  kind: ArtifactKind
+  uri: string
+  mimeType?: string
+  sizeBytes: number
+  sha256: string
+  redacted: boolean
+  createdAt: number
+}
+
+export interface ArtifactPayload {
+  ref: ArtifactRef
+  encoding: 'utf8' | 'base64'
+  content: string
+}
+
+export interface RuntimeProcessSummary {
+  id: string
+  sessionId: string
+  workspace: AgentWorkspaceLocation
+  commandLine: string
+  cwd: string
+  pid?: number
+  status: 'starting' | 'running' | 'exited' | 'failed' | 'stopped'
+  exitCode?: number | null
+  timedOut?: boolean
+  outputArtifact?: ArtifactRef
+  outputArtifactRef?: string
+  startedAt: number
+  updatedAt: number
+}
+
+export interface RuntimeProcessEvent {
+  process: RuntimeProcessSummary
+  outputDelta?: string
+}
+
+export interface CheckpointRef {
+  id: string
+  sessionId: string
+  turnId?: string
+  workspace: AgentWorkspaceLocation
+  reason: string
+  files: string[]
+  gitStatus: string
+  artifact: ArtifactRef
+  artifactRef: string
+  runtimeStateArtifact?: ArtifactRef
+  createdAt: number
+}
+
+export interface ExecutionSandbox {
+  id: string
+  sessionId: string
+  workspace: AgentWorkspaceLocation
+  sandboxWorkspace: AgentWorkspaceLocation
+  status: 'creating' | 'ready' | 'failed' | 'disposed'
+  reason?: string
+  checkpoint?: CheckpointRef
+  createdAt: number
+  updatedAt: number
+}
+
+export interface RuntimeStateArtifact {
+  id: string
+  sessionId: string
+  turnId?: string
+  workspace: AgentWorkspaceLocation | null
+  gitStatus?: string
+  processes: RuntimeProcessSummary[]
+  checkpoints: CheckpointRef[]
+  sandboxes: ExecutionSandbox[]
+  latestEvidence: Evidence[]
+  createdAt: number
 }
 
 export interface AgentContextSnapshot {
@@ -233,6 +318,7 @@ export interface Evidence {
   status: VerificationStatus
   summary: string
   output?: string
+  artifact?: ArtifactRef
   artifactRef?: string
   data?: Record<string, unknown>
   createdAt: number
@@ -487,6 +573,9 @@ export type TraceEvent =
   | { type: 'review.completed'; sessionId: string; turnId: string; result: ReviewResult; createdAt: number }
   | { type: 'handoff.generated'; sessionId: string; turnId: string; handoff: Handoff; createdAt: number }
   | { type: 'cost.updated'; sessionId: string; turnId: string; usage: AgentUsage; createdAt: number }
+  | { type: 'artifact.created'; sessionId: string; turnId?: string; artifact: ArtifactRef; createdAt: number }
+  | { type: 'runtime.state.captured'; sessionId: string; turnId?: string; artifact: ArtifactRef; createdAt: number }
+  | { type: 'checkpoint.created'; sessionId: string; turnId?: string; checkpoint: CheckpointRef; createdAt: number }
 
 export interface EvalCase {
   id: string
@@ -504,7 +593,7 @@ export interface AgentSession {
   title: string
   createdAt: number
   updatedAt: number
-  status: 'idle' | 'running' | 'waiting_approval' | 'interrupted' | 'error'
+  status: 'idle' | 'running' | 'waiting_approval' | 'interrupted' | 'error' | 'archived'
   permissionMode: AgentPermissionMode
 }
 
@@ -532,6 +621,8 @@ export interface ToolCallView {
 export interface ToolResultView {
   output: string
   structured?: Record<string, unknown>
+  artifact?: ArtifactRef
+  artifactRef?: string
   truncated?: boolean
   error?: string
   failureType?: ToolFailureType
@@ -594,6 +685,7 @@ export type MessagePart =
   | { id: string; messageId: string; type: 'review'; result: ReviewResult; createdAt: number }
   | { id: string; messageId: string; type: 'edit_result'; proposalId: string; state: EditProposal['state']; filePath: string; message: string; createdAt: number }
   | { id: string; messageId: string; type: 'handoff'; handoff: Handoff; createdAt: number }
+  | { id: string; messageId: string; type: 'artifact'; artifact: ArtifactRef; label: string; createdAt: number }
 
 export interface ApprovalRequest {
   id: string
@@ -647,7 +739,18 @@ export type AgentOp =
   | { type: 'session.resumeLast'; workspace: AgentWorkspaceLocation | null }
   | { type: 'session.list' }
   | { type: 'session.rename'; sessionId: string; title: string }
+  | { type: 'session.archive'; sessionId: string }
+  | { type: 'session.unarchive'; sessionId: string }
   | { type: 'session.delete'; sessionId: string }
+  | { type: 'artifact.read'; sessionId: string; artifactId: string }
+  | { type: 'artifact.list'; sessionId: string }
+  | { type: 'runtime.process.list'; sessionId?: string }
+  | { type: 'runtime.process.stop'; processId: string }
+  | { type: 'checkpoint.create'; sessionId: string; turnId?: string; workspace: AgentWorkspaceLocation; reason: string }
+  | { type: 'checkpoint.restoreAsProposal'; sessionId: string; checkpointId: string; filePath?: string }
+  | { type: 'sandbox.create'; sessionId: string; workspace: AgentWorkspaceLocation; reason?: string }
+  | { type: 'sandbox.dispose'; sessionId: string; sandboxId: string }
+  | { type: 'runtime.state.capture'; sessionId: string; turnId?: string; workspace?: AgentWorkspaceLocation | null }
   | { type: 'turn.submit'; sessionId: string; text: string; context: AgentContextSnapshot }
   | { type: 'turn.interrupt'; sessionId: string; turnId: string }
   | { type: 'approval.respond'; requestId: string; decision: ApprovalDecision }
@@ -664,6 +767,8 @@ export type AgentOp =
 export type AgentEvent =
   | { type: 'session.created'; session: AgentSession }
   | { type: 'session.updated'; session: AgentSession }
+  | { type: 'session.archived'; session: AgentSession }
+  | { type: 'session.unarchived'; session: AgentSession }
   | { type: 'turn.started'; sessionId: string; turn: AgentTurn }
   | { type: 'turn.stage'; sessionId: string; turnId: string; stage: AgentRunStage; detail?: string }
   | { type: 'task_contract.created'; sessionId: string; turnId: string; contract: TaskContract }
@@ -690,6 +795,12 @@ export type AgentEvent =
   | { type: 'handoff.created'; sessionId: string; turnId: string; handoff: Handoff }
   | { type: 'trace.exported'; sessionId: string; format: 'json'; redacted: boolean; traceEvents: TraceEvent[] }
   | { type: 'trace.batch'; sessionId: string; turnId: string; traceEvents: TraceEvent[] }
+  | { type: 'artifact.created'; sessionId: string; turnId?: string; artifact: ArtifactRef }
+  | { type: 'runtime.process.updated'; sessionId: string; process: RuntimeProcessSummary }
+  | { type: 'checkpoint.created'; sessionId: string; turnId?: string; checkpoint: CheckpointRef }
+  | { type: 'sandbox.created'; sessionId: string; sandbox: ExecutionSandbox }
+  | { type: 'sandbox.updated'; sessionId: string; sandbox: ExecutionSandbox }
+  | { type: 'runtime.state.captured'; sessionId: string; turnId?: string; state: RuntimeStateArtifact; artifact: ArtifactRef }
   | { type: 'memory.created'; sessionId: string; entry: ProjectMemoryEntry }
   | { type: 'memory.updated'; sessionId: string; entry: ProjectMemoryEntry }
   | { type: 'memory.deleted'; sessionId: string; entryId: string; workspacePath: string }

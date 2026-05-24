@@ -55,6 +55,8 @@ export function evidenceFromVerificationResult(result: VerificationResult): Evid
     status: result.status,
     summary: result.command ? `${result.command}: ${result.status}` : `verification: ${result.status}`,
     output: redactSecrets(result.output),
+    artifact: result.artifact,
+    artifactRef: result.artifactRef,
     data: { verifier: result.verifier, command: result.command, exitCode: result.exitCode, durationMs: result.durationMs },
     createdAt: now(),
   }
@@ -88,6 +90,8 @@ export function evidenceFromToolResult(input: {
       status: statusFromToolResult(input.result),
       summary: `${String(input.call.input.commandLine || 'command')}: ${input.result.status || 'ok'}`,
       output: input.result.output,
+      artifact: input.result.artifact,
+      artifactRef: input.result.artifactRef,
       data: { ...input.result.structured, exitCode: input.result.exitCode, durationMs: input.result.durationMs },
       createdAt: now(),
     }

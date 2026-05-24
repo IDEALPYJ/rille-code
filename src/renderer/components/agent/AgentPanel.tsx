@@ -115,6 +115,13 @@ function toContextSnapshot(props: Props): AgentContextSnapshot {
 
 function ToolPart({ part }: { part: Extract<MessagePart, { type: 'tool' }> }) {
   const isRunning = part.state === 'running'
+  const [artifactText, setArtifactText] = useState<string | null>(null)
+  const artifact = part.output?.artifact
+  const openArtifact = useCallback(async () => {
+    if (!artifact) return
+    const payload = await window.rille.agentReadArtifact(artifact.sessionId, artifact.id)
+    setArtifactText(payload.encoding === 'utf8' ? payload.content : `[binary artifact: ${payload.ref.sizeBytes} bytes]`)
+  }, [artifact])
   return (
     <div className={'agent-tool-card ' + part.state}>
       <div className="agent-tool-icon">
@@ -123,6 +130,12 @@ function ToolPart({ part }: { part: Extract<MessagePart, { type: 'tool' }> }) {
       <div className="agent-tool-main">
         <div className="agent-tool-title">{part.call.title}</div>
         <div className="agent-tool-summary">{part.output?.output || part.call.summary}</div>
+        {artifact && (
+          <button type="button" className="agent-inline-button" onClick={() => void openArtifact()}>
+            展开 artifact
+          </button>
+        )}
+        {artifactText !== null && <pre className="agent-artifact-preview">{artifactText}</pre>}
       </div>
     </div>
   )
@@ -518,6 +531,14 @@ function MessagePartView({
   if (part.type === 'evidence_coverage') return <EvidenceCoveragePart part={part} />
   if (part.type === 'review') return <ReviewPart part={part} />
   if (part.type === 'edit_result') return <EditResultPart part={part} />
+  if (part.type === 'artifact') {
+    return (
+      <div className="agent-file-part">
+        <FileText size={13} />
+        <span>{part.label} · {Math.round(part.artifact.sizeBytes / 1024)} KB</span>
+      </div>
+    )
+  }
   if (part.type === 'handoff') {
     return (
       <div className="agent-message assistant">

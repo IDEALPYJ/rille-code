@@ -485,6 +485,9 @@ export class AgentLoop {
 
   private completeToolPart(part: Extract<MessagePart, { type: 'tool' }>, runningCall: ToolCallView, result: ToolResultView) {
     const completedCall: ToolCallView = { ...runningCall, state: result.error ? 'failed' : 'completed', completedAt: now() }
+    if (result.artifact) {
+      this.options.emit({ type: 'artifact.created', sessionId: this.options.session.id, turnId: this.options.turn.id, artifact: result.artifact })
+    }
     this.options.emit({ type: 'tool.completed', sessionId: this.options.session.id, turnId: this.options.turn.id, callId: runningCall.id, result })
     this.traceCollector.toolExecuted(this.options.session.id, this.options.turn.id, runningCall.id, runningCall.name, result.error ? 'failed' : 'ok', result.durationMs)
     this.emitObservation(observationFromToolResult(this.options.session.id, this.options.turn.id, runningCall, result))

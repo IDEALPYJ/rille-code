@@ -96,5 +96,24 @@ describe('AgentThread resume hardening', () => {
     expect(finalSessionCreated?.type).toBe('session.created')
     if (finalSessionCreated?.type !== 'session.created') return
     expect(finalSessionCreated.session.status).toBe('idle')
+  }, 15_000)
+
+  it('refuses to resume archived sessions until they are unarchived', async () => {
+    userData = mkdtempSync(join(tmpdir(), 'rille-thread-'))
+    const store = await import('../../src/main/agent/sessionStore')
+    const { resumeAgentSession, dispatchAgentOp } = await import('../../src/main/agent')
+    const meta: AgentSession = { ...session(), status: 'idle' }
+    await store.appendSessionEvent({ type: 'session.created', session: meta })
+    const archived = await dispatchAgentOp({ type: 'session.archive', sessionId: meta.id })
+    expect(archived.ok).toBe(true)
+    expect(store.readSessionMeta(meta.id)?.status).toBe('archived')
+
+    const blocked = await resumeAgentSession(sender() as never, { type: 'session.resume', sessionId: meta.id })
+    expect(blocked.ok).toBe(false)
+
+    const restored = await dispatchAgentOp({ type: 'session.unarchive', sessionId: meta.id })
+    expect(restored.ok).toBe(true)
+    const resumed = await resumeAgentSession(sender() as never, { type: 'session.resume', sessionId: meta.id })
+    expect(resumed.ok).toBe(true)
   })
 })

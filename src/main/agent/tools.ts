@@ -31,6 +31,7 @@ import {
   workspaceRunCommand,
   workspaceSearchFiles,
 } from './workspace'
+import { createArtifact } from './artifactStore'
 
 export interface RuntimeToolCall {
   id: string
@@ -559,15 +560,23 @@ export const toolRegistry: RegisteredTool[] = [
     sideEffect: 'process',
     validate: validateCommandInput,
     summarize: input => str(input, 'commandLine'),
-    execute: async (input, { context }) => {
+    execute: async (input, { context, session, turn }) => {
       const workspace = requireWorkspace(context.workspace)
-      return workspaceRunCommand(workspace, {
+      const result = await workspaceRunCommand(workspace, {
         commandLine: str(input, 'commandLine'),
         cwd: str(input, 'cwd') || undefined,
         timeoutMs: num(input, 'timeoutMs'),
         outputLimitBytes: 50 * 1024,
         shellMode: needsShell(str(input, 'commandLine')),
       })
+      const artifact = createArtifact({
+        sessionId: session.id,
+        turnId: turn.id,
+        kind: 'command_output',
+        content: result.output,
+        mimeType: 'text/plain; charset=utf-8',
+      })
+      return { ...result, artifact, artifactRef: artifact.id, structured: { ...(result.structured || {}), artifactRef: artifact.id } }
     },
   },
   {

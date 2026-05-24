@@ -25,6 +25,8 @@ import { appendSessionEvent, readSessionEvents, saveSessionMeta } from './sessio
 import { createInitialPlanItems, createInitialTaskContract } from './taskContract'
 import { VerifierRunner } from './verifier'
 import { observationFromVerification } from './verificationGate'
+import { createCheckpoint } from './checkpointStore'
+import { captureRuntimeState, rememberEvidence } from './runtimeState'
 
 function now(): number {
   return Date.now()
@@ -92,6 +94,21 @@ export class AgentThread {
 
   rename(title: string): AgentSession {
     this.session = { ...this.session, title: title.trim() || '新对话', updatedAt: now() }
+    this.emit({ type: 'session.updated', session: this.session })
+    return this.session
+  }
+
+  archive(): AgentSession {
+    this.abortController?.abort()
+    this.session = { ...this.session, status: 'archived', updatedAt: now() }
+    this.emit({ type: 'session.archived', session: this.session })
+    this.emit({ type: 'session.updated', session: this.session })
+    return this.session
+  }
+
+  unarchive(): AgentSession {
+    this.session = { ...this.session, status: 'idle', updatedAt: now() }
+    this.emit({ type: 'session.unarchived', session: this.session })
     this.emit({ type: 'session.updated', session: this.session })
     return this.session
   }
@@ -167,6 +184,15 @@ export class AgentThread {
 
   async applyEdit(proposalId: string, context?: AgentContextSnapshot) {
     this.emitStage(this.activeTurn?.id, 'applying_edit', `应用编辑提案 ${proposalId}`)
+    if (this.session.workspace) {
+      const checkpoint = await createCheckpoint({
+        sessionId: this.session.id,
+        turnId: this.activeTurn?.id,
+        workspace: this.session.workspace,
+        reason: `Before applying edit proposal ${proposalId}`,
+      })
+      this.emit({ type: 'checkpoint.created', sessionId: this.session.id, turnId: this.activeTurn?.id, checkpoint })
+    }
     const proposal = await applyEditProposal(proposalId, this.session.workspace, context)
     this.emit({ type: 'edit.proposed', sessionId: this.session.id, turnId: proposal.turnId, proposal })
     const message = proposal.state === 'applied'
@@ -205,6 +231,9 @@ export class AgentThread {
   }
 
   async submitTurn(text: string, context: AgentContextSnapshot): Promise<AgentTurn> {
+    if (this.session.status === 'archived') {
+      throw new Error('归档会话不能继续运行，请先取消归档。')
+    }
     if (this.session.status === 'running') {
       throw new Error('当前会话已有正在运行的 turn。')
     }
@@ -227,6 +256,7 @@ export class AgentThread {
 
     this.emit({ type: 'session.updated', session: this.session })
     this.emit({ type: 'turn.started', sessionId: this.session.id, turn })
+    await this.captureRuntime(turn.id, context.workspace)
 
     const userMessageId = createMessageId('user')
     this.emitPart(turn.id, {
@@ -368,6 +398,7 @@ export class AgentThread {
     this.emitStage(turn.id, 'running_verification', '运行项目验证命令')
     this.emit({ type: 'verification.started', sessionId: this.session.id, turnId: turn.id, verifier: 'command' })
     const { result, evidence } = await new VerifierRunner(this.session, turn).runFirstAvailableWithEvidence()
+    rememberEvidence(evidence)
     this.emit({ type: 'verification.completed', sessionId: this.session.id, turnId: turn.id, result })
     this.emitEvidence(evidence)
     if (result.status === 'failed' || result.status === 'blocked') {
@@ -386,6 +417,13 @@ export class AgentThread {
       result,
       createdAt: now(),
     })
+    await this.captureRuntime(turn.id, this.session.workspace)
+  }
+
+  private async captureRuntime(turnId: string | undefined, workspace: AgentSession['workspace']): Promise<void> {
+    const { state, artifact } = await captureRuntimeState({ sessionId: this.session.id, turnId, workspace })
+    this.emit({ type: 'artifact.created', sessionId: this.session.id, turnId, artifact })
+    this.emit({ type: 'runtime.state.captured', sessionId: this.session.id, turnId, state, artifact })
   }
 
   private emitStage(turnId: string | undefined, stage: AgentRunStage, detail?: string): void {
@@ -445,7 +483,7 @@ export class AgentThread {
   }
 
   private emit(event: AgentEvent): void {
-    if (event.type === 'session.created' || event.type === 'session.updated') saveSessionMeta(event.session)
+    if (event.type === 'session.created' || event.type === 'session.updated' || event.type === 'session.archived' || event.type === 'session.unarchived') saveSessionMeta(event.session)
     if (event.type === 'handoff.created') this.lastHandoff = event.handoff
     void appendSessionEvent(event).catch(error => {
       console.warn('Failed to persist agent event', error)

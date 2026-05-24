@@ -212,11 +212,13 @@ interface RemoteTarget {
 }
 
 interface WorkspaceLocation {
-  kind: 'local' | 'ssh' | 'wsl'
+  kind: 'local' | 'ssh' | 'wsl' | 'worktree'
   path: string
   label: string
   connectionId?: string
   targetId?: string
+  origin?: WorkspaceLocation
+  sandboxId?: string
 }
 
 interface RemoteConnection {

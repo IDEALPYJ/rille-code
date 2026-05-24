@@ -9,6 +9,7 @@ export interface CommandRunInput {
   timeoutMs?: number
   outputLimitBytes?: number
   shellMode?: boolean
+  longRunning?: boolean
 }
 
 export interface WorkspaceHost {
@@ -30,7 +31,7 @@ export function setAgentWorkspaceHost(host: WorkspaceHost): void {
 }
 
 export function isRemoteWorkspace(workspace?: AgentWorkspaceLocation | null): workspace is AgentWorkspaceLocation & { connectionId: string } {
-  return Boolean(workspace && workspace.kind !== 'local' && workspace.connectionId)
+  return Boolean(workspace && workspace.kind !== 'local' && workspace.kind !== 'worktree' && workspace.connectionId)
 }
 
 export function requireWorkspace(workspace?: AgentWorkspaceLocation | null): AgentWorkspaceLocation {
@@ -43,9 +44,10 @@ function normalizeRemotePath(pathValue: string): string {
 }
 
 export function withinWorkspace(workspace: AgentWorkspaceLocation, filePath?: string): string {
-  const root = workspace.kind === 'local' ? resolve(workspace.path) : normalizeRemotePath(workspace.path).replace(/\/+$/, '') || '/'
+  const localLike = workspace.kind === 'local' || (workspace.kind === 'worktree' && !workspace.connectionId)
+  const root = localLike ? resolve(workspace.path) : normalizeRemotePath(workspace.path).replace(/\/+$/, '') || '/'
   if (!filePath) return root
-  if (workspace.kind === 'local') {
+  if (localLike) {
     const absolute = isAbsolute(filePath) || /^[a-zA-Z]:[\\/]/.test(filePath) ? resolve(filePath) : resolve(root, filePath)
     const rel = relative(root, absolute)
     if (rel.startsWith('..') || rel === '..' || resolve(root, rel) !== absolute) throw new Error('文件路径不在当前工作区内。')
@@ -60,7 +62,7 @@ export function withinWorkspace(workspace: AgentWorkspaceLocation, filePath?: st
 
 export function canonicalWorkspacePath(workspace: AgentWorkspaceLocation, filePath?: string): string {
   const absolute = withinWorkspace(workspace, filePath)
-  return workspace.kind === 'local' ? resolve(absolute) : normalizeRemotePath(absolute).replace(/\/+$/, '') || '/'
+  return workspace.kind === 'local' || (workspace.kind === 'worktree' && !workspace.connectionId) ? resolve(absolute) : normalizeRemotePath(absolute).replace(/\/+$/, '') || '/'
 }
 
 const PROTECTED_PATH_PATTERNS: RegExp[] = [

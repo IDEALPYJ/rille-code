@@ -2,6 +2,8 @@ import { randomUUID } from 'crypto'
 import { redactSecrets } from './redact'
 import type {
   AgentUsage,
+  ArtifactRef,
+  CheckpointRef,
   ContextTrace,
   Handoff,
   PolicyDecision,
@@ -220,6 +222,30 @@ function deriveTraceEvents(event: { type: string; [key: string]: unknown }): Tra
         sessionId: event.sessionId as string,
         turnId: event.turnId as string,
         handoff: event.handoff as Handoff,
+        createdAt: Date.now(),
+      }]
+    case 'artifact.created':
+      return [{
+        type: 'artifact.created',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string | undefined,
+        artifact: event.artifact as ArtifactRef,
+        createdAt: Date.now(),
+      }]
+    case 'runtime.state.captured':
+      return [{
+        type: 'runtime.state.captured',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string | undefined,
+        artifact: event.artifact as ArtifactRef,
+        createdAt: Date.now(),
+      }]
+    case 'checkpoint.created':
+      return [{
+        type: 'checkpoint.created',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string | undefined,
+        checkpoint: event.checkpoint as CheckpointRef,
         createdAt: Date.now(),
       }]
     default:

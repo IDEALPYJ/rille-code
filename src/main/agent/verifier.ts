@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import type { AgentSession, AgentTurn, AgentWorkspaceLocation, Evidence, VerificationResult } from '../../shared/agent/protocol'
 import { workspaceReadFile, workspaceRunCommand } from './workspace'
 import { evidenceFromVerificationResult } from './verificationGate'
+import { createArtifact } from './artifactStore'
 
 export interface VerificationCommand {
   verifier: 'command'
@@ -74,6 +75,13 @@ export class VerifierRunner {
       timeoutMs: 120_000,
       outputLimitBytes: 50 * 1024,
     })
+    const artifact = createArtifact({
+      sessionId: this.session.id,
+      turnId: turn.id,
+      kind: 'verification_output',
+      content: result.output,
+      mimeType: 'text/plain; charset=utf-8',
+    })
     return {
       id: `verification_${randomUUID()}`,
       sessionId: this.session.id,
@@ -82,6 +90,8 @@ export class VerifierRunner {
       command: command.command,
       status: result.status === 'ok' ? 'passed' : 'failed',
       output: result.output,
+      artifact,
+      artifactRef: artifact.id,
       truncated: result.truncated,
       exitCode: result.exitCode,
       durationMs: result.durationMs,

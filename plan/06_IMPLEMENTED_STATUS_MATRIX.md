@@ -1,0 +1,419 @@
+# 当前实现状态矩阵
+
+## Capability: TaskContract
+
+Target:
+将用户请求转为 goal、scope、non-goals、acceptance criteria、verification plan、risk 和 assumptions。
+
+Current status: 部分实现
+
+Evidence files:
+`src/shared/agent/protocol.ts`, `src/main/agent/taskContract.ts`, `src/main/agent/thread.ts`, `src/main/agent/tools.ts`, `tests/agent/taskContract.test.ts`, `tests/agent/tools.test.ts`
+
+Implemented details:
+已有 TaskContract、AcceptanceCriterion、RiskPoint、TaskAssumption、初始合同生成、模型可见 `update_task_contract`。
+
+Missing pieces:
+用户确认 gate、显式 Plan Mode、跨 turn contract review、PlanItem evidence gate。
+
+Next phase:
+Phase G
+
+Verification:
+Vitest 覆盖合同生成和更新归一化。
+
+## Capability: AgentLoop tool loop
+
+Target:
+模型提出 tool calls，runtime 执行受控工具，结果回灌模型并继续 loop。
+
+Current status: 已实现
+
+Evidence files:
+`src/main/agent/runtime.ts`, `src/main/agent/modelAdapter.ts`, `src/main/agent/tools.ts`, `tests/agent/runtime.test.ts`, `tests/agent/modelAdapter.test.ts`
+
+Implemented details:
+AgentLoop 支持 context -> model -> tool calls -> permission -> execution -> observation/evidence -> repair/final gate。
+
+Missing pieces:
+Streaming delta、subagent delegation、explicit compaction turn。
+
+Next phase:
+Phase D, Phase P
+
+Verification:
+Runtime tests 覆盖 tool loop、approval、final gate 和 evidence path。
+
+## Capability: ContextFragment pipeline
+
+Target:
+用 fragment pipeline 构造 stable/dynamic、可追踪、可裁剪、cache-aware context。
+
+Current status: 部分实现
+
+Evidence files:
+`src/shared/agent/protocol.ts`, `src/main/agent/contextBuilder.ts`, `tests/agent/contextBuilder.test.ts`
+
+Implemented details:
+已有 ContextFragment、ContextTrace、ContextBuildResult、project rules、stable/dynamic sort、deterministic trimming、context.built event、verification/review/handoff/memory fragments、cacheKey hints。
+
+Missing pieces:
+cache hit/miss metrics、LSP/MCP context、untrusted data isolation、cache-safe explicit compaction。
+
+Next phase:
+Phase H, Phase L
+
+Verification:
+Context builder tests 覆盖 collectors、排序、裁剪和 replay summary。
+
+## Capability: tool validation
+
+Target:
+所有工具都声明 schema、visibility、sideEffect 和 runtime validation。
+
+Current status: 已实现
+
+Evidence files:
+`src/main/agent/tools.ts`, `tests/agent/tools.test.ts`
+
+Implemented details:
+RegisteredTool 具备 visibility、sideEffect、validate；非法输入返回结构化 failure。
+
+Missing pieces:
+组合工具、deferred tool search、tool effectiveness eval。
+
+Next phase:
+Phase E
+
+Verification:
+Tool tests 覆盖 validation、runtime-only deny 和 update tools。
+
+## Capability: policy loader
+
+Target:
+项目级 policy 控制 command/file/git/network/memory 权限。
+
+Current status: 部分实现
+
+Evidence files:
+`src/main/agent/permissions.ts`, `tests/agent/permissions.test.ts`, `src/main/agent/runtime.ts`
+
+Implemented details:
+已有 permission mode、command risk classifier、`.rille/policy.json` loader、denial tracker、policy denial Observation。
+
+Missing pieces:
+persistent workspace grants、Guardian/classifier、BashArity subject、sandbox policy。
+
+Next phase:
+Phase F
+
+Verification:
+Permission tests 覆盖 risk 分类、policy allow/ask/deny、grant。
+
+## Capability: PermissionGrant session scope
+
+Target:
+用户可在限定范围内授权重复动作，授权可审计、可过期。
+
+Current status: 部分实现
+
+Evidence files:
+`src/shared/agent/protocol.ts`, `src/main/agent/permissions.ts`, `src/main/agent/thread.ts`, `tests/agent/permissions.test.ts`
+
+Implemented details:
+PermissionGrantStore 支持 once/session grant，ApprovalRequest 携带 grantOptions。
+
+Missing pieces:
+workspace-scope persistent grant、grant export/audit UI、expiry cleanup。
+
+Next phase:
+Phase F
+
+Verification:
+Permission tests 覆盖 session grant matching。
+
+## Capability: diff proposal/apply guard
+
+Target:
+所有写入先生成 diff proposal，用户审查后 runtime-only apply，写入前检查冲突和 dirty state。
+
+Current status: 已实现
+
+Evidence files:
+`src/main/agent/editStore.ts`, `src/main/agent/thread.ts`, `src/main/agent/tools.ts`, `tests/agent/editStore.test.ts`, `tests/agent/thread.test.ts`
+
+Implemented details:
+已有 EditProposal、conflict check、dirty snapshot guard、apply/reject、rollback proposal。
+
+Missing pieces:
+worktree patch merge UI、checkpoint restore 的多文件精细 UI。
+
+Next phase:
+Phase I
+
+Verification:
+Edit/thread tests 覆盖冲突、防覆盖和 rollback proposal。
+
+## Capability: Evidence/Coverage gate
+
+Target:
+完成必须由 evidence 覆盖 acceptance criteria，失败/缺失 evidence 进入 repair。
+
+Current status: 已实现
+
+Evidence files:
+`src/shared/agent/protocol.ts`, `src/main/agent/verificationGate.ts`, `src/main/agent/verifier.ts`, `src/main/agent/runtime.ts`, `tests/agent/verificationGate.test.ts`, `tests/agent/verifier.test.ts`
+
+Implemented details:
+已有 Evidence、VerificationCoverage、before-stop gate、command/diagnostics/diff evidence、VerifierRunner。
+
+Missing pieces:
+browser/user evidence、waiver UI。
+
+Next phase:
+Phase J
+
+Verification:
+Verification tests 覆盖 coverage、failed evidence、review gate 交互。
+
+## Capability: session archive/unarchive
+
+Target:
+Session 可以归档、取消归档、保留 JSONL replay，并避免 resumeLast 自动恢复归档会话。
+
+Current status: 已实现
+
+Evidence files:
+`src/shared/agent/protocol.ts`, `src/main/agent/sessionStore.ts`, `src/main/agent/index.ts`, `src/main/agent/thread.ts`, `src/preload/index.ts`, `src/renderer/App.tsx`, `tests/agent/sessionStore.test.ts`, `tests/agent/thread.test.ts`
+
+Implemented details:
+AgentSession status 支持 archived；AgentOp/AgentEvent 支持 session.archive/session.unarchive；归档不删除 events.jsonl；UI session 列表支持归档分组和取消归档打开。
+
+Missing pieces:
+批量归档和归档搜索筛选。
+
+Next phase:
+Phase N
+
+Verification:
+SessionStore 和 thread tests 覆盖 archive/unarchive、resumeLast 跳过归档、归档会话恢复保护。
+
+## Capability: ArtifactRef store
+
+Target:
+大输出、runtime state、checkpoint、trace/evidence 引用外置 artifact，避免 JSONL 膨胀。
+
+Current status: 已实现
+
+Evidence files:
+`src/shared/agent/protocol.ts`, `src/main/agent/artifactStore.ts`, `src/main/agent/tools.ts`, `src/main/agent/verifier.ts`, `src/main/agent/verificationGate.ts`, `src/renderer/components/agent/AgentPanel.tsx`, `tests/agent/artifactStore.test.ts`, `tests/agent/verifier.test.ts`
+
+Implemented details:
+ArtifactRef 包含 kind、uri、mimeType、sizeBytes、sha256、redacted；支持 create/list/read；run_command 和 verification output 写入 artifact；Evidence/ToolResult/VerificationResult 可引用 artifact。
+
+Missing pieces:
+artifact 清理策略和 UI 侧更完整的二进制预览。
+
+Next phase:
+Phase E, Phase J, Phase M
+
+Verification:
+Artifact tests 覆盖 metadata、hash、redaction、session namespace；verifier tests 覆盖 artifact-backed command evidence。
+
+## Capability: Workspace execution substrate
+
+Target:
+统一 local/WSL/SSH/worktree 执行底座，支持进程生命周期、checkpoint、worktree sandbox、runtime state artifact。
+
+Current status: 已实现
+
+Evidence files:
+`src/shared/agent/protocol.ts`, `src/main/agent/workspace.ts`, `src/main/agent/processRegistry.ts`, `src/main/agent/checkpointStore.ts`, `src/main/agent/worktreeSandbox.ts`, `src/main/agent/runtimeState.ts`, `src/main/agent/thread.ts`, `tests/agent/workspace.test.ts`, `tests/agent/runtimeSubstrate.test.ts`
+
+Implemented details:
+AgentWorkspaceLocation 支持 worktree；runtime process registry 支持 register/list/stop/output artifact；checkpoint 记录 git status、文件快照和 runtime state；worktree sandbox 支持 create/dispose/failure reason；turn start、edit apply、verification 后捕获 runtime state artifact。
+
+Missing pieces:
+远程环境的 worktree 能力依赖目标主机可用 git/worktree；sandbox patch merge UI 留到 Phase I/N。
+
+Next phase:
+Phase I, Phase N
+
+Verification:
+Runtime substrate tests 覆盖 checkpoint/runtime state、sandbox failure diagnostics、runtime process artifact；workspace tests 覆盖路径边界和 protected path。
+
+## Capability: rule review
+
+Target:
+规则审查阻止 missing verification、failed evidence、pending proposal、疑似越界修改等风险。
+
+Current status: 已实现
+
+Evidence files:
+`src/main/agent/verificationGate.ts`, `tests/agent/verificationGate.test.ts`, `src/renderer/components/agent/AgentPanel.tsx`
+
+Implemented details:
+runRuleBasedReview 生成 ReviewFinding，blocking finding 阻止 final 并显示在 UI。
+
+Missing pieces:
+accepted risk UI、finding lifecycle、reviewer subagent。
+
+Next phase:
+Phase K
+
+Verification:
+Verification gate tests 覆盖 request_changes 和 blocking finding。
+
+## Capability: LLM evaluator MVP
+
+Target:
+独立 LLM evaluator 以 skeptical reviewer 角色审查 diff/evidence/contract。
+
+Current status: 部分实现
+
+Evidence files:
+`src/main/agent/evaluatorConfig.ts`, `src/main/agent/evaluatorPrompts.ts`, `src/main/agent/evaluatorRunner.ts`, `src/main/agent/runtime.ts`, `tests/agent/evaluator.test.ts`, `tests/agent/provider.test.ts`
+
+Implemented details:
+已有可选 evaluator、独立 model profile、maxTokens、timeout、usage purpose、rule/LLM merge、source badge。
+
+Missing pieces:
+public protocol、parallel evaluator execution、reviewer subagent、accepted risk flow。
+
+Next phase:
+Phase K, Phase P
+
+Verification:
+Evaluator tests 覆盖 prompt、parse、merge 和 provider maxTokens。
+
+## Capability: handoff/progress
+
+Target:
+长任务在 pause/resume/turn boundary 生成可靠进度和交接状态。
+
+Current status: 部分实现
+
+Evidence files:
+`src/shared/agent/protocol.ts`, `src/main/agent/runtime.ts`, `src/main/agent/thread.ts`, `src/main/agent/contextBuilder.ts`, `tests/agent/runtime.test.ts`, `tests/agent/sessionStore.test.ts`
+
+Implemented details:
+已有 FeatureItem、ProgressState、Handoff、turn-end finalize、resume handoff injection、workspace freshness 基础检查。
+
+Missing pieces:
+`.rille/features.json`、中间 checkpoint、git hash/diff freshness、remote workspace freshness。
+
+Next phase:
+Phase L
+
+Verification:
+Runtime/session tests 覆盖 progress/handoff 持久化和恢复。
+
+## Capability: ProjectMemory MVP
+
+Target:
+项目级长期记忆可追溯、可更新、可标记 stale/superseded/conflict。
+
+Current status: 部分实现
+
+Evidence files:
+`src/shared/agent/protocol.ts`, `src/main/agent/memory.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/tools.ts`, `tests/agent/memory.test.ts`
+
+Implemented details:
+已有 ProjectMemoryEntry、MemoryStore、create_memory tool、memory_ref fragment、基础 CRUD。
+
+Missing pieces:
+自动 stale/superseded 检测、memory policy review、sourceRefs 强校验 UI。
+
+Next phase:
+Phase L
+
+Verification:
+Memory tests 覆盖 add/list/update/delete/filter/persist。
+
+## Capability: TraceEvent/usage/eval skeleton
+
+Target:
+Agent 过程可导出、可脱敏、可聚合、可用于 eval。
+
+Current status: 部分实现
+
+Evidence files:
+`src/shared/agent/protocol.ts`, `src/main/agent/trace.ts`, `src/main/agent/provider.ts`, `eval/runner.ts`, `tests/agent/trace.test.ts`
+
+Implemented details:
+已有 TraceEvent、AgentUsage、TraceCollector、redacted export、trajectory metrics、eval case skeleton。
+
+Missing pieces:
+hooks lifecycle、fixture setup/teardown、single-step eval、full-turn eval、CI eval suite。
+
+Next phase:
+Phase M
+
+Verification:
+Trace tests 覆盖 redaction、metrics 和 collector。
+
+## Capability: AgentPanel 基础工作台
+
+Target:
+用户能看到目标、计划、工具、审批、diff、证据、review、handoff 和状态。
+
+Current status: 部分实现
+
+Evidence files:
+`src/renderer/components/agent/AgentPanel.tsx`, `src/shared/agent/protocol.ts`
+
+Implemented details:
+已有 timeline、Task/Plan cards、tool group、approval、diff modal、verification/evidence/review cards、handoff、rule/LLM badge。
+
+Missing pieces:
+session risk/latest verification card、streaming UI、slash/@file/#selection composer、trace/debug view、subagent tree。
+
+Next phase:
+Phase N
+
+Verification:
+当前主要依赖 runtime event replay 和手工 UI 验收；后续需要 reducer/UI 测试。
+
+## Capability: Skills / Plugins / MCP
+
+Target:
+专业知识和外部工具按需加载、可分发、可治理。
+
+Current status: 未实现
+
+Evidence files:
+无当前 runtime 证据。
+
+Implemented details:
+无。
+
+Missing pieces:
+SkillContract、skill discovery、plugin manifest、MCP registry、namespace policy、activation trace。
+
+Next phase:
+Phase O
+
+Verification:
+后续以 skill loading tests、MCP lifecycle tests、policy namespace tests 验收。
+
+## Capability: Subagents / Advisor / Parallel Work
+
+Target:
+通过 explorer/reviewer/verifier/advisor 实现上下文隔离、独立审查、并行探索和高智指导。
+
+Current status: 未实现
+
+Evidence files:
+无当前 runtime 证据。
+
+Implemented details:
+无。
+
+Missing pieces:
+SubagentContract、SubagentRunner、parent-child session tree、permission-scoped tools、advisor purpose、merge gate。
+
+Next phase:
+Phase P
+
+Verification:
+后续以 isolation tests、permission tests、parallel merge tests、reviewer/verifier eval cases 验收。

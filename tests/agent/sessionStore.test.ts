@@ -60,6 +60,25 @@ describe('sessionStore', () => {
     await expect(store.readSessionEvents(meta.id)).resolves.toEqual([event])
   })
 
+  it('archives and unarchives sessions without deleting replayable events', async () => {
+    userData = mkdtempSync(join(tmpdir(), 'rille-session-'))
+    const store = await import('../../src/main/agent/sessionStore')
+    const meta = session()
+    await store.appendSessionEvent({ type: 'session.created', session: meta })
+    const archived = store.archiveSessionMeta(meta.id, true)
+    expect(archived?.status).toBe('archived')
+    await store.appendSessionEvent({ type: 'session.archived', session: archived! })
+
+    expect(store.findLastSession()).toBeNull()
+    await expect(store.readSessionEvents(meta.id)).resolves.toHaveLength(2)
+
+    const restored = store.archiveSessionMeta(meta.id, false)
+    expect(restored?.status).toBe('idle')
+    await store.appendSessionEvent({ type: 'session.unarchived', session: restored! })
+    expect(store.findLastSession()?.id).toBe(meta.id)
+    await expect(store.readSessionEvents(meta.id)).resolves.toHaveLength(3)
+  })
+
   it('ignores corrupt jsonl lines during replay', async () => {
     userData = mkdtempSync(join(tmpdir(), 'rille-session-'))
     const store = await import('../../src/main/agent/sessionStore')

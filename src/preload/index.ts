@@ -13,8 +13,14 @@ import type {
   AgentSessionSummary,
   AgentTurn,
   AgentWorkspaceLocation,
+  ArtifactPayload,
+  ArtifactRef,
   ApprovalDecision,
+  CheckpointRef,
   EditProposal,
+  ExecutionSandbox,
+  RuntimeProcessSummary,
+  RuntimeStateArtifact,
 } from '../shared/agent/protocol'
 
 export interface RilleAPI {
@@ -92,7 +98,18 @@ export interface RilleAPI {
   agentResumeLastSession(workspace: AgentWorkspaceLocation | null): Promise<AgentSession | null>
   agentListSessions(): Promise<AgentSessionSummary[]>
   agentRenameSession(sessionId: string, title: string): Promise<AgentSession | null>
+  agentArchiveSession(sessionId: string): Promise<AgentSession | null>
+  agentUnarchiveSession(sessionId: string): Promise<AgentSession | null>
   agentDeleteSession(sessionId: string): Promise<boolean>
+  agentReadArtifact(sessionId: string, artifactId: string): Promise<ArtifactPayload>
+  agentListArtifacts(sessionId: string): Promise<ArtifactRef[]>
+  agentListRuntimeProcesses(sessionId?: string): Promise<RuntimeProcessSummary[]>
+  agentStopRuntimeProcess(processId: string): Promise<RuntimeProcessSummary>
+  agentCreateCheckpoint(sessionId: string, workspace: AgentWorkspaceLocation, reason: string, turnId?: string): Promise<CheckpointRef>
+  agentRestoreCheckpointAsProposal(sessionId: string, checkpointId: string, filePath?: string): Promise<EditProposal>
+  agentCreateSandbox(sessionId: string, workspace: AgentWorkspaceLocation, reason?: string): Promise<ExecutionSandbox>
+  agentDisposeSandbox(sessionId: string, sandboxId: string): Promise<ExecutionSandbox>
+  agentCaptureRuntimeState(sessionId: string, workspace?: AgentWorkspaceLocation | null, turnId?: string): Promise<RuntimeStateArtifact>
   agentSubmitTurn(sessionId: string, text: string, context: AgentContextSnapshot): Promise<AgentTurn>
   agentInterruptTurn(sessionId: string, turnId: string): Promise<AgentSession | null>
   agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>
@@ -272,11 +289,13 @@ export interface TerminalProfile {
 }
 
 export interface WorkspaceLocation {
-  kind: 'local' | 'ssh' | 'wsl'
+  kind: 'local' | 'ssh' | 'wsl' | 'worktree'
   path: string
   label: string
   connectionId?: string
   targetId?: string
+  origin?: WorkspaceLocation
+  sandboxId?: string
 }
 
 export interface RemoteConnection {
@@ -511,7 +530,18 @@ const api: RilleAPI = {
   agentResumeLastSession: (workspace) => invokeAgent<AgentSession | null>('agent:resumeLastSession', { type: 'session.resumeLast', workspace }),
   agentListSessions: () => invokeAgent<AgentSessionSummary[]>('agent:listSessions', { type: 'session.list' }),
   agentRenameSession: (sessionId, title) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'session.rename', sessionId, title }),
+  agentArchiveSession: (sessionId) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'session.archive', sessionId }),
+  agentUnarchiveSession: (sessionId) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'session.unarchive', sessionId }),
   agentDeleteSession: (sessionId) => invokeAgent<boolean>('agent:dispatch', { type: 'session.delete', sessionId }),
+  agentReadArtifact: (sessionId, artifactId) => invokeAgent<ArtifactPayload>('agent:dispatch', { type: 'artifact.read', sessionId, artifactId }),
+  agentListArtifacts: (sessionId) => invokeAgent<ArtifactRef[]>('agent:dispatch', { type: 'artifact.list', sessionId }),
+  agentListRuntimeProcesses: (sessionId) => invokeAgent<RuntimeProcessSummary[]>('agent:dispatch', { type: 'runtime.process.list', sessionId }),
+  agentStopRuntimeProcess: (processId) => invokeAgent<RuntimeProcessSummary>('agent:dispatch', { type: 'runtime.process.stop', processId }),
+  agentCreateCheckpoint: (sessionId, workspace, reason, turnId) => invokeAgent<CheckpointRef>('agent:dispatch', { type: 'checkpoint.create', sessionId, workspace, reason, turnId }),
+  agentRestoreCheckpointAsProposal: (sessionId, checkpointId, filePath) => invokeAgent<EditProposal>('agent:dispatch', { type: 'checkpoint.restoreAsProposal', sessionId, checkpointId, filePath }),
+  agentCreateSandbox: (sessionId, workspace, reason) => invokeAgent<ExecutionSandbox>('agent:dispatch', { type: 'sandbox.create', sessionId, workspace, reason }),
+  agentDisposeSandbox: (sessionId, sandboxId) => invokeAgent<ExecutionSandbox>('agent:dispatch', { type: 'sandbox.dispose', sessionId, sandboxId }),
+  agentCaptureRuntimeState: (sessionId, workspace, turnId) => invokeAgent<RuntimeStateArtifact>('agent:dispatch', { type: 'runtime.state.capture', sessionId, workspace, turnId }),
   agentSubmitTurn: (sessionId, text, context) => invokeAgent<AgentTurn>('agent:submitTurn', { type: 'turn.submit', sessionId, text, context }),
   agentInterruptTurn: (sessionId, turnId) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'turn.interrupt', sessionId, turnId }),
   agentRespondApproval: (requestId, decision) => invokeAgent<boolean>('agent:dispatch', { type: 'approval.respond', requestId, decision }),

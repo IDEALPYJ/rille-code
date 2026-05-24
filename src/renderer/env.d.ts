@@ -12,8 +12,14 @@ import type {
   AgentSessionSummary,
   AgentTurn,
   AgentWorkspaceLocation,
+  ArtifactPayload,
+  ArtifactRef,
   ApprovalDecision,
+  CheckpointRef,
   EditProposal,
+  ExecutionSandbox,
+  RuntimeProcessSummary,
+  RuntimeStateArtifact,
 } from '../shared/agent/protocol'
 
 export {}
@@ -181,11 +187,13 @@ declare global {
   }
 
   interface WorkspaceLocation {
-    kind: 'local' | 'ssh' | 'wsl'
+    kind: 'local' | 'ssh' | 'wsl' | 'worktree'
     path: string
     label: string
     connectionId?: string
     targetId?: string
+    origin?: WorkspaceLocation
+    sandboxId?: string
   }
 
   interface RemoteConnection {
@@ -375,7 +383,18 @@ declare global {
     agentResumeLastSession(workspace: AgentWorkspaceLocation | null): Promise<AgentSession | null>
     agentListSessions(): Promise<AgentSessionSummary[]>
     agentRenameSession(sessionId: string, title: string): Promise<AgentSession | null>
+    agentArchiveSession(sessionId: string): Promise<AgentSession | null>
+    agentUnarchiveSession(sessionId: string): Promise<AgentSession | null>
     agentDeleteSession(sessionId: string): Promise<boolean>
+    agentReadArtifact(sessionId: string, artifactId: string): Promise<ArtifactPayload>
+    agentListArtifacts(sessionId: string): Promise<ArtifactRef[]>
+    agentListRuntimeProcesses(sessionId?: string): Promise<RuntimeProcessSummary[]>
+    agentStopRuntimeProcess(processId: string): Promise<RuntimeProcessSummary>
+    agentCreateCheckpoint(sessionId: string, workspace: AgentWorkspaceLocation, reason: string, turnId?: string): Promise<CheckpointRef>
+    agentRestoreCheckpointAsProposal(sessionId: string, checkpointId: string, filePath?: string): Promise<EditProposal>
+    agentCreateSandbox(sessionId: string, workspace: AgentWorkspaceLocation, reason?: string): Promise<ExecutionSandbox>
+    agentDisposeSandbox(sessionId: string, sandboxId: string): Promise<ExecutionSandbox>
+    agentCaptureRuntimeState(sessionId: string, workspace?: AgentWorkspaceLocation | null, turnId?: string): Promise<RuntimeStateArtifact>
     agentSubmitTurn(sessionId: string, text: string, context: AgentContextSnapshot): Promise<AgentTurn>
     agentInterruptTurn(sessionId: string, turnId: string): Promise<AgentSession | null>
     agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>

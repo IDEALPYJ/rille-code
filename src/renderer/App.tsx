@@ -274,6 +274,15 @@ export default function App() {
 
   const selectAgentSession = useCallback(async (summary: AgentSessionSummary) => {
     if (selectedAgentSession?.id === summary.id) return
+    if (summary.status === 'archived') {
+      if (!window.confirm('此对话已归档。要取消归档并打开吗？')) return
+      const restored = await window.rille.agentUnarchiveSession(summary.id)
+      if (!restored) return
+      setSelectedAgentSession(restored)
+      await loadWorkspaceContext(restored.workspace)
+      void refreshAgentSessions()
+      return
+    }
     const session: AgentSession = {
       id: summary.id,
       title: summary.title,
@@ -720,6 +729,24 @@ export default function App() {
     void refreshAgentSessions()
   }, [loadWorkspaceContext, refreshAgentSessions, selectedAgentSession?.id])
 
+  const archiveAgentSession = useCallback(async (session: AgentSessionSummary) => {
+    const updated = session.status === 'archived'
+      ? await window.rille.agentUnarchiveSession(session.id)
+      : await window.rille.agentArchiveSession(session.id)
+    if (!updated) return
+    setAgentSessions(prev => prev.map(item => item.id === session.id ? { ...item, status: updated.status, updatedAt: updated.updatedAt } : item))
+    if (selectedAgentSession?.id === session.id) {
+      if (updated.status === 'archived') {
+        setSelectedAgentSession(null)
+        await loadWorkspaceContext(null)
+      } else {
+        setSelectedAgentSession(updated)
+        await loadWorkspaceContext(updated.workspace)
+      }
+    }
+    void refreshAgentSessions()
+  }, [loadWorkspaceContext, refreshAgentSessions, selectedAgentSession?.id])
+
   const runEditorCommand = useCallback((command: string, fallbackCommand?: string) => {
     if (editorRef.current) {
       editorRef.current.focus()
@@ -842,6 +869,7 @@ export default function App() {
   const projectSessionGroups = useMemo(() => {
     const groups = new Map<string, { workspace: WorkspaceLocation; sessions: AgentSessionSummary[] }>()
     for (const session of agentSessions) {
+      if (session.status === 'archived') continue
       if (!session.workspace) continue
       const key = workspaceKey(session.workspace)
       const existing = groups.get(key)
@@ -859,7 +887,12 @@ export default function App() {
   }, [agentSessions])
 
   const plainSessions = useMemo(
-    () => agentSessions.filter(session => !session.workspace),
+    () => agentSessions.filter(session => !session.workspace && session.status !== 'archived'),
+    [agentSessions],
+  )
+
+  const archivedSessions = useMemo(
+    () => agentSessions.filter(session => session.status === 'archived'),
     [agentSessions],
   )
 
@@ -939,6 +972,13 @@ export default function App() {
             plainSessions.map(renderSessionItem)
           )}
         </section>
+
+        {archivedSessions.length > 0 && (
+          <section className="conversation-sidebar-section plain">
+            <div className="conversation-sidebar-heading">归档</div>
+            {archivedSessions.map(renderSessionItem)}
+          </section>
+        )}
       </div>
     </div>
   )
@@ -1491,6 +1531,17 @@ export default function App() {
               }}
             >
               重命名
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                const session = sessionContextMenu.session
+                setSessionContextMenu(null)
+                void archiveAgentSession(session)
+              }}
+            >
+              {sessionContextMenu.session.status === 'archived' ? '取消归档' : '归档'}
             </button>
             <button
               type="button"

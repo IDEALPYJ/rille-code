@@ -1,130 +1,61 @@
-# RilleCode Agent 模块化设计文档索引
+# RilleCode Agent V2 规划索引
 
-## 目标
+## 定位
 
-本目录是 RilleCode Agent 后续实现的模块化设计入口。每个核心模块独立成文，方便逐一实现、评审和更新。
+`plan/` 是一套从 Phase A 开始设计完整 Agent Runtime 的独立规划。它用从零架构叙事描述目标系统，再诚实标注 RilleCode 当前已经实现、部分实现和未实现的能力。
 
-执行推进时以 `15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md` 为唯一总控看板。每次完成一个实现步骤后，先更新 15 号文档的完成标记、验证结果、完成记录和下一步指针，再同步对应模块文档。
+本规划吸收两类资料：
 
-这套文档解决：
-
-- 把 Agent 设计拆成可执行模块，而不是单一巨型总纲。
-- 把当前仓库已有实现作为事实基线。
-- 把任务边界、上下文、工具、权限、执行、验证、Review、记忆、Trace 和 UX 的职责分清。
-- 给后续工程实现提供明确接口草案、流程、测试和反模式。
-
-这套文档不解决：
-
-- 不直接修改代码。
-- 不替代源码中的真实类型定义。
-- 不把尚未实现的能力写成已完成。
-- 不引入多 Agent 复杂化作为默认路径。
+- `OpenSourceCode/blogs/`：Anthropic、Claude、OpenAI、LangChain 等关于 agent harness、tool design、prompt cache、subagents、eval、managed agents 的行业设计思想。
+- `OpenSourceCode/learn_from/`：Claude Code、Codex、DeepSeek TUI、OpenCode 的源码拆解和可借鉴工程模式。
 
 ## 阅读顺序
 
-建议按这个顺序阅读和实现：
+1. `01_SOURCE_SYNTHESIS.md`：先看参考资料如何被抽象为 RilleCode 的设计原则。
+2. `02_TARGET_ARCHITECTURE.md`：看完整目标架构和模块边界。
+3. `03_PROTOCOL_AND_EVENTS.md`：看从零协议、事件、消息 part 和 trace 设计。
+4. `04_PHASE_A_TO_Q_MASTER_PLAN.md`：看 Phase A 到 Phase Q 的完整实现计划。
+5. `05_IMPLEMENTATION_ROADMAP.md`：看依赖顺序、里程碑和实施节奏。
+6. `06_IMPLEMENTED_STATUS_MATRIX.md`：看当前源码已经实现了哪些目标能力。
+7. `07_ACCEPTANCE_AND_TEST_STRATEGY.md`：看验收、测试和 eval 策略。
+8. `08_EXECUTION_TRACKER.md`：看执行总控、完成标记表和完成记录。
 
-1. `15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`：执行总控、完成标记、验收记录和下一步指针。
-2. `01_CURRENT_BASELINE.md`：先确认当前系统已经具备什么。
-3. `02_TASK_CONTRACT.md`：定义任务边界和验收标准。
-4. `03_ORCHESTRATOR_AGENT_LOOP.md`：定义主循环和完成门禁。
-5. `04_MODEL_GATEWAY.md`：隔离 provider 和模型输出。
-6. `05_CONTEXT_ENGINE.md`：重构上下文构造。
-7. `06_TOOL_RUNTIME.md`：治理工具和 Observation。
-8. `07_POLICY_SAFETY.md`：引入项目级权限和安全策略。
-9. `08_EXECUTION_RUNTIME.md`：稳住 local / WSL / SSH 执行环境。
-10. `09_VERIFICATION.md`：建立 evidence-driven completion。
-11. `10_REVIEW_QUALITY.md`：建立独立质量门。
-12. `11_MEMORY_LONG_RUNNING.md`：支持长任务和可治理记忆。
-13. `12_OBSERVABILITY_EVAL.md`：支持 trace、debug、replay 和 eval。
-14. `13_PRODUCT_UX.md`：把复杂状态翻译成可控工作台。
-15. `14_IMPLEMENTATION_ROADMAP.md`：阶段说明和历史完成记录；执行状态以 15 号文档为准。
-16. `16_POST_BLOG_GAP_ANALYSIS.md`：基于 27 篇各家 coding agent 博客的差距分析与后续 Phase K-O 规划。
+## 状态标记
 
-## 模块依赖图
-
-```text
-Task Contract
-  -> Orchestrator
-  -> Context Engine
-  -> Tool Runtime
-  -> Policy
-  -> Execution Runtime
-  -> Verification
-  -> Review
-  -> Memory / Long-running
-  -> Observability / Eval
-  -> Product UX
-
-Model Gateway 被 Orchestrator 调用，并消费 Context Engine 输出。
-Tool Runtime 只执行受控动作，不决定任务策略。
-Policy 横跨 Context、Tool、Execution、Memory 和 UX。
-Verification 与 Review 都必须回到 Task Contract 和 Evidence。
-```
-
-## 全局设计原则
-
-1. 模型负责推理和候选意图，系统负责边界、执行、验证和恢复。
-2. 用户请求先转成 Task Contract，再进入执行。
-3. Context 是当前工作集，不是事实源。
-4. Tool 是模型影响外部世界的唯一通道。
-5. 文件写入默认走 diff proposal。
-6. 权限不是最后的拦截器，而是行动链路的一部分。
-7. 完成由 evidence 和 review gate 判断，不由模型自述决定。
-8. 长任务靠 progress、handoff、checkpoint 和 evidence 维持连续性。
-9. Trace 是 debug、eval、resume 和用户信任的基础。
-10. 先把单 Agent 闭环做硬，再引入 Skills、Advisor 和 Subagents。
-11. Generator 不评估自己的工作，独立 LLM 评估器是质量最后防线。
-12. 上下文隔离是能力倍增器，子智能体让每个 Agent 拥有干净的上下文窗口。
-13. 缓存意识是架构约束而非性能优化。
-14. Eval 是工程的组成部分，不是事后补充。
-15. 模型在进步，脚手架要定期拆除。
-
-## 执行规则
-
-1. 完全体协议和架构从一开始纳入设计，避免临时 MVP 形态反复推翻。
-2. 编码按可验证小步推进，每一步都要有测试或明确手工验收记录。
-3. 新增协议必须补 JSONL replay 兼容测试。
-4. 新增 runtime 行为必须补 unit 或 integration 测试。
-5. 新增 UI 状态必须能从 event replay 恢复。
-6. 每步完成后必须更新 `15_FULL_AGENT_IMPLEMENTATION_MASTER_PLAN.md`。
-
-## 统一文档结构
-
-除索引和路线图外，每个模块文档都使用以下结构：
-
-- 目标
-- 当前基线
-- 设计原则
-- 核心数据结构
-- 运行流程
-- 与其他模块关系
-- 实现步骤
-- 测试与验收
-- 反模式
-
-## 术语表
-
-| 术语 | 含义 |
+| 状态 | 含义 |
 | --- | --- |
-| Task Contract | 一次任务的目标、范围、非目标、约束、验收标准和风险点 |
-| ModelDecision | 模型输出的候选意图，不代表系统事实或执行结果 |
-| Observation | 工具、权限、验证、Review 或用户决策产生的新事实 |
-| Evidence | 可追溯的完成证据，例如测试输出、诊断、diff、截图、Review 结论 |
-| Handoff | 支持暂停、恢复和交接的结构化工作状态 |
-| Trace | 可复盘的任务轨迹，覆盖 context、model、tool、policy、runtime、verification、review |
+| 已实现 | 当前源码中已有核心协议、runtime 行为、持久化或测试证据，后续只需扩展或打磨。 |
+| 部分实现 | 当前源码已有骨架或 MVP，但缺少关键边界、产品交互、协议完整性或评估闭环。 |
+| 未实现 | 当前源码没有可用能力，或只有文档预留但没有 runtime 行为。 |
 
-## 基线验证命令
+## V2 设计原则
 
-后续改动 Agent 相关模块时，至少运行：
+1. IDE-native agent 不是聊天助手；它必须能理解 workspace、diff、diagnostics、verification 和 user approval。
+2. Session 是 durable state，context window 只是临时视野。
+3. Harness 控制边界、恢复、验证和审计；Brain 只提出候选意图。
+4. Hands 是受控执行环境，可以是 local、WSL、SSH、worktree、sandbox 或未来 remote runtime。
+5. Tool 是模型影响外部世界的唯一通道；runtime-only action 不能暴露给模型。
+6. Ask 默认，deny-and-continue，危险动作 fail closed。
+7. Task Contract 和 Plan 先于执行，Evidence 和 Review 决定完成。
+8. Generator 不评估自己的工作；独立 evaluator/reviewer 是质量层。
+9. Context 通过 fragment pipeline 构造；stable prefix、dynamic suffix 和 cache key 是架构约束。
+10. 长任务依靠 handoff、feature list、checkpoint、compaction 和 event log，而不是无限聊天历史。
+11. Subagent 用于上下文隔离和并行探索，不能绕过主 Agent 的 policy、verification 和 review。
+12. Eval 是工程能力；要评估 trajectory、state、tool choice、policy compliance 和 final outcome。
+13. UI 消费事件和状态，不在前端实现 Agent Loop。
+14. 每个阶段都要可验证、可回放、可降级、可删除。
 
-```text
-npm test
-npm run typecheck
-```
+## 执行更新规则
 
-涉及构建入口、Electron/Vite 或 renderer 集成时，再运行：
+- 实际推进时以 `08_EXECUTION_TRACKER.md` 的完成标记为准。
+- 完成任一 Phase 或 checklist item 后，更新 `08_EXECUTION_TRACKER.md` 的状态、验证结果、完成记录和下一步指针。
+- 若源码事实发生变化，同步更新 `06_IMPLEMENTED_STATUS_MATRIX.md`。
+- 若 Phase 范围或验收标准发生变化，同步更新 `04_PHASE_A_TO_Q_MASTER_PLAN.md` 和 `07_ACCEPTANCE_AND_TEST_STRATEGY.md`。
 
-```text
-npm run build
+## 文档验收命令
+
+```bash
+rg -n "TO""DO|TB""D|待""补" plan
+rg -n "下一步.*Phase ""K|Phase ""K.*下一步" plan
+rg -n "已实现|部分实现|未实现" plan/06_IMPLEMENTED_STATUS_MATRIX.md
 ```
