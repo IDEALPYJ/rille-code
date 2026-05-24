@@ -27,10 +27,10 @@ import type {
 } from '../../shared/agent/protocol'
 import { readAgentConfigSnapshot } from './config'
 import { buildAgentContext, DEFAULT_CONTEXT_BUDGET_TOKENS } from './contextBuilder'
-import { callAgentModel, callAgentModelWithTools, type AgentChatMessage, type ModelCallResult } from './provider'
+import { streamAgentModelWithTools, type AgentChatMessage, type ModelCallResult } from './provider'
 import { TraceCollector } from './trace'
 import { redactSecrets } from './redact'
-import { decidePermission, deniedToolResult, DenialTracker, PermissionGrantStore, permissionForCall, permissionPattern } from './permissions'
+import { addWorkspacePermissionGrant, decidePermission, deniedToolResult, DenialTracker, PermissionGrantStore, permissionForCall, permissionPattern } from './permissions'
 import { createRuntimeToolCall, executeToolCall, getModelVisibleToolDefinitions, getRegisteredTool, type RuntimeToolCall } from './tools'
 import { VerifierRunner } from './verifier'
 import { TextJsonToolAdapter, type ModelAction } from './modelAdapter'
@@ -107,6 +107,10 @@ function isIndependentRead(call: RuntimeToolCall): boolean {
   const tool = getRegisteredTool(call.name)
   if (!tool) return false
   return tool.sideEffect === 'none' || tool.sideEffect === 'workspace_read'
+}
+
+function cacheKeyForContext(sessionId: string, turnId: string, prompt: string): string {
+  return `rille:${sessionId}:${turnId}:${prompt.length}:${prompt.slice(0, 80)}`
 }
 
 function observationStatus(result: ToolResultView): Observation['status'] {
@@ -286,11 +290,14 @@ export class AgentLoop {
         description: t.description,
         inputSchema: t.inputSchema,
       }))
-      const { text: modelText, usage, toolCalls: nativeToolCalls } = await callAgentModelWithTools(messages, tools, { signal: this.options.signal })
+      const modelResult = await this.callModelStreaming(messages, tools, assistantMessageId, cacheKeyForContext(this.options.session.id, this.options.turn.id, contextResult.prompt))
+      const { text: modelText, usage, toolCalls: nativeToolCalls, fallbackTrace, cacheMetrics, streamedTextPart } = modelResult
       if (this.options.signal.aborted) return this.finalize('interrupted')
       const executorUsage = usage ? { ...usage, purpose: 'executor' as const } : undefined
       this.traceCollector.modelCalled(this.options.session.id, this.options.turn.id, executorUsage)
       if (executorUsage) this.traceCollector.costUpdated(this.options.session.id, this.options.turn.id, executorUsage)
+      for (const fallback of fallbackTrace || []) this.traceCollector.modelFallback(this.options.session.id, this.options.turn.id, fallback)
+      if (cacheMetrics) this.traceCollector.modelCache(this.options.session.id, this.options.turn.id, cacheMetrics)
 
       // Use native tool calls if provider returned them; fall back to JSON text parsing
       let action: ModelAction
@@ -332,14 +339,18 @@ export class AgentLoop {
           })
           continue
         }
-        this.emitPart({
-          id: createPartId(),
-          messageId: assistantMessageId,
-          type: 'text',
-          role: 'assistant',
-          text: action.text,
-          createdAt: now(),
-        })
+        if (streamedTextPart) {
+          this.updatePart({ ...streamedTextPart, text: action.text })
+        } else {
+          this.emitPart({
+            id: createPartId(),
+            messageId: assistantMessageId,
+            type: 'text',
+            role: 'assistant',
+            text: action.text,
+            createdAt: now(),
+          })
+        }
         this.emitStage(assistantMessageId, 'completed', '模型给出最终答复')
         return this.finalize('completed')
       }
@@ -419,6 +430,14 @@ export class AgentLoop {
               scope: 'session',
             })
           }
+          if (decision.action === 'allow_workspace') {
+            addWorkspacePermissionGrant({
+              context: this.options.context,
+              permission: permissionForCall(call),
+              pattern: decision.pattern || permissionPattern(call),
+              expiresAt: decision.expiresAt,
+            })
+          }
         }
         slots.push({ call, toolPart, runningCall, allowed: true })
       }
@@ -449,6 +468,55 @@ export class AgentLoop {
 
     this.emitStage(assistantMessageId, 'failed', '达到最大迭代次数')
     return this.finalize('max_turns')
+  }
+
+  private async callModelStreaming(messages: AgentChatMessage[], tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>, assistantMessageId: string, promptCacheKey: string): Promise<ModelCallResult & { streamedTextPart?: Extract<MessagePart, { type: 'text' }> }> {
+    let text = ''
+    let usage: ModelCallResult['usage']
+    let toolCalls: ModelCallResult['toolCalls']
+    let cacheMetrics: ModelCallResult['cacheMetrics']
+    const fallbackTrace: NonNullable<ModelCallResult['fallbackTrace']> = []
+    let textPart: Extract<MessagePart, { type: 'text' }> | null = null
+    const toolArgs = new Map<string, { name: string; arguments: string }>()
+    const completeFromToolArgs = () => [...toolArgs.entries()].map(([id, item]) => ({
+      id,
+      name: item.name,
+      input: (() => {
+        try { return JSON.parse(item.arguments || '{}') as Record<string, unknown> } catch { return {} }
+      })(),
+    }))
+    for await (const event of streamAgentModelWithTools(messages, tools, {
+      signal: this.options.signal,
+      promptCacheKey,
+      promptCacheRetention: '24h',
+    })) {
+      if (this.options.signal.aborted) break
+      if (event.type === 'model.text.delta') {
+        text += event.text
+        if (!textPart) {
+          textPart = { id: createPartId(), messageId: assistantMessageId, type: 'text', role: 'assistant', text, createdAt: now() }
+          this.emitPart(textPart)
+        } else {
+          textPart.text = text
+          this.updatePart(textPart)
+        }
+      } else if (event.type === 'model.tool_call.delta') {
+        const current = toolArgs.get(event.callId) || { name: event.name || '', arguments: '' }
+        toolArgs.set(event.callId, { name: event.name || current.name, arguments: current.arguments + (event.argumentsDelta || '') })
+      } else if (event.type === 'model.tool_call.done') {
+        toolArgs.set(event.callId, { name: event.name, arguments: event.arguments })
+      } else if (event.type === 'model.failed') {
+        if (event.fallback) fallbackTrace.push(event.fallback)
+      } else if (event.type === 'model.completed') {
+        text = event.text || text
+        usage = event.usage
+        toolCalls = event.toolCalls?.length ? event.toolCalls : completeFromToolArgs()
+        cacheMetrics = event.cacheMetrics
+      }
+    }
+    if (!toolCalls || toolCalls.length === 0) toolCalls = completeFromToolArgs()
+    if (!text && (!toolCalls || toolCalls.length === 0)) throw new Error('模型返回为空。')
+    return { text, usage, toolCalls: toolCalls.length > 0 ? toolCalls : undefined, cacheMetrics, fallbackTrace: fallbackTrace.length > 0 ? fallbackTrace : undefined, streamedTextPart: textPart || undefined }
   }
 
   private async executeAndRecord(call: RuntimeToolCall, toolPart: Extract<MessagePart, { type: 'tool' }>, runningCall: ToolCallView): Promise<{ call: RuntimeToolCall; result: unknown }> {

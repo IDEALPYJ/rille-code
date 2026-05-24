@@ -5,7 +5,7 @@
 Target:
 将用户请求转为 goal、scope、non-goals、acceptance criteria、verification plan、risk 和 assumptions。
 
-Current status: 部分实现
+Current status: 已实现
 
 Evidence files:
 `src/shared/agent/protocol.ts`, `src/main/agent/taskContract.ts`, `src/main/agent/thread.ts`, `src/main/agent/tools.ts`, `tests/agent/taskContract.test.ts`, `tests/agent/tools.test.ts`
@@ -33,16 +33,38 @@ Evidence files:
 `src/main/agent/runtime.ts`, `src/main/agent/modelAdapter.ts`, `src/main/agent/tools.ts`, `tests/agent/runtime.test.ts`, `tests/agent/modelAdapter.test.ts`
 
 Implemented details:
-AgentLoop 支持 context -> model -> tool calls -> permission -> execution -> observation/evidence -> repair/final gate。
+AgentLoop 支持 context -> model -> streaming delta/tool calls -> permission -> execution -> observation/evidence -> repair/final gate。
 
 Missing pieces:
-Streaming delta、subagent delegation、explicit compaction turn。
+subagent delegation、explicit compaction turn。
 
 Next phase:
-Phase D, Phase P
+Phase P
 
 Verification:
 Runtime tests 覆盖 tool loop、approval、final gate 和 evidence path。
+
+## Capability: Model Gateway + Streaming Protocol
+
+Target:
+模型网关对 runtime 暴露 provider-neutral streaming contract，支持 Responses API、semantic SSE、fallback trace 和 cache metrics。
+
+Current status: 已实现
+
+Evidence files:
+`src/shared/agent/protocol.ts`, `src/main/agent/provider.ts`, `src/main/agent/runtime.ts`, `src/main/agent/trace.ts`, `tests/agent/provider.test.ts`, `tests/agent/runtime.test.ts`
+
+Implemented details:
+协议新增 ModelStreamEvent、ModelDecision、ProviderFallbackTrace、ModelCacheMetrics；OpenAI Responses adapter 支持 instructions/input/function tools/output parse；Responses SSE 解析 output text delta、tool argument delta、completed/failed；AgentLoop 聚合 delta 并写入 MessagePart；fallback 仅覆盖网络、429、5xx、empty response 和 unsupported streaming；usage 统一提取 cached input/cache write tokens 并写入 trace。
+
+Missing pieces:
+Anthropic/Gemini streaming 仍走非流式 fallback trace；更细粒度 reasoning delta UI 可在 Phase N 扩展。
+
+Next phase:
+Phase N
+
+Verification:
+Provider tests 覆盖 Responses payload、tool call parse、usage/cache metrics、SSE parser、fallback reason；Runtime tests 覆盖 streaming 入口与 tool loop 兼容。
 
 ## Capability: ContextFragment pipeline
 
@@ -77,60 +99,60 @@ Evidence files:
 `src/main/agent/tools.ts`, `tests/agent/tools.test.ts`
 
 Implemented details:
-RegisteredTool 具备 visibility、sideEffect、validate；非法输入返回结构化 failure。
+RegisteredTool 具备 visibility、sideEffect、validate、deferred、category、keywords、activationHint；非法输入返回结构化 failure；`search_tools` 只返回 schema 摘要；`explore_codebase`、`verify_changes`、`inspect_runtime_state` 复用底层 runtime 能力并输出 Observation/Evidence/ArtifactRef。
 
 Missing pieces:
-组合工具、deferred tool search、tool effectiveness eval。
+插件化工具包、外部 MCP lifecycle、技能治理。
 
 Next phase:
-Phase E
+Phase O
 
 Verification:
-Tool tests 覆盖 validation、runtime-only deny 和 update tools。
+Tool tests 覆盖 validation、runtime-only deny、update tools、deferred discovery、组合工具和 artifact-backed 输出。
 
 ## Capability: policy loader
 
 Target:
 项目级 policy 控制 command/file/git/network/memory 权限。
 
-Current status: 部分实现
+Current status: 已实现
 
 Evidence files:
 `src/main/agent/permissions.ts`, `tests/agent/permissions.test.ts`, `src/main/agent/runtime.ts`
 
 Implemented details:
-已有 permission mode、command risk classifier、`.rille/policy.json` loader、denial tracker、policy denial Observation。
+已有 permission mode、`.rille/policy.json` loader、denial tracker、policy denial Observation、BashArity-aware command subject、Guardian/classifier、sandboxRequired policy。
 
 Missing pieces:
-persistent workspace grants、Guardian/classifier、BashArity subject、sandbox policy。
+Guardian LLM 第二意见、完整安全审计 UI。
 
 Next phase:
-Phase F
+Phase N, Phase Q
 
 Verification:
-Permission tests 覆盖 risk 分类、policy allow/ask/deny、grant。
+Permission tests 覆盖 risk 分类、policy allow/ask/deny、workspace grant、Guardian、BashArity subject、sandboxRequired。
 
-## Capability: PermissionGrant session scope
+## Capability: PermissionGrant scopes
 
 Target:
-用户可在限定范围内授权重复动作，授权可审计、可过期。
+用户可在 once/session/workspace 范围内授权重复动作，授权可审计、可过期、可隔离 workspace。
 
-Current status: 部分实现
+Current status: 已实现
 
 Evidence files:
-`src/shared/agent/protocol.ts`, `src/main/agent/permissions.ts`, `src/main/agent/thread.ts`, `tests/agent/permissions.test.ts`
+`src/shared/agent/protocol.ts`, `src/main/agent/permissions.ts`, `src/main/agent/thread.ts`, `src/main/agent/runtime.ts`, `src/renderer/components/agent/AgentPanel.tsx`, `tests/agent/permissions.test.ts`
 
 Implemented details:
-PermissionGrantStore 支持 once/session grant，ApprovalRequest 携带 grantOptions。
+PermissionGrantStore 支持 once/session grant；workspace grant store 按 workspace path/connection + permission + pattern 持久化，支持 expiresAt、revoked、audit；ApprovalRequest 携带 once/session/workspace grantOptions，UI 可选择 workspace 授权。
 
 Missing pieces:
-workspace-scope persistent grant、grant export/audit UI、expiry cleanup。
+grant export/audit UI 和批量撤销入口。
 
 Next phase:
-Phase F
+Phase N, Phase Q
 
 Verification:
-Permission tests 覆盖 session grant matching。
+Permission tests 覆盖 session grant matching、workspace grant 持久化、过期、撤销和跨 workspace 隔离。
 
 ## Capability: diff proposal/apply guard
 
@@ -215,7 +237,7 @@ Missing pieces:
 artifact 清理策略和 UI 侧更完整的二进制预览。
 
 Next phase:
-Phase E, Phase J, Phase M
+Phase J, Phase M, Phase N
 
 Verification:
 Artifact tests 覆盖 metadata、hash、redaction、session namespace；verifier tests 覆盖 artifact-backed command evidence。

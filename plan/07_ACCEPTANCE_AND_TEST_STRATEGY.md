@@ -103,6 +103,9 @@ npm run build
 - runtime-only tool 被模型请求时拒绝。
 - 读取 protected path 被拦截。
 - prompt injection 出现在 tool output 时不被当作 instruction。
+- workspace grant 只在同一 workspace key 和匹配 pattern 下生效。
+- redirect、pipe、subshell、publish/deploy 被 BashArity/Guardian 标为 ask/deny。
+- sandboxRequired 命令在 sandbox 不可用时 fail closed。
 
 ### Tool eval
 
@@ -112,7 +115,20 @@ npm run build
 
 - `explore_codebase` 比多次 read/search 更少 token。
 - `verify_changes` 正确收集 diff、diagnostics、command evidence。
-- deferred tool 能被发现且不破坏稳定工具前缀。
+- deferred tool 能被 `search_tools` 命中且不进入稳定 prompt。
+- 组合工具 trajectory 包含底层 read/search/verification evidence，而不是只看最终自然语言答案。
+- 大输出通过 ArtifactRef 引用，eval 校验 hash/size/redacted metadata。
+
+### Model gateway eval
+
+验证 provider adapter、streaming 和 fallback 是否稳定。
+
+示例：
+
+- OpenAI Responses payload 正确包含 instructions、input、function tools 和 prompt cache key。
+- SSE semantic events 能聚合 text delta、tool argument delta、completed/failed。
+- 429、5xx、empty response 和 unsupported streaming 产生 ProviderFallbackTrace。
+- usage/cache metrics 写入 AgentUsage 和 TraceEvent。
 
 ## EvalCase V2 草案
 

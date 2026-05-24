@@ -39,6 +39,19 @@ vi.mock('../../src/main/agent/provider', () => ({
     if (typeof textResult === 'string') return { text: textResult, usage: undefined }
     return textResult
   },
+  streamAgentModelWithTools: async function* (...args: unknown[]) {
+    const textResult = await callAgentModelMock(...args)
+    const result = typeof textResult === 'string' ? { text: textResult, usage: undefined } : textResult
+    yield {
+      type: 'model.completed',
+      text: result?.text,
+      usage: result?.usage,
+      toolCalls: result?.toolCalls,
+      cacheMetrics: result?.cacheMetrics,
+      fallbackTrace: result?.fallbackTrace,
+      createdAt: Date.now(),
+    }
+  },
 }))
 
 function session(): AgentSession {

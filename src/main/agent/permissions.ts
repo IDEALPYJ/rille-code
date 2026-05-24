@@ -1,9 +1,15 @@
 import { randomUUID } from 'crypto'
+import { app } from 'electron'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { dirname, join } from 'path'
 import type {
   AgentContextSnapshot,
   AgentPermissionMode,
   ApprovalRequest,
+  CommandSubject,
   GrantScope,
+  GuardianDecision,
   PermissionGrant,
   PolicyDecision,
   PolicyPermission,
@@ -80,9 +86,83 @@ export class PermissionGrantStore {
   }
 }
 
+function grantRoot(): string {
+  const userData = typeof app?.getPath === 'function' ? app.getPath('userData') : join(tmpdir(), 'rillecode-test-user-data')
+  return join(userData, 'agent', 'workspace-grants.json')
+}
+
+export class WorkspacePermissionGrantStore {
+  private grants: PermissionGrant[] = []
+
+  load(): this {
+    const path = grantRoot()
+    if (!existsSync(path)) {
+      this.grants = []
+      return this
+    }
+    try {
+      const parsed = JSON.parse(readFileSync(path, 'utf8')) as { grants?: PermissionGrant[] }
+      this.grants = Array.isArray(parsed.grants) ? parsed.grants : []
+    } catch {
+      this.grants = []
+    }
+    return this
+  }
+
+  save(): void {
+    const path = grantRoot()
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, JSON.stringify({ grants: this.grants }, null, 2), 'utf8')
+  }
+
+  add(input: { workspaceKey: string; permission: PolicyPermission; pattern: string; action?: 'allow' | 'deny'; expiresAt?: number }): PermissionGrant {
+    const grant: PermissionGrant = {
+      id: `grant_${randomUUID()}`,
+      permission: input.permission,
+      pattern: input.pattern,
+      action: input.action || 'allow',
+      scope: 'workspace',
+      workspaceKey: input.workspaceKey,
+      expiresAt: input.expiresAt,
+      createdAt: Date.now(),
+    }
+    this.grants = [grant, ...this.grants.filter(item => !(item.workspaceKey === grant.workspaceKey && item.permission === grant.permission && item.pattern === grant.pattern))]
+    this.save()
+    return grant
+  }
+
+  revoke(grantId: string): boolean {
+    const before = this.grants.length
+    this.grants = this.grants.filter(grant => grant.id !== grantId)
+    this.save()
+    return this.grants.length !== before
+  }
+
+  list(workspaceKey?: string, now = Date.now()): PermissionGrant[] {
+    return this.grants.filter(grant => (!workspaceKey || grant.workspaceKey === workspaceKey) && (!grant.expiresAt || grant.expiresAt > now))
+  }
+
+  match(workspaceKey: string, permission: PolicyPermission, patterns: string[], now = Date.now()): PermissionGrant | null {
+    return this.list(workspaceKey, now).find(grant => grant.permission === permission && patterns.some(pattern => patternMatches(grant.pattern, pattern))) ?? null
+  }
+}
+
+export function workspaceGrantKey(context?: AgentContextSnapshot): string | null {
+  const workspace = context?.workspace
+  if (!workspace) return null
+  return `${workspace.kind}:${workspace.connectionId || workspace.targetId || 'local'}:${workspace.path}`
+}
+
+export function addWorkspacePermissionGrant(input: { context?: AgentContextSnapshot; permission: PolicyPermission; pattern: string; expiresAt?: number }): PermissionGrant | null {
+  const key = workspaceGrantKey(input.context)
+  if (!key) return null
+  return new WorkspacePermissionGrantStore().load().add({ workspaceKey: key, permission: input.permission, pattern: input.pattern, expiresAt: input.expiresAt })
+}
+
 function commandPattern(call: RuntimeToolCall): string {
   const commandLine = typeof call.input.commandLine === 'string' ? call.input.commandLine.trim() : ''
-  return `${call.name}:${commandLine.split(/\s+/).slice(0, 2).join(' ')}`
+  const subject = parseCommandSubject(commandLine)
+  return `${call.name}:${subject.primary}${subject.args[0] ? ` ${subject.args[0]}` : ''}`.trim()
 }
 
 function isDangerousCommand(commandLine: string): boolean {
@@ -94,15 +174,87 @@ function isShellWriteCommand(commandLine: string): boolean {
     || /^\s*(touch|mkdir|copy|xcopy|cp|mv|rm|del|erase|rmdir|new-item|set-content|add-content|out-file)\b/i.test(commandLine)
 }
 
+function tokenizeCommand(commandLine: string): string[] {
+  const tokens: string[] = []
+  let current = ''
+  let quote: '"' | "'" | null = null
+  let escaping = false
+  for (const char of commandLine) {
+    if (escaping) {
+      current += char
+      escaping = false
+      continue
+    }
+    if (char === '\\' && quote !== "'") {
+      escaping = true
+      continue
+    }
+    if ((char === '"' || char === "'") && (!quote || quote === char)) {
+      quote = quote ? null : char
+      continue
+    }
+    if (!quote && /\s/.test(char)) {
+      if (current) tokens.push(current)
+      current = ''
+      continue
+    }
+    if (!quote && ['|', '>', '<', ';', '&'].includes(char)) {
+      if (current) tokens.push(current)
+      tokens.push(char)
+      current = ''
+      continue
+    }
+    current += char
+  }
+  if (current) tokens.push(current)
+  return tokens
+}
+
+export function parseCommandSubject(commandLine: string): CommandSubject {
+  const raw = commandLine.trim()
+  const tokens = tokenizeCommand(raw)
+  const envAssignments = tokens.filter(token => /^[A-Za-z_][A-Za-z0-9_]*=/.test(token))
+  const commandTokens = tokens.filter(token => !envAssignments.includes(token))
+  const controlIndex = commandTokens.findIndex(token => ['|', '>', '<', ';', '&'].includes(token) || token === '&&' || token === '||')
+  const primaryTokens = (controlIndex >= 0 ? commandTokens.slice(0, controlIndex) : commandTokens).filter(Boolean)
+  const primary = (primaryTokens[0] || '').toLowerCase()
+  const args = primaryTokens.slice(1).map(token => token.toLowerCase())
+  const subjects = [
+    primary ? `command:${primary}${args[0] ? ` ${args[0]}` : ''}` : 'command:',
+    primary === 'git' && args[0] ? `git:${args[0]}` : '',
+    ['npm', 'pnpm', 'yarn', 'bun'].includes(primary) && args[0] ? `package:${primary} ${args[0]}` : '',
+    commandTokens.includes('|') ? 'shell:pipe' : '',
+    commandTokens.some(token => token === '>' || token === '<') ? 'shell:redirect:file' : '',
+    /[`$]\(/.test(raw) ? 'shell:subshell' : '',
+    /&&|\|\||;/.test(raw) ? 'shell:chain' : '',
+  ].filter(Boolean)
+  return {
+    raw,
+    primary,
+    args,
+    arity: args.length,
+    subjects,
+    usesShell: needsShell(commandLine),
+    hasPipe: commandTokens.includes('|'),
+    hasRedirect: commandTokens.some(token => token === '>' || token === '<') || />{1,2}/.test(raw),
+    hasSubshell: /[`$]\(/.test(raw),
+    hasChain: /&&|\|\||;/.test(raw),
+    envAssignments,
+  }
+}
+
 function firstTokens(commandLine: string): string[] {
-  return commandLine.trim().split(/\s+/).slice(0, 4).map(token => token.toLowerCase())
+  const subject = parseCommandSubject(commandLine)
+  return [subject.primary, ...subject.args].slice(0, 4)
 }
 
 export function classifyCommandRisk(commandLine: string): CommandRisk {
   const normalized = commandLine.trim().toLowerCase()
+  const subject = parseCommandSubject(commandLine)
   const tokens = firstTokens(commandLine)
   const [cmd, sub] = tokens
   if (!normalized) return 'read_only'
+  if (subject.hasRedirect || subject.hasSubshell || subject.hasChain) return 'write_workspace'
   if (/\b(deploy|release|publish)\b/.test(normalized) || (cmd === 'git' && sub === 'push')) return 'deploy'
   if (isDangerousCommand(commandLine) || /\b(rm\s+-rf|del\s+\/[fsq]|format|mkfs|diskpart|shutdown|reboot)\b/i.test(commandLine)) return 'destructive'
   if (cmd === 'git' && ['commit', 'merge', 'rebase', 'reset', 'checkout', 'switch', 'stash', 'tag', 'branch'].includes(sub || '')) return 'git_write'
@@ -113,6 +265,27 @@ export function classifyCommandRisk(commandLine: string): CommandRisk {
   if (cmd === 'git' && ['status', 'diff', 'log', 'show'].includes(sub || '')) return 'read_only'
   if (['ls', 'dir', 'pwd', 'cat', 'type', 'rg', 'grep', 'find'].includes(cmd || '')) return 'read_only'
   return needsShell(commandLine) ? 'write_workspace' : 'test'
+}
+
+export function classifyGuardian(commandLine: string): GuardianDecision {
+  const subject = parseCommandSubject(commandLine)
+  const normalized = commandLine.toLowerCase()
+  if (/\b(api[_-]?key|token|password|secret)\b/.test(normalized) && /\b(curl|wget|scp|ssh|rsync)\b/.test(normalized)) {
+    return { verdict: 'deny', risk: 'critical', reason: '疑似将凭据或 secret 通过网络外传。', recommendedAction: 'deny', classifier: 'deterministic' }
+  }
+  if (/\b(npm|pnpm|yarn|bun)\s+publish\b|\bgit\s+push\b|\bdeploy\b/.test(normalized)) {
+    return { verdict: 'deny', risk: 'critical', reason: '发布、部署或推送命令需要用户手动执行。', recommendedAction: 'deny', classifier: 'deterministic' }
+  }
+  if (/\b(rm\s+-rf\s+\/|sudo\s+rm|mkfs|diskpart|shutdown|reboot)\b/i.test(commandLine)) {
+    return { verdict: 'deny', risk: 'critical', reason: '破坏性系统命令。', recommendedAction: 'deny', classifier: 'deterministic' }
+  }
+  if (subject.hasSubshell || (subject.hasPipe && /\b(curl|wget|nc|netcat)\b/.test(normalized))) {
+    return { verdict: 'ask', risk: 'high', reason: '复杂 shell 或网络管道需要人工确认。', recommendedAction: 'ask', classifier: 'deterministic' }
+  }
+  if (subject.hasRedirect) {
+    return { verdict: 'ask', risk: 'high', reason: '命令包含文件重定向，应优先使用 diff proposal。', recommendedAction: 'ask', classifier: 'deterministic' }
+  }
+  return { verdict: 'allow', risk: commandRiskToPolicyRisk(classifyCommandRisk(commandLine)), reason: 'deterministic guardian 未发现额外风险。', recommendedAction: 'allow', classifier: 'deterministic' }
 }
 
 function commandRiskToApprovalRisk(risk: CommandRisk): ApprovalRequest['risk'] {
@@ -214,6 +387,12 @@ function matchPolicyRule(rules: PolicyRule[], permission: PolicyPermission, targ
   return rules.find(rule => rule.permission === permission && patternMatches(rule.pattern, target)) ?? null
 }
 
+function policyTargetsForCall(call: RuntimeToolCall): string[] {
+  if (call.name !== 'run_command') return [targetForCall(call), permissionPattern(call)]
+  const commandLine = typeof call.input.commandLine === 'string' ? call.input.commandLine.trim() : ''
+  return [commandLine, permissionPattern(call), ...parseCommandSubject(commandLine).subjects]
+}
+
 function alternativesFor(call: RuntimeToolCall): string[] {
   if (call.name === 'run_command') {
     return ['改用只读命令收集信息', '用 propose_file_edit 生成可审查 diff', '请用户手动执行高风险命令']
@@ -256,11 +435,26 @@ export async function decidePermission(input: {
   }
 
   let commandRisk: CommandRisk | null = null
+  let commandSubject: CommandSubject | undefined
+  let guardian: GuardianDecision | undefined
   if (input.call.name === 'run_command') {
     const commandLine = target
+    commandSubject = parseCommandSubject(commandLine)
+    guardian = classifyGuardian(commandLine)
     commandRisk = classifyCommandRisk(commandLine)
     if (!commandLine) {
       const policyDecision: PolicyDecision = { action: 'deny', risk: 'low', reason: '命令为空。', alternatives: alternativesFor(input.call) }
+      return { action: 'deny', reason: policyDecision.reason, policyDecision }
+    }
+    if (guardian.verdict === 'deny') {
+      const policyDecision: PolicyDecision = {
+        action: 'deny',
+        risk: guardian.risk,
+        reason: guardian.reason,
+        guardian,
+        commandSubject,
+        alternatives: alternativesFor(input.call),
+      }
       return { action: 'deny', reason: policyDecision.reason, policyDecision }
     }
     if (commandRisk === 'destructive' || commandRisk === 'deploy') {
@@ -268,36 +462,41 @@ export async function decidePermission(input: {
         action: 'deny',
         risk: 'critical',
         reason: `命令风险过高 (${commandRisk})，已直接拒绝。`,
-        alternatives: alternativesFor(input.call),
-      }
-      return { action: 'deny', reason: policyDecision.reason, policyDecision }
-    }
-    if (isShellWriteCommand(commandLine)) {
-      const policyDecision: PolicyDecision = {
-        action: 'deny',
-        risk: 'high',
-        reason: '疑似通过 shell 写入/删除文件。请使用 propose_file_edit 和 apply_file_edit。',
+        guardian,
+        commandSubject,
         alternatives: alternativesFor(input.call),
       }
       return { action: 'deny', reason: policyDecision.reason, policyDecision }
     }
   }
 
+  const grantPatterns = policyTargetsForCall(input.call)
   const grant = input.grants?.match(permission, permissionPattern(input.call))
   if (grant) {
-    const policyDecision: PolicyDecision = { action: grant.action, risk: commandRisk ? commandRiskToPolicyRisk(commandRisk) : baseRisk, reason: `匹配 ${grant.scope} grant。`, grant }
+    const policyDecision: PolicyDecision = { action: grant.action, risk: commandRisk ? commandRiskToPolicyRisk(commandRisk) : baseRisk, reason: `匹配 ${grant.scope} grant。`, grant, guardian, commandSubject }
     return grant.action === 'allow'
       ? { action: 'allow', reason: policyDecision.reason, policyDecision }
       : { action: 'deny', reason: policyDecision.reason, policyDecision }
   }
+  const workspaceKey = workspaceGrantKey(input.context)
+  const workspaceGrant = workspaceKey ? new WorkspacePermissionGrantStore().load().match(workspaceKey, permission, grantPatterns) : null
+  if (workspaceGrant) {
+    const policyDecision: PolicyDecision = { action: workspaceGrant.action, risk: commandRisk ? commandRiskToPolicyRisk(commandRisk) : baseRisk, reason: '匹配 workspace grant。', grant: workspaceGrant, guardian, commandSubject }
+    return workspaceGrant.action === 'allow'
+      ? { action: 'allow', reason: policyDecision.reason, policyDecision }
+      : { action: 'deny', reason: policyDecision.reason, policyDecision }
+  }
 
-  const rule = matchPolicyRule(normalizedRules(await readProjectPolicy(input.context)), permission, target)
+  const rules = normalizedRules(await readProjectPolicy(input.context))
+  const rule = grantPatterns.map(pattern => matchPolicyRule(rules, permission, pattern)).find(Boolean) ?? null
   if (rule) {
     const policyDecision: PolicyDecision = {
       action: rule.action,
       risk: rule.risk || (commandRisk ? commandRiskToPolicyRisk(commandRisk) : baseRisk),
       reason: rule.reason || `匹配项目 policy：${rule.id}`,
       matchedRule: rule.id,
+      guardian,
+      commandSubject,
       alternatives: rule.action === 'deny' ? alternativesFor(input.call) : undefined,
     }
     if (rule.action === 'allow') return { action: 'allow', reason: policyDecision.reason, policyDecision }
@@ -331,6 +530,9 @@ export async function decidePermission(input: {
     action: 'ask',
     risk: commandRisk ? commandRiskToPolicyRisk(commandRisk) : baseRisk,
     reason: input.call.name === 'run_command' ? `运行命令需要确认：${target}` : `${tool.definition.title} 需要确认。`,
+    guardian,
+    commandSubject,
+    sandboxRequired: commandRisk === 'install' || commandRisk === 'write_workspace' || commandRisk === 'git_write' || guardian?.verdict === 'ask',
   }
   return { action: 'ask', reason: policyDecision.reason, request: createApprovalRequest(input, tool.definition.title, policyDecision, commandRisk), policyDecision }
 }
@@ -353,10 +555,13 @@ function createApprovalRequest(
     target: input.call.name === 'run_command' ? commandLine : undefined,
     matchedRule: decision.matchedRule,
     runtime: input.context?.workspace ?? null,
-    grantOptions: ['once', 'session'],
+    grantOptions: ['once', 'session', ...(input.context?.workspace ? ['workspace' as const] : [])],
     details: input.call.name === 'run_command'
       ? {
           commandRisk,
+          commandSubject: decision.commandSubject ? decision.commandSubject.subjects.join(', ') : undefined,
+          guardian: decision.guardian?.reason,
+          sandboxRequired: decision.sandboxRequired,
           cwd: typeof input.call.input.cwd === 'string' ? input.call.input.cwd : undefined,
           timeoutMs: typeof input.call.input.timeoutMs === 'number' ? input.call.input.timeoutMs : undefined,
           shellMode: needsShell(commandLine),

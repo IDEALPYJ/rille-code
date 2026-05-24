@@ -7,9 +7,9 @@
 | A | Product Contract + System Boundaries | 已实现 |
 | B | Durable Session + Event Log | 已实现 |
 | C | Workspace + Execution Substrate | 已实现 |
-| D | Model Gateway + Streaming Protocol | 部分实现 |
-| E | Tool Runtime + Tool Design | 部分实现 |
-| F | Policy + Approval + Security | 部分实现 |
+| D | Model Gateway + Streaming Protocol | 已实现 |
+| E | Tool Runtime + Tool Design | 已实现 |
+| F | Policy + Approval + Security | 已实现 |
 | G | Task Contract + Plan Mode | 部分实现 |
 | H | Context Engine + Prompt Cache | 部分实现 |
 | I | Reviewable Editing + Rollback | 部分实现 |
@@ -109,12 +109,12 @@ Checklist：
 - [x] D3. native tool calling for OpenAI/Anthropic/Gemini。
 - [x] D4. usage 和 latency 提取。
 - [x] D5. evaluator maxTokens 和 purpose trace。
-- [ ] D6. Responses API 完整 adapter。
-- [ ] D7. SSE streaming。
-- [ ] D8. provider fallback matrix。
-- [ ] D9. cache read/write metrics。
+- [x] D6. Responses API 完整 adapter。
+- [x] D7. SSE streaming。
+- [x] D8. provider fallback matrix。
+- [x] D9. cache read/write metrics。
 
-当前状态：部分实现。
+当前状态：已实现。Provider gateway 支持 OpenAI Responses 完整 adapter、semantic SSE streaming、tool call delta 聚合、Responses usage/cache metrics、provider fallback matrix 和 fallback trace；Chat Completions、Anthropic、Gemini 保持兼容路径，非流式 provider 会显式记录 streaming fallback。
 
 ## Phase E: Tool Runtime + Tool Design
 
@@ -137,12 +137,12 @@ Checklist：
 - [x] E3. model-visible/runtime-only 边界。
 - [x] E4. Observation event。
 - [x] E5. read-only tool parallel execution。
-- [ ] E6. artifactRef store。
-- [ ] E7. deferred tool discovery。
-- [ ] E8. high-level composed tools。
-- [ ] E9. tool effectiveness eval cases。
+- [x] E6. artifactRef store。
+- [x] E7. deferred tool discovery。
+- [x] E8. high-level composed tools。
+- [x] E9. tool effectiveness eval cases。
 
-当前状态：部分实现。
+当前状态：已实现。工具定义具备 deferred/category/keywords/activationHint；稳定 prompt 只注入核心工具，`search_tools` 负责披露长尾工具摘要；`explore_codebase`、`verify_changes`、`inspect_runtime_state` 作为组合工具复用底层 runtime 能力并保持原有 policy/approval 边界；测试覆盖 discovery、组合工具轨迹和 artifact-backed 输出。
 
 ## Phase F: Policy + Approval + Security
 
@@ -168,12 +168,12 @@ Checklist：
 - [x] F5. denial tracker。
 - [x] F6. secret redaction 基础能力。
 - [x] F7. protected paths 基础能力。
-- [ ] F8. persistent workspace grant。
-- [ ] F9. Guardian/classifier。
-- [ ] F10. BashArity-aware policy subject。
-- [ ] F11. sandbox policy。
+- [x] F8. persistent workspace grant。
+- [x] F9. Guardian/classifier。
+- [x] F10. BashArity-aware policy subject。
+- [x] F11. sandbox policy。
 
-当前状态：部分实现。
+当前状态：已实现。Policy 层支持 once/session/workspace grant，workspace grant 按 workspace key 持久化并带 expiresAt/revoked/audit；deterministic Guardian 识别 secret exposure、network exfiltration、destructive shell、credential path、publish/deploy；BashArity-aware subject 识别 chain、pipe、redirect、subshell、env assignment、primary command 和 arity；高风险可隔离命令通过 `sandboxRequired` 进入 ask/fail-closed 路径。
 
 ## Phase G: Task Contract + Plan Mode
 

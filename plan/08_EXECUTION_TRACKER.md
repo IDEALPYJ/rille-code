@@ -18,9 +18,9 @@
 | A | Product Contract + System Boundaries | 已完成 | 已实现 | IDE-native runtime 边界、七层架构、用户控制点、完成定义已落地 | D6 |
 | B | Durable Session + Event Log | 已完成 | 已实现 | JSONL session、turn、MessagePart、sequence、resume、archive/unarchive、artifact store 已落地 | D6 |
 | C | Workspace + Execution Substrate | 已完成 | 已实现 | local/WSL/SSH/worktree、path guard、timeout/output cap、process registry、checkpoint、sandbox、runtime state artifact 已落地 | D6 |
-| D | Model Gateway + Streaming Protocol | 部分完成 | 部分实现 | 多 provider、JSON fallback、native tools、usage、evaluator purpose 已落地 | D6 |
-| E | Tool Runtime + Tool Design | 部分完成 | 部分实现 | tool metadata、validation、Observation、runtime-only apply、并行只读工具已落地 | E6 |
-| F | Policy + Approval + Security | 部分完成 | 部分实现 | permission mode、policy loader、session grant、denial、secret/protected path 基础已落地 | F8 |
+| D | Model Gateway + Streaming Protocol | 已完成 | 已实现 | Responses adapter、SSE streaming、fallback trace、cache metrics 已落地 | G6 |
+| E | Tool Runtime + Tool Design | 已完成 | 已实现 | artifactRef、deferred discovery、组合工具、tool trajectory eval 已落地 | G6 |
+| F | Policy + Approval + Security | 已完成 | 已实现 | workspace grant、Guardian、BashArity subject、sandbox policy 已落地 | G6 |
 | G | Task Contract + Plan Mode | 部分完成 | 部分实现 | TaskContract、Plan、update tools、Task/Plan UI 已落地 | G6 |
 | H | Context Engine + Prompt Cache | 部分完成 | 部分实现 | ContextFragment pipeline、project rules、deterministic trimming、cacheKey hints 已落地 | H8 |
 | I | Reviewable Editing + Rollback | 部分完成 | 部分实现 | diff proposal、runtime-only apply、dirty guard、rollback proposal 已落地 | I6 |
@@ -68,10 +68,10 @@
 - [x] D3. native tool calling for OpenAI/Anthropic/Gemini。
 - [x] D4. usage 和 latency 提取。
 - [x] D5. evaluator maxTokens 和 purpose trace。
-- [ ] D6. Responses API 完整 adapter。
-- [ ] D7. SSE streaming。
-- [ ] D8. provider fallback matrix。
-- [ ] D9. cache read/write metrics。
+- [x] D6. Responses API 完整 adapter。
+- [x] D7. SSE streaming。
+- [x] D8. provider fallback matrix。
+- [x] D9. cache read/write metrics。
 
 ## Phase E Checklist
 
@@ -80,10 +80,10 @@
 - [x] E3. model-visible/runtime-only 边界。
 - [x] E4. Observation event。
 - [x] E5. read-only tool parallel execution。
-- [ ] E6. artifactRef store。
-- [ ] E7. deferred tool discovery。
-- [ ] E8. high-level composed tools。
-- [ ] E9. tool effectiveness eval cases。
+- [x] E6. artifactRef store。
+- [x] E7. deferred tool discovery。
+- [x] E8. high-level composed tools。
+- [x] E9. tool effectiveness eval cases。
 
 ## Phase F Checklist
 
@@ -94,10 +94,10 @@
 - [x] F5. denial tracker。
 - [x] F6. secret redaction 基础能力。
 - [x] F7. protected paths 基础能力。
-- [ ] F8. persistent workspace grant。
-- [ ] F9. Guardian/classifier。
-- [ ] F10. BashArity-aware policy subject。
-- [ ] F11. sandbox policy。
+- [x] F8. persistent workspace grant。
+- [x] F9. Guardian/classifier。
+- [x] F10. BashArity-aware policy subject。
+- [x] F11. sandbox policy。
 
 ## Phase G Checklist
 
@@ -258,8 +258,17 @@
 测试文件: `tests/agent/*`
 验证命令: `rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "下一步.*Phase ""K|Phase ""K.*下一步" plan`、`rg -n "已实现|部分实现|未实现" plan/06_IMPLEMENTED_STATUS_MATRIX.md`
 验证结果: 文档占位检查无输出；过期入口检查无输出；状态矩阵可列出当前状态。
-剩余风险: 本轮仅创建和整理规划文档，没有执行代码测试；源码事实后续变化时需要同步更新状态矩阵。
-下一步: B6 archive session 或 E6 artifactRef store，二者都是后续能力的基础入口。
+
+步骤: Phase D/E/F acceptance closure
+状态: 已完成
+完成日期: 2026-05-24
+涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/provider.ts`, `src/main/agent/runtime.ts`, `src/main/agent/trace.ts`, `src/main/agent/tools.ts`, `src/main/agent/permissions.ts`, `src/renderer/components/agent/AgentPanel.tsx`
+实现摘要: Phase D 完成 provider-neutral streaming contract、OpenAI Responses adapter、SSE semantic event parse、fallback trace、cache metrics；Phase E 完成 artifactRef 状态同步、deferred tool discovery、`search_tools`、`explore_codebase`、`verify_changes`、`inspect_runtime_state` 和 tool trajectory eval 覆盖；Phase F 完成 persistent workspace grant、deterministic Guardian/classifier、BashArity-aware command subject、sandboxRequired policy 和 workspace 授权 UI。
+测试文件: `tests/agent/provider.test.ts`, `tests/agent/runtime.test.ts`, `tests/agent/tools.test.ts`, `tests/agent/permissions.test.ts`
+验证命令: `npm test`, `npm run typecheck`, `npm run build`
+验证结果: `npm test` 18 个 test files、151 个 tests 通过；`npm run typecheck` 通过；`npm run build` 通过。
+剩余风险: OpenAI Responses streaming 是完整路径；Anthropic/Gemini 当前保持非流式 fallback trace。Workspace grant 的审计列表已持久化，完整管理 UI 可在 Phase N 扩展。
+下一步: G6
 
 步骤: Phase A/B/C final usable implementation
 状态: 已完成
@@ -270,4 +279,4 @@
 验证命令: `npm test`, `npm run typecheck`
 验证结果: `npm test` 18 个测试文件、145 个测试全部通过；`npm run typecheck` 通过。
 剩余风险: remote/WSL worktree sandbox 依赖目标环境可执行 `git worktree`；失败时返回可操作 reason，不静默降级。
-下一步: Phase D6 Responses API adapter、D7 SSE streaming、D8 provider fallback matrix。
+下一步: G6 explicit Plan Mode。

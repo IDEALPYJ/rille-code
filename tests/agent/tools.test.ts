@@ -72,7 +72,24 @@ describe('update_plan tool', () => {
     expect(definitions.every(tool => tool.visibility && tool.sideEffect)).toBe(true)
     expect(getModelVisibleToolDefinitions().some(tool => tool.name === 'apply_file_edit')).toBe(false)
     expect(getModelVisibleToolDefinitions().some(tool => tool.name === 'ask_user')).toBe(true)
-    expect(getModelVisibleToolDefinitions().some(tool => tool.name === 'select_files')).toBe(true)
+    expect(getModelVisibleToolDefinitions().some(tool => tool.name === 'select_files')).toBe(false)
+    expect(getModelVisibleToolDefinitions().some(tool => tool.name === 'search_tools')).toBe(true)
+  })
+
+  it('discovers deferred tools without adding them to the stable tool prefix', async () => {
+    expect(getToolDefinitions().some(tool => tool.name === 'inspect_runtime_state' && tool.deferred)).toBe(true)
+    expect(getModelVisibleToolDefinitions().some(tool => tool.name === 'inspect_runtime_state')).toBe(false)
+    const result = await executeToolCall(
+      { id: 'tool_search', name: 'search_tools', input: { query: 'runtime state' } },
+      {
+        session: session(),
+        turn: turn(),
+        context: context(),
+        emitProposal: vi.fn(),
+      },
+    )
+    expect(result.status).toBe('ok')
+    expect(result.output).toContain('inspect_runtime_state')
   })
 
   it('rejects invalid input before tool execution', async () => {

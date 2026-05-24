@@ -32,6 +32,8 @@ import {
   workspaceSearchFiles,
 } from './workspace'
 import { createArtifact } from './artifactStore'
+import { captureRuntimeState } from './runtimeState'
+import { VerifierRunner } from './verifier'
 
 export interface RuntimeToolCall {
   id: string
@@ -139,6 +141,10 @@ function validateCommandInput(input: Record<string, unknown>): ToolValidationRes
   })
 }
 
+function validateToolSearchInput(input: Record<string, unknown>): ToolValidationResult {
+  return validateStringFields(input, ['query'])
+}
+
 function classifyToolError(error: unknown): ToolFailureType {
   const message = error instanceof Error ? error.message : String(error)
   if (/outside workspace|工作区外|out of workspace/i.test(message)) return 'path_outside_workspace'
@@ -196,6 +202,8 @@ export const toolRegistry: RegisteredTool[] = [
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       isReadOnly: true,
       risk: 'low',
+      category: 'context',
+      keywords: ['editor', 'active file', 'cursor'],
     },
     visibility: 'model',
     sideEffect: 'none',
@@ -211,6 +219,8 @@ export const toolRegistry: RegisteredTool[] = [
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       isReadOnly: true,
       risk: 'low',
+      category: 'context',
+      keywords: ['open files', 'tabs'],
     },
     visibility: 'model',
     sideEffect: 'none',
@@ -226,6 +236,8 @@ export const toolRegistry: RegisteredTool[] = [
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       isReadOnly: true,
       risk: 'low',
+      category: 'verification',
+      keywords: ['diagnostics', 'errors'],
     },
     visibility: 'model',
     sideEffect: 'none',
@@ -262,6 +274,8 @@ export const toolRegistry: RegisteredTool[] = [
       },
       isReadOnly: true,
       risk: 'low',
+      category: 'planning',
+      keywords: ['plan', 'progress'],
     },
     visibility: 'model',
     sideEffect: 'none',
@@ -303,6 +317,8 @@ export const toolRegistry: RegisteredTool[] = [
       },
       isReadOnly: true,
       risk: 'low',
+      category: 'planning',
+      keywords: ['task contract', 'scope', 'acceptance'],
     },
     visibility: 'model',
     sideEffect: 'none',
@@ -333,6 +349,8 @@ export const toolRegistry: RegisteredTool[] = [
       inputSchema: { type: 'object', properties: { dirPath: { type: 'string' } }, additionalProperties: false },
       isReadOnly: true,
       risk: 'low',
+      category: 'filesystem',
+      keywords: ['directory', 'files', 'ls'],
     },
     visibility: 'model',
     sideEffect: 'workspace_read',
@@ -357,6 +375,8 @@ export const toolRegistry: RegisteredTool[] = [
       inputSchema: { type: 'object', required: ['filePath'], properties: { filePath: { type: 'string' } }, additionalProperties: false },
       isReadOnly: true,
       risk: 'low',
+      category: 'filesystem',
+      keywords: ['read', 'file', 'source'],
     },
     visibility: 'model',
     sideEffect: 'workspace_read',
@@ -380,6 +400,8 @@ export const toolRegistry: RegisteredTool[] = [
       inputSchema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } }, additionalProperties: false },
       isReadOnly: true,
       risk: 'low',
+      category: 'search',
+      keywords: ['search', 'ripgrep', 'code'],
     },
     visibility: 'model',
     sideEffect: 'workspace_read',
@@ -400,6 +422,8 @@ export const toolRegistry: RegisteredTool[] = [
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       isReadOnly: true,
       risk: 'low',
+      category: 'git',
+      keywords: ['git', 'status'],
     },
     visibility: 'model',
     sideEffect: 'workspace_read',
@@ -419,6 +443,8 @@ export const toolRegistry: RegisteredTool[] = [
       inputSchema: { type: 'object', properties: { filePath: { type: 'string' } }, additionalProperties: false },
       isReadOnly: true,
       risk: 'low',
+      category: 'git',
+      keywords: ['git', 'diff'],
     },
     visibility: 'model',
     sideEffect: 'workspace_read',
@@ -439,6 +465,8 @@ export const toolRegistry: RegisteredTool[] = [
       inputSchema: { type: 'object', required: ['filePath', 'modifiedContent'], properties: { filePath: { type: 'string' }, modifiedContent: { type: 'string' }, rationale: { type: 'string' } }, additionalProperties: false },
       isReadOnly: false,
       risk: 'medium',
+      category: 'edit',
+      keywords: ['edit', 'diff', 'proposal'],
     },
     visibility: 'model',
     sideEffect: 'workspace_write',
@@ -486,6 +514,8 @@ export const toolRegistry: RegisteredTool[] = [
       inputSchema: { type: 'object', required: ['proposalId'], properties: { proposalId: { type: 'string' } }, additionalProperties: false },
       isReadOnly: false,
       risk: 'high',
+      category: 'edit',
+      keywords: ['apply', 'write'],
     },
     visibility: 'runtime',
     sideEffect: 'workspace_write',
@@ -513,6 +543,9 @@ export const toolRegistry: RegisteredTool[] = [
       inputSchema: { type: 'object', required: ['question'], properties: { question: { type: 'string' }, reason: { type: 'string' } }, additionalProperties: false },
       isReadOnly: true,
       risk: 'low',
+      category: 'user',
+      keywords: ['clarify', 'question'],
+      activationHint: 'Use when task is blocked by missing user intent.',
     },
     visibility: 'model',
     sideEffect: 'none',
@@ -534,6 +567,10 @@ export const toolRegistry: RegisteredTool[] = [
       inputSchema: { type: 'object', required: ['reason'], properties: { reason: { type: 'string' }, patterns: { type: 'string' } }, additionalProperties: false },
       isReadOnly: true,
       risk: 'low',
+      deferred: true,
+      category: 'user',
+      keywords: ['select files', 'scope'],
+      activationHint: 'Use when file scope cannot be inferred safely.',
     },
     visibility: 'model',
     sideEffect: 'none',
@@ -555,6 +592,8 @@ export const toolRegistry: RegisteredTool[] = [
       inputSchema: { type: 'object', required: ['commandLine'], properties: { commandLine: { type: 'string' }, cwd: { type: 'string' }, timeoutMs: { type: 'number' } }, additionalProperties: false },
       isReadOnly: false,
       risk: 'high',
+      category: 'process',
+      keywords: ['command', 'test', 'build', 'shell'],
     },
     visibility: 'model',
     sideEffect: 'process',
@@ -581,12 +620,147 @@ export const toolRegistry: RegisteredTool[] = [
   },
   {
     definition: {
+      name: 'search_tools',
+      title: '搜索可用工具',
+      description: 'Discover deferred or specialized tools by query. Input: { "query": string }.',
+      inputSchema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } }, additionalProperties: false },
+      isReadOnly: true,
+      risk: 'low',
+      category: 'tooling',
+      keywords: ['tool', 'discover', 'deferred'],
+    },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: validateToolSearchInput,
+    summarize: input => str(input, 'query'),
+    execute: async input => {
+      const query = str(input, 'query').toLowerCase()
+      const matches = toolRegistry
+        .filter(tool => tool.visibility === 'model' && tool.definition.name !== 'search_tools')
+        .filter(tool => {
+          const haystack = [
+            tool.definition.name,
+            tool.definition.title,
+            tool.definition.description,
+            tool.definition.category,
+            ...(tool.definition.keywords || []),
+          ].join(' ').toLowerCase()
+          return haystack.includes(query) || query.split(/\s+/).some(token => token && haystack.includes(token))
+        })
+        .slice(0, 8)
+        .map(tool => ({
+          name: tool.definition.name,
+          title: tool.definition.title,
+          description: tool.definition.description,
+          category: tool.definition.category,
+          sideEffect: tool.sideEffect,
+          activationHint: tool.definition.activationHint,
+          inputSchema: tool.definition.inputSchema,
+        }))
+      return { output: JSON.stringify(matches, null, 2), structured: { matches }, status: 'ok' }
+    },
+  },
+  {
+    definition: {
+      name: 'explore_codebase',
+      title: '探索代码库',
+      description: 'High-level read-only exploration using directory listing, optional search, git status, and diagnostics. Input: { "query"?: string, "dirPath"?: string }.',
+      inputSchema: { type: 'object', properties: { query: { type: 'string' }, dirPath: { type: 'string' } }, additionalProperties: false },
+      isReadOnly: true,
+      risk: 'low',
+      category: 'composed',
+      keywords: ['explore', 'codebase', 'overview'],
+    },
+    visibility: 'model',
+    sideEffect: 'workspace_read',
+    validate: input => validateStringFields(input, [], ['query', 'dirPath']),
+    summarize: input => str(input, 'query') || str(input, 'dirPath') || '代码库概览',
+    execute: async (input, { context }) => {
+      const workspace = requireWorkspace(context.workspace)
+      const entries = await workspaceReadDirectory(workspace, str(input, 'dirPath') || workspace.path)
+      const status = await workspaceGitStatus(workspace).catch(error => error instanceof Error ? error.message : String(error))
+      const search = str(input, 'query') ? await workspaceSearchFiles(workspace, str(input, 'query')).catch(error => error instanceof Error ? error.message : String(error)) : ''
+      const output = [
+        `Workspace: ${workspaceLabel(workspace)}`,
+        '',
+        'Directory:',
+        entries.slice(0, 80).map(entry => `${entry.isDirectory ? 'dir ' : 'file'} ${entry.name}`).join('\n') || '(空目录)',
+        '',
+        'Git:',
+        status,
+        ...(search ? ['', 'Search:', search] : []),
+      ].join('\n')
+      const limited = truncate(output)
+      return { output: limited.text, truncated: limited.truncated, structured: { entryCount: entries.length, query: str(input, 'query') || null }, status: 'ok' }
+    },
+  },
+  {
+    definition: {
+      name: 'verify_changes',
+      title: '验证变更',
+      description: 'Run the project verification command and return command evidence. Input: {}.',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      isReadOnly: false,
+      risk: 'medium',
+      category: 'composed',
+      keywords: ['verify', 'test', 'typecheck', 'build'],
+    },
+    visibility: 'model',
+    sideEffect: 'process',
+    validate: validateNoInput,
+    summarize: () => '运行验证',
+    execute: async (_input, { session, turn }) => {
+      const { result, evidence } = await new VerifierRunner(session, turn).runFirstAvailableWithEvidence()
+      return {
+        output: evidence.output || result.output,
+        artifact: result.artifact,
+        artifactRef: result.artifactRef,
+        structured: { result, evidence },
+        status: result.status === 'passed' || result.status === 'skipped' ? 'ok' : 'error',
+        error: result.status === 'failed' || result.status === 'blocked' ? 'verification_failed' : undefined,
+      }
+    },
+  },
+  {
+    definition: {
+      name: 'inspect_runtime_state',
+      title: '检查运行状态',
+      description: 'Capture process/checkpoint/sandbox/evidence runtime state as an artifact. Input: {}.',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      isReadOnly: true,
+      risk: 'low',
+      deferred: true,
+      category: 'runtime',
+      keywords: ['runtime state', 'process', 'checkpoint', 'sandbox'],
+      activationHint: 'Use when debugging long-running process or resume state.',
+    },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: validateNoInput,
+    summarize: () => 'runtime state',
+    execute: async (_input, { session, turn, context }) => {
+      const { state, artifact } = await captureRuntimeState({ sessionId: session.id, turnId: turn.id, workspace: context.workspace })
+      return {
+        output: `runtime state captured: ${artifact.id}`,
+        artifact,
+        artifactRef: artifact.id,
+        structured: state as unknown as Record<string, unknown>,
+        status: 'ok',
+      }
+    },
+  },
+  {
+    definition: {
       name: 'create_memory',
       title: '创建项目记忆',
       description: 'Save a project-level memory entry. Input: { "kind": "command"|"convention"|"decision"|"known_issue"|"workflow", "text": string, "sourceRefs": string[] }.',
       inputSchema: { type: 'object', required: ['kind', 'text', 'sourceRefs'], properties: { kind: { type: 'string' }, text: { type: 'string' }, sourceRefs: { type: 'array', items: { type: 'string' } } }, additionalProperties: false },
       isReadOnly: false,
       risk: 'low',
+      deferred: true,
+      category: 'memory',
+      keywords: ['memory', 'remember', 'convention'],
+      activationHint: 'Use after a durable project fact has source evidence.',
     },
     visibility: 'model',
     sideEffect: 'none',
@@ -643,7 +817,7 @@ export function getToolDefinitions(): AgentToolDefinition[] {
 
 export function getModelVisibleToolDefinitions(): AgentToolDefinition[] {
   return toolRegistry
-    .filter(tool => tool.visibility === 'model')
+    .filter(tool => tool.visibility === 'model' && !tool.definition.deferred)
     .map(publicDefinition)
     .sort((a, b) => a.name.localeCompare(b.name))
 }

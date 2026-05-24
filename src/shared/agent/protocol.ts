@@ -26,6 +26,7 @@ export interface AgentConfigSnapshot {
   apiKeyConfigured: boolean
   contextLengthTokens?: number
   modalities: AgentModelModality[]
+  fallbackProfileIds?: string[]
 }
 
 export interface AgentConfigUpdate {
@@ -38,6 +39,7 @@ export interface AgentConfigUpdate {
   apiKey?: string
   contextLengthTokens?: number
   modalities?: AgentModelModality[]
+  fallbackProfileIds?: string[]
 }
 
 export interface AgentModelProfile extends AgentConfigSnapshot {
@@ -57,6 +59,7 @@ export interface AgentModelProfileUpdate {
   apiKey?: string
   contextLengthTokens?: number
   modalities?: AgentModelModality[]
+  fallbackProfileIds?: string[]
   makeActive?: boolean
 }
 
@@ -262,7 +265,7 @@ export type ToolFailureType =
   | 'tool_failed'
 export type PolicyPermission = 'file.read' | 'file.write' | 'command.run' | 'git.write' | 'network.access' | 'memory.write'
 export type PolicyAction = 'allow' | 'ask' | 'deny'
-export type GrantScope = 'once' | 'session'
+export type GrantScope = 'once' | 'session' | 'workspace'
 
 export interface ToolValidationResult {
   ok: boolean
@@ -285,8 +288,31 @@ export interface PermissionGrant {
   pattern: string
   action: 'allow' | 'deny'
   scope: GrantScope
+  workspaceKey?: string
   expiresAt?: number
   createdAt: number
+}
+
+export interface GuardianDecision {
+  verdict: 'allow' | 'ask' | 'deny'
+  risk: RiskLevel
+  reason: string
+  recommendedAction: PolicyAction
+  classifier: 'deterministic' | 'llm'
+}
+
+export interface CommandSubject {
+  raw: string
+  primary: string
+  args: string[]
+  arity: number
+  subjects: string[]
+  usesShell: boolean
+  hasPipe: boolean
+  hasRedirect: boolean
+  hasSubshell: boolean
+  hasChain: boolean
+  envAssignments: string[]
 }
 
 export interface PolicyDecision {
@@ -295,6 +321,9 @@ export interface PolicyDecision {
   reason: string
   matchedRule?: string
   grant?: PermissionGrant
+  guardian?: GuardianDecision
+  commandSubject?: CommandSubject
+  sandboxRequired?: boolean
   alternatives?: string[]
 }
 
@@ -559,8 +588,47 @@ export interface AgentUsage {
   inputTokens?: number
   outputTokens?: number
   cachedInputTokens?: number
+  cacheWriteInputTokens?: number
+  cacheMetrics?: ModelCacheMetrics
   costUsd?: number
   latencyMs?: number
+}
+
+export interface ModelCacheMetrics {
+  promptCacheKey?: string
+  promptCacheRetention?: '24h'
+  cachedInputTokens?: number
+  cacheWriteInputTokens?: number
+  cacheHit?: boolean
+}
+
+export interface ProviderFallbackTrace {
+  fromProviderId: AgentProviderId
+  fromProtocol: AgentProviderProtocol
+  toProviderId?: AgentProviderId
+  toProtocol?: AgentProviderProtocol
+  reason: 'network' | 'rate_limit' | 'server_error' | 'empty_response' | 'unsupported_streaming' | 'provider_error'
+  attempt: number
+  latencyMs?: number
+  error?: string
+  createdAt: number
+}
+
+export type ModelStreamEvent =
+  | { type: 'model.started'; sessionId?: string; turnId?: string; providerId: AgentProviderId; protocol: AgentProviderProtocol; createdAt: number }
+  | { type: 'model.text.delta'; sessionId?: string; turnId?: string; text: string; sequence?: number; createdAt: number }
+  | { type: 'model.reasoning.delta'; sessionId?: string; turnId?: string; text: string; sequence?: number; createdAt: number }
+  | { type: 'model.tool_call.delta'; sessionId?: string; turnId?: string; callId: string; name?: string; argumentsDelta?: string; sequence?: number; createdAt: number }
+  | { type: 'model.tool_call.done'; sessionId?: string; turnId?: string; callId: string; name: string; arguments: string; sequence?: number; createdAt: number }
+  | { type: 'model.completed'; sessionId?: string; turnId?: string; text: string; usage?: AgentUsage; toolCalls?: AgentToolCall[]; cacheMetrics?: ModelCacheMetrics; createdAt: number }
+  | { type: 'model.failed'; sessionId?: string; turnId?: string; error: string; fallback?: ProviderFallbackTrace; createdAt: number }
+
+export interface ModelDecision {
+  text: string
+  toolCalls?: AgentToolCall[]
+  usage?: AgentUsage
+  cacheMetrics?: ModelCacheMetrics
+  fallbackTrace?: ProviderFallbackTrace[]
 }
 
 export type TraceEvent =
@@ -573,6 +641,8 @@ export type TraceEvent =
   | { type: 'review.completed'; sessionId: string; turnId: string; result: ReviewResult; createdAt: number }
   | { type: 'handoff.generated'; sessionId: string; turnId: string; handoff: Handoff; createdAt: number }
   | { type: 'cost.updated'; sessionId: string; turnId: string; usage: AgentUsage; createdAt: number }
+  | { type: 'model.fallback'; sessionId: string; turnId: string; fallback: ProviderFallbackTrace; createdAt: number }
+  | { type: 'model.cache'; sessionId: string; turnId: string; cache: ModelCacheMetrics; createdAt: number }
   | { type: 'artifact.created'; sessionId: string; turnId?: string; artifact: ArtifactRef; createdAt: number }
   | { type: 'runtime.state.captured'; sessionId: string; turnId?: string; artifact: ArtifactRef; createdAt: number }
   | { type: 'checkpoint.created'; sessionId: string; turnId?: string; checkpoint: CheckpointRef; createdAt: number }
@@ -641,6 +711,10 @@ export interface AgentToolDefinition {
   risk: 'low' | 'medium' | 'high' | 'critical'
   visibility?: ToolVisibility
   sideEffect?: ToolSideEffect
+  deferred?: boolean
+  category?: string
+  keywords?: string[]
+  activationHint?: string
 }
 
 export interface AgentToolCall {
@@ -718,6 +792,7 @@ export interface AgentSessionSummary {
 export type ApprovalDecision =
   | { action: 'allow_once' }
   | { action: 'always_allow'; pattern: string }
+  | { action: 'allow_workspace'; pattern: string; expiresAt?: number }
   | { action: 'deny'; reason?: string }
 
 export type TurnStopReason =

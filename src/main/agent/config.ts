@@ -15,6 +15,7 @@ import type {
 
 interface StoredAgentModelProfile extends AgentModelProfile {
   apiKey?: string
+  fallbackProfileIds?: string[]
 }
 
 interface StoredAgentModelStore {
@@ -66,6 +67,7 @@ function snapshotFromProfile(profile: StoredAgentModelProfile): AgentConfigSnaps
     apiKeyConfigured: sanitized.apiKeyConfigured,
     contextLengthTokens: sanitized.contextLengthTokens,
     modalities: sanitized.modalities,
+    fallbackProfileIds: sanitized.fallbackProfileIds,
   }
 }
 
@@ -98,6 +100,7 @@ function createProfile(raw: Partial<StoredAgentModelProfile> = {}, timestamp = D
     apiKeyConfigured: Boolean(raw.apiKey?.trim()) || providerId === 'ollama',
     contextLengthTokens: raw.contextLengthTokens && raw.contextLengthTokens > 0 ? Math.floor(raw.contextLengthTokens) : 128_000,
     modalities: normalizeModalities(raw.modalities),
+    fallbackProfileIds: Array.isArray(raw.fallbackProfileIds) ? raw.fallbackProfileIds.filter(item => typeof item === 'string') : undefined,
     createdAt: raw.createdAt || timestamp,
     updatedAt: raw.updatedAt || timestamp,
   }
@@ -191,6 +194,7 @@ export function saveAgentModelProfile(update: AgentModelProfileUpdate): AgentMod
     apiKey,
     contextLengthTokens: update.contextLengthTokens ?? existing?.contextLengthTokens,
     modalities: update.modalities ?? existing?.modalities,
+    fallbackProfileIds: update.fallbackProfileIds ?? existing?.fallbackProfileIds,
     createdAt: existing?.createdAt || timestamp,
     updatedAt: timestamp,
   }, timestamp)

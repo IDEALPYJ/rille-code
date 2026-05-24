@@ -73,7 +73,7 @@ type ModelStreamDelta =
   | { type: 'model.completed'; sessionId: string; turnId: string; usage?: AgentUsage; createdAt: number }
 ```
 
-当前状态：未实现。
+当前状态：已实现。Runtime 内部消费 `model.text.delta`、`model.reasoning.delta`、`model.tool_call.delta`、`model.completed`、`model.failed`；OpenAI Responses SSE 已映射到统一事件，renderer 仍只消费 AgentEvent/MessagePart 投影。
 
 ### Tool / Observation / Artifact
 
@@ -85,6 +85,9 @@ interface AgentToolDefinition {
   visibility: 'model' | 'runtime' | 'ui'
   sideEffect: 'none' | 'workspace_read' | 'workspace_write' | 'process' | 'network' | 'external'
   deferred?: boolean
+  category?: string
+  keywords?: string[]
+  activationHint?: string
 }
 
 interface Observation {
@@ -106,7 +109,7 @@ interface ArtifactRef {
 }
 ```
 
-当前状态：已实现 tool/observation 基础和 ArtifactRef store；组合工具、deferred tool search 后续实现。
+当前状态：已实现。Tool/Observation/ArtifactRef、deferred tool search、组合工具和 artifact-backed 输出均已落地。
 
 ### Policy / Grant / Sandbox
 
@@ -118,6 +121,8 @@ interface PolicyDecision {
   matchedRule?: string
   grant?: PermissionGrant
   guardian?: GuardianDecision
+  commandSubject?: CommandSubject
+  sandboxRequired?: boolean
 }
 
 interface PermissionGrant {
@@ -136,7 +141,7 @@ interface ExecutionSandbox {
 }
 ```
 
-当前状态：session grant 部分实现，worktree sandbox 已实现；workspace grant、Guardian 和 sandbox policy 后续实现。
+当前状态：已实现。once/session/workspace grant、persistent workspace grant、Guardian/classifier、BashArity-aware subject、sandboxRequired policy 和 worktree sandbox 均已落地。
 
 ### Evidence / Review
 

@@ -7,6 +7,8 @@ import type {
   ContextTrace,
   Handoff,
   PolicyDecision,
+  ModelCacheMetrics,
+  ProviderFallbackTrace,
   ReviewResult,
   TraceEvent,
   VerificationResult,
@@ -60,6 +62,14 @@ export class TraceCollector {
 
   costUpdated(sessionId: string, turnId: string, usage: AgentUsage): void {
     this.emit({ type: 'cost.updated', sessionId, turnId, usage, createdAt: now() })
+  }
+
+  modelFallback(sessionId: string, turnId: string, fallback: ProviderFallbackTrace): void {
+    this.emit({ type: 'model.fallback', sessionId, turnId, fallback, createdAt: now() })
+  }
+
+  modelCache(sessionId: string, turnId: string, cache: ModelCacheMetrics): void {
+    this.emit({ type: 'model.cache', sessionId, turnId, cache, createdAt: now() })
   }
 
   flush(): TraceEvent[] {
@@ -224,6 +234,8 @@ function deriveTraceEvents(event: { type: string; [key: string]: unknown }): Tra
         handoff: event.handoff as Handoff,
         createdAt: Date.now(),
       }]
+    case 'trace.batch':
+      return event.traceEvents as TraceEvent[]
     case 'artifact.created':
       return [{
         type: 'artifact.created',
