@@ -17,6 +17,10 @@ import type {
   Handoff,
   MessagePart,
   Observation,
+  AgentPlanItem,
+  PlanConfirmation,
+  TaskContract,
+  VerificationCoverage,
 } from '../../shared/agent/protocol'
 import { applyEditProposal, createRollbackProposal, rejectEditProposal } from './editStore'
 import { PermissionGrantStore } from './permissions'
@@ -64,6 +68,11 @@ export class AgentThread {
   private abortController: AbortController | null = null
   private approvals = new Map<string, { resolve: (decision: ApprovalDecision) => void; request: ApprovalRequest }>()
   private lastHandoff: Handoff | null = null
+  private latestTaskContract: TaskContract | null = null
+  private latestPlanItems: AgentPlanItem[] = []
+  private latestPlanConfirmation: PlanConfirmation | null = null
+  private latestEvidence: Evidence[] = []
+  private latestCoverage: VerificationCoverage | null = null
   private readonly grants = new PermissionGrantStore()
 
   constructor(
@@ -124,6 +133,13 @@ export class AgentThread {
       if (event.type === 'approval.requested') pendingApprovals.set(event.request.id, event.request)
       if (event.type === 'approval.resolved') pendingApprovals.delete(event.requestId)
       if (event.type === 'handoff.created') this.lastHandoff = event.handoff
+      if (event.type === 'task_contract.created' || event.type === 'task_contract.updated') this.latestTaskContract = event.contract
+      if (event.type === 'plan.updated') this.latestPlanItems = event.items
+      if (event.type === 'plan.confirmation.requested' || event.type === 'plan.confirmation.resolved') this.latestPlanConfirmation = event.confirmation
+      if (event.type === 'evidence.created') {
+        this.latestEvidence = [...this.latestEvidence.filter(item => item.id !== event.evidence.id), event.evidence].slice(-50)
+      }
+      if (event.type === 'verification.coverage.updated') this.latestCoverage = event.coverage
       this.send(event)
     }
     for (const request of pendingApprovals.values()) {
@@ -147,7 +163,7 @@ export class AgentThread {
     this.send({ type: 'session.created', session: this.session })
   }
 
-  handle(op: AgentOp): AgentSession | null {
+  handle(op: AgentOp): AgentSession | PlanConfirmation | null {
     if (op.type === 'permission.update') {
       this.session = { ...this.session, permissionMode: op.permissionMode, updatedAt: now() }
       this.emit({ type: 'session.updated', session: this.session })
@@ -170,6 +186,12 @@ export class AgentThread {
         this.emit({ type: 'session.updated', session: this.session })
       }
       return this.session
+    }
+    if (op.type === 'plan.confirm') {
+      return this.confirmPlan(op.confirmationId)
+    }
+    if (op.type === 'plan.reject') {
+      return this.rejectPlan(op.confirmationId, op.reason)
     }
     if (op.type === 'edit.reject') {
       this.rejectEdit(op.proposalId, op.reason)
@@ -230,6 +252,74 @@ export class AgentThread {
     return proposal
   }
 
+  private createPlanConfirmation(turnId: string, contract: TaskContract, planItems: AgentPlanItem[], reason: string): PlanConfirmation {
+    const riskOrder: Record<PlanConfirmation['riskLevel'], number> = { low: 0, medium: 1, high: 2, critical: 3 }
+    const riskLevel = contract.riskPoints.reduce<PlanConfirmation['riskLevel']>((current, item) => (
+      riskOrder[item.risk] > riskOrder[current] ? item.risk : current
+    ), 'low')
+    return {
+      id: `plan_confirmation_${randomUUID()}`,
+      sessionId: this.session.id,
+      turnId,
+      contractId: contract.id,
+      planItemIds: planItems.map(item => item.id),
+      status: 'pending',
+      riskLevel,
+      reason,
+      createdAt: now(),
+    }
+  }
+
+  private emitPlanConfirmation(confirmation: PlanConfirmation): void {
+    this.latestPlanConfirmation = confirmation
+    this.emit({ type: 'plan.confirmation.requested', sessionId: this.session.id, turnId: confirmation.turnId, confirmation })
+    this.emitPart(confirmation.turnId, {
+      id: createPartId(),
+      messageId: createMessageId('system'),
+      type: 'plan_confirmation',
+      confirmation,
+      createdAt: now(),
+    })
+  }
+
+  private resolvePlanConfirmation(confirmationId: string, status: 'confirmed' | 'rejected', reason?: string): PlanConfirmation {
+    const current = this.latestPlanConfirmation
+    if (!current || current.id !== confirmationId) throw new Error('Plan confirmation does not exist.')
+    const confirmation: PlanConfirmation = {
+      ...current,
+      status,
+      rejectedReason: status === 'rejected' ? reason : current.rejectedReason,
+      resolvedAt: now(),
+    }
+    this.latestPlanConfirmation = confirmation
+    this.emit({ type: 'plan.confirmation.resolved', sessionId: this.session.id, turnId: confirmation.turnId, confirmation })
+    this.emitPart(confirmation.turnId, {
+      id: createPartId(),
+      messageId: createMessageId('system'),
+      type: 'plan_confirmation',
+      confirmation,
+      createdAt: now(),
+    })
+    return confirmation
+  }
+
+  confirmPlan(confirmationId: string): PlanConfirmation {
+    return this.resolvePlanConfirmation(confirmationId, 'confirmed')
+  }
+
+  rejectPlan(confirmationId: string, reason?: string): PlanConfirmation {
+    return this.resolvePlanConfirmation(confirmationId, 'rejected', reason)
+  }
+
+  private useConfirmedPlanForTurn(turn: AgentTurn): { contract?: TaskContract; planItems?: AgentPlanItem[]; reason?: string } {
+    if (this.latestPlanConfirmation?.status !== 'confirmed' || !this.latestTaskContract || this.latestPlanItems.length === 0) return {}
+    return {
+      contract: { ...this.latestTaskContract, turnId: turn.id, status: 'active', updatedAt: now() },
+      planItems: this.latestPlanItems.map(item => ({ ...item, updatedAt: now() })),
+      reason: `复用已确认计划 ${this.latestPlanConfirmation.id}`,
+    }
+  }
+
   async submitTurn(text: string, context: AgentContextSnapshot): Promise<AgentTurn> {
     if (this.session.status === 'archived') {
       throw new Error('归档会话不能继续运行，请先取消归档。')
@@ -269,8 +359,9 @@ export class AgentThread {
     })
 
     try {
-      const contract = createInitialTaskContract({ session: this.session, turn, text, context })
-      const planItems = createInitialPlanItems(contract)
+      const confirmed = this.useConfirmedPlanForTurn(turn)
+      const contract = confirmed.contract ?? createInitialTaskContract({ session: this.session, turn, text, context })
+      const planItems = confirmed.planItems ?? createInitialPlanItems(contract)
       const contractMessageId = createMessageId('system')
       const contractPartId = createPartId()
       const planMessageId = createMessageId('system')
@@ -289,7 +380,7 @@ export class AgentThread {
         sessionId: this.session.id,
         turnId: turn.id,
         items: planItems,
-        reason: 'runtime 初始化任务计划',
+        reason: confirmed.reason ?? 'runtime 初始化任务计划',
         source: 'runtime',
         createdAt: now(),
       })
@@ -298,7 +389,7 @@ export class AgentThread {
         messageId: planMessageId,
         type: 'plan',
         items: planItems,
-        reason: 'runtime 初始化任务计划',
+        reason: confirmed.reason ?? 'runtime 初始化任务计划',
         createdAt: now(),
       })
 
@@ -324,6 +415,15 @@ export class AgentThread {
         requestApproval: request => this.requestApproval(request),
         grants: this.grants,
       }).run()
+      if (this.session.permissionMode === 'plan' && reason === 'completed') {
+        const confirmation = this.createPlanConfirmation(
+          turn.id,
+          this.latestTaskContract ?? contract,
+          this.latestPlanItems.length > 0 ? this.latestPlanItems : planItems,
+          'Plan Mode 需要用户确认后才会执行写入、命令或 sandbox 操作。',
+        )
+        this.emitPlanConfirmation(confirmation)
+      }
       if (this.abortController.signal.aborted) {
         this.activeTurn = { ...turn, status: 'interrupted' }
         this.session = { ...this.session, status: 'interrupted', updatedAt: now() }
@@ -485,6 +585,11 @@ export class AgentThread {
   private emit(event: AgentEvent): void {
     if (event.type === 'session.created' || event.type === 'session.updated' || event.type === 'session.archived' || event.type === 'session.unarchived') saveSessionMeta(event.session)
     if (event.type === 'handoff.created') this.lastHandoff = event.handoff
+    if (event.type === 'task_contract.created' || event.type === 'task_contract.updated') this.latestTaskContract = event.contract
+    if (event.type === 'plan.updated') this.latestPlanItems = event.items
+    if (event.type === 'plan.confirmation.requested' || event.type === 'plan.confirmation.resolved') this.latestPlanConfirmation = event.confirmation
+    if (event.type === 'evidence.created') this.latestEvidence = [...this.latestEvidence.filter(item => item.id !== event.evidence.id), event.evidence].slice(-50)
+    if (event.type === 'verification.coverage.updated') this.latestCoverage = event.coverage
     void appendSessionEvent(event).catch(error => {
       console.warn('Failed to persist agent event', error)
     })

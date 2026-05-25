@@ -8,6 +8,7 @@ import type {
   Observation,
   ReviewFinding,
   ReviewResult,
+  AgentPlanItem,
   TaskContract,
   VerificationCoverage,
   VerificationCoverageItem,
@@ -205,6 +206,7 @@ export function runRuleBasedReview(input: {
   codeChanged: boolean
   proposedFiles: string[]
   pendingProposalFiles?: string[]
+  planItems?: AgentPlanItem[]
 }): ReviewResult {
   const findings: ReviewFinding[] = []
   const addFinding = (finding: Omit<ReviewFinding, 'id' | 'sessionId' | 'turnId' | 'status' | 'createdAt'>) => {
@@ -241,6 +243,23 @@ export function runRuleBasedReview(input: {
       filePath,
       evidenceRefs: input.evidence.filter(item => item.source === 'diff').map(item => item.id),
       recommendation: 'Wait for the user/runtime to apply or reject the proposal before claiming the task is complete.',
+    })
+  }
+
+  const completedWithoutEvidence = (input.planItems ?? []).filter(item =>
+    item.status === 'completed'
+    && (!item.evidenceIds || item.evidenceIds.length === 0)
+    && !item.evidence
+  )
+  if (completedWithoutEvidence.length > 0) {
+    addFinding({
+      category: 'evidence',
+      severity: 'medium',
+      blocking: true,
+      title: 'Completed plan item lacks evidence',
+      body: `Completed plan items must bind evidence before final response: ${completedWithoutEvidence.map(item => item.title).join(', ')}`,
+      evidenceRefs: [],
+      recommendation: 'Bind evidence IDs to completed plan items or move them back to in_progress.',
     })
   }
 

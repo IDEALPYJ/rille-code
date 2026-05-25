@@ -470,6 +470,22 @@ export async function decidePermission(input: {
     }
   }
 
+  if (input.mode === 'plan') {
+    const allowedPlanTools = new Set(['list_directory', 'read_file', 'search_files', 'git_status', 'git_diff', 'read_diagnostics', 'search_tools', 'explore_codebase', 'update_plan', 'update_task_contract'])
+    const allowed = tool.definition.isReadOnly || allowedPlanTools.has(input.call.name)
+    const policyDecision: PolicyDecision = {
+      action: allowed ? 'allow' : 'deny',
+      risk: commandRisk ? commandRiskToPolicyRisk(commandRisk) : baseRisk,
+      reason: allowed ? 'Plan 模式允许只读探索和计划更新。' : 'Plan 模式不允许写文件、运行命令、应用编辑或操作 sandbox。',
+      guardian,
+      commandSubject,
+      alternatives: allowed ? undefined : alternativesFor(input.call),
+    }
+    return allowed
+      ? { action: 'allow', reason: policyDecision.reason, policyDecision }
+      : { action: 'deny', reason: policyDecision.reason, policyDecision }
+  }
+
   const grantPatterns = policyTargetsForCall(input.call)
   const grant = input.grants?.match(permission, permissionPattern(input.call))
   if (grant) {
@@ -509,10 +525,6 @@ export async function decidePermission(input: {
     return { action: 'allow', reason: policyDecision.reason, policyDecision }
   }
 
-  if (input.mode === 'plan') {
-    const policyDecision: PolicyDecision = { action: 'deny', risk: baseRisk, reason: 'Plan 模式不允许写文件或运行命令。', alternatives: alternativesFor(input.call) }
-    return { action: 'deny', reason: policyDecision.reason, policyDecision }
-  }
   if (input.mode === 'bypass') {
     const policyDecision: PolicyDecision = { action: 'allow', risk: baseRisk, reason: 'Bypass 模式允许。' }
     return { action: 'allow', reason: policyDecision.reason, policyDecision }

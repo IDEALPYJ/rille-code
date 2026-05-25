@@ -428,6 +428,12 @@ export function normalizePlanUpdate(input: {
       status,
       source: 'model',
       evidence: typeof item.evidence === 'string' && item.evidence.trim() ? compact(item.evidence, 240) : current?.evidence,
+      evidenceIds: Array.isArray(item.evidenceIds)
+        ? item.evidenceIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).map(value => value.trim())
+        : current?.evidenceIds,
+      acceptanceCriterionIds: Array.isArray(item.acceptanceCriterionIds)
+        ? item.acceptanceCriterionIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).map(value => value.trim())
+        : current?.acceptanceCriterionIds,
       updatedAt: timestamp,
     })
   }

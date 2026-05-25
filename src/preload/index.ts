@@ -19,6 +19,7 @@ import type {
   CheckpointRef,
   EditProposal,
   ExecutionSandbox,
+  PlanConfirmation,
   RuntimeProcessSummary,
   RuntimeStateArtifact,
 } from '../shared/agent/protocol'
@@ -106,12 +107,15 @@ export interface RilleAPI {
   agentListRuntimeProcesses(sessionId?: string): Promise<RuntimeProcessSummary[]>
   agentStopRuntimeProcess(processId: string): Promise<RuntimeProcessSummary>
   agentCreateCheckpoint(sessionId: string, workspace: AgentWorkspaceLocation, reason: string, turnId?: string): Promise<CheckpointRef>
-  agentRestoreCheckpointAsProposal(sessionId: string, checkpointId: string, filePath?: string): Promise<EditProposal>
+  agentRestoreCheckpointAsProposal(sessionId: string, checkpointId: string, filePath?: string): Promise<EditProposal | EditProposal[]>
   agentCreateSandbox(sessionId: string, workspace: AgentWorkspaceLocation, reason?: string): Promise<ExecutionSandbox>
   agentDisposeSandbox(sessionId: string, sandboxId: string): Promise<ExecutionSandbox>
+  agentSandboxDiffAsProposals(sessionId: string, sandboxId: string, turnId?: string): Promise<EditProposal[]>
   agentCaptureRuntimeState(sessionId: string, workspace?: AgentWorkspaceLocation | null, turnId?: string): Promise<RuntimeStateArtifact>
   agentSubmitTurn(sessionId: string, text: string, context: AgentContextSnapshot): Promise<AgentTurn>
   agentInterruptTurn(sessionId: string, turnId: string): Promise<AgentSession | null>
+  agentConfirmPlan(sessionId: string, confirmationId: string): Promise<PlanConfirmation | AgentSession | null>
+  agentRejectPlan(sessionId: string, confirmationId: string, reason?: string): Promise<PlanConfirmation | AgentSession | null>
   agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>
   agentUpdatePermission(sessionId: string, permissionMode: AgentPermissionMode): Promise<AgentSession | null>
   agentApplyEdit(sessionId: string, proposalId: string, context?: AgentContextSnapshot): Promise<EditProposal>
@@ -538,12 +542,15 @@ const api: RilleAPI = {
   agentListRuntimeProcesses: (sessionId) => invokeAgent<RuntimeProcessSummary[]>('agent:dispatch', { type: 'runtime.process.list', sessionId }),
   agentStopRuntimeProcess: (processId) => invokeAgent<RuntimeProcessSummary>('agent:dispatch', { type: 'runtime.process.stop', processId }),
   agentCreateCheckpoint: (sessionId, workspace, reason, turnId) => invokeAgent<CheckpointRef>('agent:dispatch', { type: 'checkpoint.create', sessionId, workspace, reason, turnId }),
-  agentRestoreCheckpointAsProposal: (sessionId, checkpointId, filePath) => invokeAgent<EditProposal>('agent:dispatch', { type: 'checkpoint.restoreAsProposal', sessionId, checkpointId, filePath }),
+  agentRestoreCheckpointAsProposal: (sessionId, checkpointId, filePath) => invokeAgent<EditProposal | EditProposal[]>('agent:dispatch', { type: 'checkpoint.restoreAsProposal', sessionId, checkpointId, filePath }),
   agentCreateSandbox: (sessionId, workspace, reason) => invokeAgent<ExecutionSandbox>('agent:dispatch', { type: 'sandbox.create', sessionId, workspace, reason }),
   agentDisposeSandbox: (sessionId, sandboxId) => invokeAgent<ExecutionSandbox>('agent:dispatch', { type: 'sandbox.dispose', sessionId, sandboxId }),
+  agentSandboxDiffAsProposals: (sessionId, sandboxId, turnId) => invokeAgent<EditProposal[]>('agent:dispatch', { type: 'sandbox.diffAsProposals', sessionId, sandboxId, turnId }),
   agentCaptureRuntimeState: (sessionId, workspace, turnId) => invokeAgent<RuntimeStateArtifact>('agent:dispatch', { type: 'runtime.state.capture', sessionId, workspace, turnId }),
   agentSubmitTurn: (sessionId, text, context) => invokeAgent<AgentTurn>('agent:submitTurn', { type: 'turn.submit', sessionId, text, context }),
   agentInterruptTurn: (sessionId, turnId) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'turn.interrupt', sessionId, turnId }),
+  agentConfirmPlan: (sessionId, confirmationId) => invokeAgent<PlanConfirmation | AgentSession | null>('agent:dispatch', { type: 'plan.confirm', sessionId, confirmationId }),
+  agentRejectPlan: (sessionId, confirmationId, reason) => invokeAgent<PlanConfirmation | AgentSession | null>('agent:dispatch', { type: 'plan.reject', sessionId, confirmationId, reason }),
   agentRespondApproval: (requestId, decision) => invokeAgent<boolean>('agent:dispatch', { type: 'approval.respond', requestId, decision }),
   agentUpdatePermission: (sessionId, permissionMode) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'permission.update', sessionId, permissionMode }),
   agentApplyEdit: (sessionId, proposalId, context) => invokeAgent<EditProposal>('agent:dispatch', { type: 'edit.apply', sessionId, proposalId, context }),

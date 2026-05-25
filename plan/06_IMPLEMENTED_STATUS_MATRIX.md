@@ -11,16 +11,16 @@ Evidence files:
 `src/shared/agent/protocol.ts`, `src/main/agent/taskContract.ts`, `src/main/agent/thread.ts`, `src/main/agent/tools.ts`, `tests/agent/taskContract.test.ts`, `tests/agent/tools.test.ts`
 
 Implemented details:
-已有 TaskContract、AcceptanceCriterion、RiskPoint、TaskAssumption、初始合同生成、模型可见 `update_task_contract`。
+已有 TaskContract、AcceptanceCriterion、RiskPoint、TaskAssumption、初始合同生成、模型可见 `update_task_contract`、PlanConfirmation、confirmed plan 跨 turn 复用。
 
 Missing pieces:
-用户确认 gate、显式 Plan Mode、跨 turn contract review、PlanItem evidence gate。
+多用户协作确认和更细的 accepted-risk workflow。
 
 Next phase:
-Phase G
+Phase K, Phase N
 
 Verification:
-Vitest 覆盖合同生成和更新归一化。
+Vitest 覆盖合同生成、更新归一化、PlanConfirmation replay/resolve、Plan Mode 禁写、PlanItem evidence gate。
 
 ## Capability: AgentLoop tool loop
 
@@ -71,22 +71,22 @@ Provider tests 覆盖 Responses payload、tool call parse、usage/cache metrics�
 Target:
 用 fragment pipeline 构造 stable/dynamic、可追踪、可裁剪、cache-aware context。
 
-Current status: 部分实现
+Current status: 已实现
 
 Evidence files:
 `src/shared/agent/protocol.ts`, `src/main/agent/contextBuilder.ts`, `tests/agent/contextBuilder.test.ts`
 
 Implemented details:
-已有 ContextFragment、ContextTrace、ContextBuildResult、project rules、stable/dynamic sort、deterministic trimming、context.built event、verification/review/handoff/memory fragments、cacheKey hints。
+已有 ContextFragment、ContextTrace、ContextBuildResult、project rules、stable/dynamic sort、deterministic trimming、context.built event、verification/review/handoff/memory fragments、cacheKey hints、stable prefix cache key、dynamic suffix hash、cache eligible token estimate、symbols/selections collector、untrusted boundary tags。
 
 Missing pieces:
-cache hit/miss metrics、LSP/MCP context、untrusted data isolation、cache-safe explicit compaction。
+完整 MCP server lifecycle、cache-safe explicit compaction。
 
 Next phase:
-Phase H, Phase L
+Phase L, Phase O
 
 Verification:
-Context builder tests 覆盖 collectors、排序、裁剪和 replay summary。
+Context builder tests 覆盖 collectors、排序、裁剪、cache key 稳定性、symbols/selections、untrusted prompt boundary。
 
 ## Capability: tool validation
 
@@ -165,16 +165,16 @@ Evidence files:
 `src/main/agent/editStore.ts`, `src/main/agent/thread.ts`, `src/main/agent/tools.ts`, `tests/agent/editStore.test.ts`, `tests/agent/thread.test.ts`
 
 Implemented details:
-已有 EditProposal、conflict check、dirty snapshot guard、apply/reject、rollback proposal。
+已有 EditProposal、EditProposalSet、conflict check、dirty snapshot guard、apply/reject、rollback proposal、checkpoint 多文件 restore proposal、sandbox diff proposal。
 
 Missing pieces:
-worktree patch merge UI、checkpoint restore 的多文件精细 UI。
+更完整的 sandbox 专属工作台和 proposal set 批量管理体验。
 
 Next phase:
-Phase I
+Phase N
 
 Verification:
-Edit/thread tests 覆盖冲突、防覆盖和 rollback proposal。
+Edit/thread/runtime substrate tests 覆盖冲突、防覆盖、rollback proposal、multi-file checkpoint restore 和 sandbox diff proposal。
 
 ## Capability: Evidence/Coverage gate
 

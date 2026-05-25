@@ -317,4 +317,42 @@ describe('buildAgentContext', () => {
     expect(summaryFragment?.text).toContain('修复当前类型错误')
     expect(summaryFragment?.text).toContain('Progress:')
   })
+
+  it('emits cache keys and isolates untrusted context in the rendered prompt', async () => {
+    const result = await buildAgentContext(input())
+
+    expect(result.trace.stablePrefixCacheKey).toMatch(/^[a-f0-9]{32}$/)
+    expect(result.trace.dynamicSuffixHash).toMatch(/^[a-f0-9]{32}$/)
+    expect(result.trace.cacheEligibleTokenEstimate).toBeGreaterThan(0)
+    expect(result.trace.included.some(item => item.type === 'diagnostics' && item.untrusted)).toBe(true)
+    expect(result.prompt).toContain('BEGIN_UNTRUSTED_CONTEXT source=visible_diagnostics type=diagnostics')
+    expect(result.prompt).toContain('END_UNTRUSTED_CONTEXT')
+  })
+
+  it('keeps stable cache key stable when only diagnostics change', async () => {
+    const first = await buildAgentContext(input())
+    const changedDiagnostics = {
+      ...snapshot(),
+      diagnostics: [{ id: 'diag_changed', filePath: '/repo/src/main.ts', line: 2, column: 1, severity: 'warning' as const, message: 'Changed dynamic diagnostic.' }],
+    }
+    const second = await buildAgentContext(input({ contextSnapshot: changedDiagnostics }))
+
+    expect(second.trace.stablePrefixCacheKey).toBe(first.trace.stablePrefixCacheKey)
+    expect(second.trace.dynamicSuffixHash).not.toBe(first.trace.dynamicSuffixHash)
+  })
+
+  it('includes optional symbol and selection context without requiring it', async () => {
+    const result = await buildAgentContext(input({
+      contextSnapshot: {
+        ...snapshot(),
+        symbols: [{ name: 'runAgent', kind: 'function', filePath: '/repo/src/runtime.ts', range: { startLine: 10, startColumn: 1, endLine: 20, endColumn: 2 } }],
+        selections: [{ filePath: '/repo/src/main.ts', range: { startLine: 1, startColumn: 1, endLine: 1, endColumn: 10 }, text: 'selected text' }],
+      },
+    }))
+
+    expect(result.fragments.some(item => item.type === 'symbols')).toBe(true)
+    expect(result.fragments.some(item => item.type === 'selection')).toBe(true)
+    expect(result.prompt).toContain('function runAgent')
+    expect(result.prompt).toContain('selected text')
+  })
 })

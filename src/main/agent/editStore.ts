@@ -1,10 +1,11 @@
 import { readFile, writeFile } from 'fs/promises'
 import { resolve } from 'path'
 import { randomUUID } from 'crypto'
-import type { AgentContextSnapshot, AgentSession, AgentTurn, AgentWorkspaceLocation, EditProposal } from '../../shared/agent/protocol'
+import type { AgentContextSnapshot, AgentSession, AgentTurn, AgentWorkspaceLocation, EditProposal, EditProposalSet } from '../../shared/agent/protocol'
 import { canonicalWorkspacePath, isProtectedPath, isRemoteWorkspace, withinWorkspace, workspaceReadFile, workspaceWriteFile } from './workspace'
 
 const proposals = new Map<string, EditProposal>()
+const proposalSets = new Map<string, EditProposalSet>()
 
 export function createEditProposal(input: {
   session: AgentSession
@@ -15,6 +16,9 @@ export function createEditProposal(input: {
   modifiedContent: string
   rationale?: string
   rollbackOf?: string
+  checkpointId?: string
+  sandboxId?: string
+  proposalSetId?: string
 }): EditProposal {
   const proposal: EditProposal = {
     id: `proposal_${randomUUID()}`,
@@ -26,6 +30,9 @@ export function createEditProposal(input: {
     modifiedContent: input.modifiedContent,
     rationale: input.rationale,
     rollbackOf: input.rollbackOf,
+    checkpointId: input.checkpointId,
+    sandboxId: input.sandboxId,
+    proposalSetId: input.proposalSetId,
     state: 'pending',
     createdAt: Date.now(),
   }
@@ -39,6 +46,41 @@ export function getEditProposal(proposalId: string): EditProposal | null {
 
 export function hydrateEditProposal(proposal: EditProposal): void {
   proposals.set(proposal.id, proposal)
+}
+
+export function createEditProposalSet(input: {
+  session: AgentSession
+  turn: AgentTurn
+  title: string
+  source: EditProposalSet['source']
+  checkpointId?: string
+  sandboxId?: string
+  proposals: EditProposal[]
+}): EditProposalSet {
+  const set: EditProposalSet = {
+    id: `proposal_set_${randomUUID()}`,
+    sessionId: input.session.id,
+    turnId: input.turn.id,
+    title: input.title,
+    source: input.source,
+    checkpointId: input.checkpointId,
+    sandboxId: input.sandboxId,
+    proposalIds: input.proposals.map(item => item.id),
+    createdAt: Date.now(),
+  }
+  proposalSets.set(set.id, set)
+  for (const proposal of input.proposals) {
+    proposals.set(proposal.id, { ...proposal, proposalSetId: set.id })
+  }
+  return set
+}
+
+export function getEditProposalSet(setId: string): EditProposalSet | null {
+  return proposalSets.get(setId) ?? null
+}
+
+export function hydrateEditProposalSet(set: EditProposalSet): void {
+  proposalSets.set(set.id, set)
 }
 
 export function rejectEditProposal(proposalId: string, reason?: string): EditProposal {

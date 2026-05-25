@@ -18,6 +18,7 @@ import type {
   CheckpointRef,
   EditProposal,
   ExecutionSandbox,
+  PlanConfirmation,
   RuntimeProcessSummary,
   RuntimeStateArtifact,
 } from '../shared/agent/protocol'
@@ -391,12 +392,15 @@ declare global {
     agentListRuntimeProcesses(sessionId?: string): Promise<RuntimeProcessSummary[]>
     agentStopRuntimeProcess(processId: string): Promise<RuntimeProcessSummary>
     agentCreateCheckpoint(sessionId: string, workspace: AgentWorkspaceLocation, reason: string, turnId?: string): Promise<CheckpointRef>
-    agentRestoreCheckpointAsProposal(sessionId: string, checkpointId: string, filePath?: string): Promise<EditProposal>
+    agentRestoreCheckpointAsProposal(sessionId: string, checkpointId: string, filePath?: string): Promise<EditProposal | EditProposal[]>
     agentCreateSandbox(sessionId: string, workspace: AgentWorkspaceLocation, reason?: string): Promise<ExecutionSandbox>
     agentDisposeSandbox(sessionId: string, sandboxId: string): Promise<ExecutionSandbox>
+    agentSandboxDiffAsProposals(sessionId: string, sandboxId: string, turnId?: string): Promise<EditProposal[]>
     agentCaptureRuntimeState(sessionId: string, workspace?: AgentWorkspaceLocation | null, turnId?: string): Promise<RuntimeStateArtifact>
     agentSubmitTurn(sessionId: string, text: string, context: AgentContextSnapshot): Promise<AgentTurn>
     agentInterruptTurn(sessionId: string, turnId: string): Promise<AgentSession | null>
+    agentConfirmPlan(sessionId: string, confirmationId: string): Promise<PlanConfirmation | AgentSession | null>
+    agentRejectPlan(sessionId: string, confirmationId: string, reason?: string): Promise<PlanConfirmation | AgentSession | null>
     agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>
     agentUpdatePermission(sessionId: string, permissionMode: AgentPermissionMode): Promise<AgentSession | null>
     agentApplyEdit(sessionId: string, proposalId: string, context?: AgentContextSnapshot): Promise<EditProposal>

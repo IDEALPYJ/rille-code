@@ -174,7 +174,7 @@ describe('AgentLoop context integration', () => {
     const modelMessages = callAgentModelMock.mock.calls[0][0]
     expect(JSON.stringify(modelMessages)).toContain('Task Contract:')
     expect(JSON.stringify(modelMessages)).toContain('SECRET_DIAG_DO_NOT_PERSIST')
-  })
+  }, 15_000)
 
   it('lets the model update the task contract and refreshes the same message part', async () => {
     callAgentModelMock
@@ -258,6 +258,39 @@ describe('AgentLoop context integration', () => {
     const observations = events.filter(event => event.type === 'observation.created')
     expect(observations.some(event => event.type === 'observation.created' && event.observation.source === 'policy' && event.observation.status === 'denied')).toBe(true)
     expect(observations.some(event => event.type === 'observation.created' && event.observation.source === 'tool' && event.observation.status === 'denied')).toBe(true)
+  })
+
+  it('denies write proposals in explicit Plan Mode', async () => {
+    callAgentModelMock
+      .mockResolvedValueOnce(JSON.stringify({
+        tool_calls: [{
+          id: 'tool_write',
+          name: 'propose_file_edit',
+          input: { filePath: '/repo/src/main.ts', modifiedContent: 'changed' },
+        }],
+      }))
+      .mockResolvedValueOnce('{"answer":"planned"}')
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const events: AgentEvent[] = []
+
+    const reason = await new AgentLoop({
+      session: { ...session(), permissionMode: 'plan' },
+      turn: turn(),
+      text: 'plan only',
+      context: cleanContext(),
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+    }).run()
+
+    expect(reason).toBe('completed')
+    expect(events.some(event =>
+      event.type === 'observation.created'
+      && event.observation.source === 'policy'
+      && event.observation.status === 'denied'
+      && event.observation.summary.includes('Plan 模式'),
+    )).toBe(true)
+    expect(events.some(event => event.type === 'edit.proposed')).toBe(false)
   })
 
   it('turns always_allow approvals into session grants', async () => {

@@ -265,6 +265,11 @@ export class AgentLoop {
         excludedCount: contextResult.trace.excluded.length,
         totalTokenEstimate: contextResult.trace.totalTokenEstimate,
         budgetTokens: contextResult.trace.budgetTokens,
+        stablePrefixCacheKey: contextResult.trace.stablePrefixCacheKey,
+        dynamicSuffixHash: contextResult.trace.dynamicSuffixHash,
+        cacheEligibleTokenEstimate: contextResult.trace.cacheEligibleTokenEstimate,
+        cacheHit: contextResult.trace.cacheHit,
+        cachedInputTokens: contextResult.trace.cachedInputTokens,
       },
       trace: contextResult.trace,
       createdAt: now(),
@@ -312,6 +317,22 @@ export class AgentLoop {
       }
 
       if (action.type === 'answer') {
+        if (this.options.session.permissionMode === 'plan') {
+          if (streamedTextPart) {
+            this.updatePart({ ...streamedTextPart, text: action.text })
+          } else {
+            this.emitPart({
+              id: createPartId(),
+              messageId: assistantMessageId,
+              type: 'text',
+              role: 'assistant',
+              text: action.text,
+              createdAt: now(),
+            })
+          }
+          this.emitStage(assistantMessageId, 'completed', 'Plan Mode 生成计划，等待用户确认')
+          return this.finalize('completed')
+        }
         const gate = await this.runFinalGate()
         if (gate.nextAction !== 'allow_final') {
           if (this.gateRepairInjected) {
@@ -674,6 +695,7 @@ export class AgentLoop {
       codeChanged,
       proposedFiles: [...this.proposedFiles],
       pendingProposalFiles: [...this.proposedFiles],
+      planItems: this.planItems,
     })
     const llmReview = await this.runLlmEvaluator(codeChanged)
     const review = mergeReviews(ruleReview, llmReview)

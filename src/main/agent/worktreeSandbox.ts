@@ -2,9 +2,10 @@ import { randomUUID } from 'crypto'
 import { app } from 'electron'
 import { existsSync, mkdirSync, rmSync } from 'fs'
 import { dirname, join, posix, resolve } from 'path'
-import type { AgentWorkspaceLocation, ExecutionSandbox } from '../../shared/agent/protocol'
+import type { AgentSession, AgentTurn, AgentWorkspaceLocation, EditProposal, ExecutionSandbox } from '../../shared/agent/protocol'
 import { createCheckpoint } from './checkpointStore'
-import { workspaceGitDiff, workspaceRunCommand } from './workspace'
+import { createEditProposal, createEditProposalSet, getEditProposal } from './editStore'
+import { workspaceGitDiff, workspaceReadFile, workspaceRunCommand } from './workspace'
 
 const sandboxes = new Map<string, ExecutionSandbox>()
 
@@ -90,6 +91,44 @@ export async function diffSandbox(sessionId: string, sandboxId: string): Promise
   return workspaceGitDiff(sandbox.sandboxWorkspace)
 }
 
+export async function sandboxDiffAsProposals(session: AgentSession, turn: AgentTurn, sandboxId: string): Promise<EditProposal[]> {
+  const sandbox = sandboxes.get(sandboxId)
+  if (!sandbox || sandbox.sessionId !== session.id) throw new Error('Sandbox does not exist.')
+  if (sandbox.status !== 'ready') throw new Error('Sandbox is not ready.')
+  const changed = await workspaceRunCommand(sandbox.sandboxWorkspace, {
+    commandLine: 'git diff --name-only && git ls-files --others --exclude-standard',
+    timeoutMs: 30_000,
+    outputLimitBytes: 64 * 1024,
+    shellMode: true,
+  })
+  if (changed.status !== 'ok') throw new Error(changed.output || changed.error || '读取 sandbox diff 失败。')
+  const files = changed.output.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  if (files.length === 0) return []
+  const proposals = await Promise.all(files.map(async filePath => {
+    const originalContent = await workspaceReadFile(sandbox.workspace, filePath).catch(() => '')
+    const modifiedContent = await workspaceReadFile(sandbox.sandboxWorkspace, filePath).catch(() => '')
+    return createEditProposal({
+      session,
+      turn,
+      title: `合并 sandbox 变更: ${filePath}`,
+      filePath,
+      originalContent,
+      modifiedContent,
+      rationale: `从 sandbox ${sandbox.id} 生成可审查合并提案。`,
+      sandboxId: sandbox.id,
+    })
+  }))
+  const set = createEditProposalSet({
+    session,
+    turn,
+    title: `合并 sandbox ${sandbox.id}`,
+    source: 'sandbox',
+    sandboxId: sandbox.id,
+    proposals,
+  })
+  return set.proposalIds.map(id => getEditProposal(id)).filter((item): item is EditProposal => Boolean(item))
+}
+
 export async function disposeSandbox(sessionId: string, sandboxId: string): Promise<ExecutionSandbox> {
   const sandbox = sandboxes.get(sandboxId)
   if (!sandbox || sandbox.sessionId !== sessionId) throw new Error('Sandbox does not exist.')
@@ -118,4 +157,3 @@ export async function disposeSandbox(sessionId: string, sandboxId: string): Prom
   sandboxes.set(sandboxId, next)
   return next
 }
-

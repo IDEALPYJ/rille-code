@@ -1,6 +1,6 @@
 import { execFileSync } from 'child_process'
-import { mkdtempSync, writeFileSync } from 'fs'
-import { rm } from 'fs/promises'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'fs'
+import { readFile, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -66,6 +66,61 @@ describe('runtime substrate', () => {
     expect(proposal.originalContent).toBe('changed again\n')
     expect(proposal.modifiedContent).toBe('changed\n')
   }, 15_000)
+
+  it('restores multi-file checkpoints as reviewable proposals without writing files', async () => {
+    userData = mkdtempSync(join(tmpdir(), 'rille-runtime-'))
+    const root = initGitRepo()
+    mkdirSync(join(root, 'src'))
+    writeFileSync(join(root, 'README.md'), 'changed readme\n', 'utf8')
+    writeFileSync(join(root, 'src/file.ts'), 'snapshot file\n', 'utf8')
+    const { createCheckpoint, restoreCheckpointAsProposals } = await import('../../src/main/agent/checkpointStore')
+
+    const checkpoint = await createCheckpoint({
+      sessionId: 'session_runtime',
+      turnId: 'turn_runtime',
+      workspace: workspace(root),
+      reason: 'multi file checkpoint',
+    })
+    writeFileSync(join(root, 'README.md'), 'after checkpoint\n', 'utf8')
+    writeFileSync(join(root, 'src/file.ts'), 'after checkpoint file\n', 'utf8')
+
+    const proposals = await restoreCheckpointAsProposals(
+      checkpoint.id,
+      { id: 'session_runtime', title: 'runtime', workspace: workspace(root), createdAt: 1, updatedAt: 1, status: 'idle', permissionMode: 'ask' },
+      { id: 'turn_runtime', sessionId: 'session_runtime', text: 'restore', createdAt: 1, status: 'completed' },
+    )
+
+    expect(proposals).toHaveLength(2)
+    expect(proposals.every(proposal => proposal.checkpointId === checkpoint.id)).toBe(true)
+    expect(proposals.every(proposal => proposal.proposalSetId)).toBe(true)
+    expect(await readFile(join(root, 'README.md'), 'utf8')).toBe('after checkpoint\n')
+  }, 15_000)
+
+  it('turns sandbox diffs into main-workspace proposals', async () => {
+    userData = mkdtempSync(join(tmpdir(), 'rille-runtime-'))
+    const root = initGitRepo()
+    const { createWorktreeSandbox, sandboxDiffAsProposals, disposeSandbox } = await import('../../src/main/agent/worktreeSandbox')
+    const sandbox = await createWorktreeSandbox({
+      sessionId: 'session_sandbox',
+      workspace: workspace(root),
+      reason: 'test merge proposals',
+    })
+    expect(sandbox.status).toBe('ready')
+    writeFileSync(join(sandbox.sandboxWorkspace.path, 'README.md'), 'sandbox change\n', 'utf8')
+
+    const proposals = await sandboxDiffAsProposals(
+      { id: 'session_sandbox', title: 'sandbox', workspace: workspace(root), createdAt: 1, updatedAt: 1, status: 'idle', permissionMode: 'ask' },
+      { id: 'turn_sandbox', sessionId: 'session_sandbox', text: 'merge', createdAt: 1, status: 'completed' },
+      sandbox.id,
+    )
+
+    expect(proposals).toHaveLength(1)
+    expect(proposals[0].sandboxId).toBe(sandbox.id)
+    expect(proposals[0].originalContent).toBe('initial\n')
+    expect(proposals[0].modifiedContent).toBe('sandbox change\n')
+    expect(await readFile(join(root, 'README.md'), 'utf8')).toBe('initial\n')
+    await disposeSandbox('session_sandbox', sandbox.id)
+  }, 30_000)
 
   it('returns actionable sandbox failure for non-git workspaces', async () => {
     userData = mkdtempSync(join(tmpdir(), 'rille-runtime-'))

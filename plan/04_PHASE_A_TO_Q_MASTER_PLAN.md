@@ -10,9 +10,9 @@
 | D | Model Gateway + Streaming Protocol | 已实现 |
 | E | Tool Runtime + Tool Design | 已实现 |
 | F | Policy + Approval + Security | 已实现 |
-| G | Task Contract + Plan Mode | 部分实现 |
-| H | Context Engine + Prompt Cache | 部分实现 |
-| I | Reviewable Editing + Rollback | 部分实现 |
+| G | Task Contract + Plan Mode | 已实现 |
+| H | Context Engine + Prompt Cache | 已实现 |
+| I | Reviewable Editing + Rollback | 已实现 |
 | J | Verification + Evidence Gate | 部分实现 |
 | K | Review + Evaluator | 部分实现 |
 | L | Long-running Memory + Compaction | 部分实现 |
@@ -194,12 +194,12 @@ Checklist：
 - [x] G3. update_plan tool。
 - [x] G4. update_task_contract tool。
 - [x] G5. Task/Plan UI。
-- [ ] G6. explicit Plan Mode。
-- [ ] G7. user confirmation gate。
-- [ ] G8. plan continuity across turns。
-- [ ] G9. PlanItem evidence binding gate。
+- [x] G6. explicit Plan Mode。
+- [x] G7. user confirmation gate。
+- [x] G8. plan continuity across turns。
+- [x] G9. PlanItem evidence binding gate。
 
-当前状态：部分实现。
+当前状态：已实现。`permissionMode: plan` 成为显式 Plan Mode；runtime 只允许只读探索、tool discovery 和计划更新，禁止写入、命令、apply edit 和 sandbox 操作；PlanConfirmation 事件和 UI 确认卡已落地；replay 会重建最近 TaskContract、PlanItems、PlanConfirmation、Evidence/Coverage；已确认计划可跨 turn 复用；completed PlanItem 必须绑定 evidence，否则 rule review 阻塞最终完成。
 
 ## Phase H: Context Engine + Prompt Cache
 
@@ -225,11 +225,11 @@ Checklist：
 - [x] H5. context.built event。
 - [x] H6. evidence/review/handoff/memory fragments。
 - [x] H7. cacheKey hints。
-- [ ] H8. cache hit/miss metrics。
-- [ ] H9. LSP/MCP context。
-- [ ] H10. untrusted content isolation tags。
+- [x] H8. cache hit/miss metrics。
+- [x] H9. LSP/MCP context。
+- [x] H10. untrusted content isolation tags。
 
-当前状态：部分实现。
+当前状态：已实现。ContextTrace 输出 stable prefix cache key、dynamic suffix hash、cache eligible token estimate 和 provider cache metrics 投影；AgentContextSnapshot 支持 symbols/selections，context provider 以可插拔 collector 方式接入 IDE/LSP-style 信息；diagnostics、tool output、selection、memory 等非系统指令被明确包裹在 untrusted context boundary 中。
 
 ## Phase I: Reviewable Editing + Rollback
 
@@ -252,11 +252,11 @@ Checklist：
 - [x] I3. conflict check。
 - [x] I4. dirty snapshot guard。
 - [x] I5. reject and rollback proposal。
-- [ ] I6. side-git snapshot。
-- [ ] I7. checkpoint restore。
-- [ ] I8. worktree patch merge UI。
+- [x] I6. side-git snapshot。
+- [x] I7. checkpoint restore。
+- [x] I8. worktree patch merge UI。
 
-当前状态：部分实现。
+当前状态：已实现。Checkpoint snapshot artifact 支持多文件 restore-as-proposals，不直接覆盖 workspace；proposal 记录 checkpointId/proposalSetId；sandbox diff 可生成主 workspace reviewable proposals，记录 sandboxId/proposalSetId；UI 支持 proposal set 元数据、checkpoint/sandbox 来源和 PlanConfirmation 确认流程；apply 后继续走 conflict guard 与 verification。
 
 ## Phase J: Verification + Evidence Gate
 

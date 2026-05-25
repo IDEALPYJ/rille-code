@@ -82,6 +82,20 @@ export interface AgentContextFile {
   content?: string
 }
 
+export interface AgentSymbol {
+  name: string
+  kind: string
+  filePath: string
+  range?: AgentTextRange
+  containerName?: string
+}
+
+export interface AgentSelection {
+  filePath: string
+  range: AgentTextRange
+  text?: string
+}
+
 export interface AgentDiagnostic {
   id: string
   filePath: string
@@ -217,6 +231,8 @@ export interface AgentContextSnapshot {
   openFiles: AgentContextFile[]
   diagnostics: AgentDiagnostic[]
   cursor?: { line: number; column: number }
+  symbols?: AgentSymbol[]
+  selections?: AgentSelection[]
 }
 
 export type ContractScopeKind = 'file' | 'module' | 'behavior' | 'ui' | 'test' | 'doc' | 'workspace' | 'unknown'
@@ -229,6 +245,7 @@ export type TaskAssumptionStatus = 'open' | 'confirmed' | 'rejected' | 'stale'
 export type TaskContractStatus = 'draft' | 'active' | 'updated' | 'completed' | 'blocked'
 export type StructuredPlanStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'skipped'
 export type StructuredPlanSource = 'runtime' | 'model' | 'user'
+export type PlanConfirmationStatus = 'pending' | 'confirmed' | 'rejected' | 'superseded'
 export type ContextBuildPhase = 'planning' | 'exploration' | 'coding' | 'repair' | 'verification' | 'review' | 'resume'
 export type ContextFragmentType =
   | 'system'
@@ -248,7 +265,11 @@ export type ContextFragmentType =
   | 'session_summary'
   | 'memory_ref'
   | 'handoff'
+  | 'symbols'
+  | 'selection'
+  | 'runtime_state'
 export type ContextFragmentSection = 'stable_prefix' | 'dynamic_suffix'
+export type ContextTrustLevel = 'system' | 'workspace' | 'tool_output' | 'user' | 'external'
 export type ToolVisibility = 'model' | 'runtime' | 'ui'
 export type ToolSideEffect = 'none' | 'workspace_read' | 'workspace_write' | 'process' | 'network' | 'external'
 export type ToolFailureType =
@@ -463,7 +484,23 @@ export interface AgentPlanItem {
   status: StructuredPlanStatus
   source: StructuredPlanSource
   evidence?: string
+  evidenceIds?: string[]
+  acceptanceCriterionIds?: string[]
   updatedAt: number
+}
+
+export interface PlanConfirmation {
+  id: string
+  sessionId: string
+  turnId: string
+  contractId: string
+  planItemIds: string[]
+  status: PlanConfirmationStatus
+  riskLevel: RiskLevel
+  reason: string
+  rejectedReason?: string
+  createdAt: number
+  resolvedAt?: number
 }
 
 export interface ContextFragment {
@@ -474,6 +511,9 @@ export interface ContextFragment {
   source: string
   text: string
   trusted: boolean
+  trust?: ContextTrustLevel
+  untrusted?: boolean
+  cacheEligible?: boolean
   cacheKey?: string
   stale?: boolean
   tokenEstimate?: number
@@ -486,6 +526,10 @@ export interface ContextTraceItem {
   source: string
   reason: string
   tokenEstimate?: number
+  cacheKey?: string
+  cacheEligible?: boolean
+  trust?: ContextTrustLevel
+  untrusted?: boolean
 }
 
 export interface ContextTrace {
@@ -493,6 +537,11 @@ export interface ContextTrace {
   excluded: ContextTraceItem[]
   totalTokenEstimate: number
   budgetTokens: number
+  stablePrefixCacheKey?: string
+  dynamicSuffixHash?: string
+  cacheEligibleTokenEstimate?: number
+  cacheHit?: boolean
+  cachedInputTokens?: number
 }
 
 export interface ContextBuildInput {
@@ -522,6 +571,11 @@ export interface ContextBuiltSummary {
   excludedCount: number
   totalTokenEstimate: number
   budgetTokens: number
+  stablePrefixCacheKey?: string
+  dynamicSuffixHash?: string
+  cacheEligibleTokenEstimate?: number
+  cacheHit?: boolean
+  cachedInputTokens?: number
 }
 
 // === Feature / Progress / Handoff ===
@@ -740,7 +794,22 @@ export interface EditProposal {
   rationale?: string
   rejectedReason?: string
   rollbackOf?: string
+  checkpointId?: string
+  sandboxId?: string
+  proposalSetId?: string
   state: 'pending' | 'applied' | 'rejected' | 'conflicted'
+  createdAt: number
+}
+
+export interface EditProposalSet {
+  id: string
+  sessionId: string
+  turnId: string
+  title: string
+  source: 'checkpoint' | 'sandbox' | 'rollback'
+  checkpointId?: string
+  sandboxId?: string
+  proposalIds: string[]
   createdAt: number
 }
 
@@ -750,6 +819,7 @@ export type MessagePart =
   | { id: string; messageId: string; type: 'stage'; stage: AgentRunStage; detail?: string; createdAt: number }
   | { id: string; messageId: string; type: 'task_contract'; contract: TaskContract; createdAt: number }
   | { id: string; messageId: string; type: 'plan'; items: AgentPlanItem[]; reason?: string; createdAt: number }
+  | { id: string; messageId: string; type: 'plan_confirmation'; confirmation: PlanConfirmation; createdAt: number }
   | { id: string; messageId: string; type: 'tool'; call: ToolCallView; state: ToolState; output?: ToolResultView; createdAt: number }
   | { id: string; messageId: string; type: 'file'; filePath: string; range?: AgentTextRange; label: string; createdAt: number }
   | { id: string; messageId: string; type: 'diff'; proposalId: string; title: string; state: EditProposal['state']; createdAt: number }
@@ -825,9 +895,12 @@ export type AgentOp =
   | { type: 'checkpoint.restoreAsProposal'; sessionId: string; checkpointId: string; filePath?: string }
   | { type: 'sandbox.create'; sessionId: string; workspace: AgentWorkspaceLocation; reason?: string }
   | { type: 'sandbox.dispose'; sessionId: string; sandboxId: string }
+  | { type: 'sandbox.diffAsProposals'; sessionId: string; sandboxId: string; turnId?: string }
   | { type: 'runtime.state.capture'; sessionId: string; turnId?: string; workspace?: AgentWorkspaceLocation | null }
   | { type: 'turn.submit'; sessionId: string; text: string; context: AgentContextSnapshot }
   | { type: 'turn.interrupt'; sessionId: string; turnId: string }
+  | { type: 'plan.confirm'; sessionId: string; confirmationId: string }
+  | { type: 'plan.reject'; sessionId: string; confirmationId: string; reason?: string }
   | { type: 'approval.respond'; requestId: string; decision: ApprovalDecision }
   | { type: 'edit.apply'; sessionId: string; proposalId: string; context?: AgentContextSnapshot }
   | { type: 'edit.reject'; sessionId: string; proposalId: string; reason?: string }
@@ -849,6 +922,8 @@ export type AgentEvent =
   | { type: 'task_contract.created'; sessionId: string; turnId: string; contract: TaskContract }
   | { type: 'task_contract.updated'; sessionId: string; turnId: string; contract: TaskContract; reason: string; source: StructuredPlanSource }
   | { type: 'plan.updated'; sessionId: string; turnId: string; items: AgentPlanItem[]; reason?: string; source: StructuredPlanSource; createdAt: number }
+  | { type: 'plan.confirmation.requested'; sessionId: string; turnId: string; confirmation: PlanConfirmation }
+  | { type: 'plan.confirmation.resolved'; sessionId: string; turnId: string; confirmation: PlanConfirmation }
   | { type: 'context.built'; sessionId: string; turnId: string; summary: ContextBuiltSummary; trace: ContextTrace; createdAt: number }
   | { type: 'message.part.created'; sessionId: string; turnId?: string; part: MessagePart }
   | { type: 'message.part.updated'; sessionId: string; turnId?: string; part: MessagePart }

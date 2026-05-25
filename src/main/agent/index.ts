@@ -1,5 +1,5 @@
 import type { WebContents } from 'electron'
-import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, EditProposal, ExecutionSandbox, RuntimeProcessSummary, RuntimeStateArtifact } from '../../shared/agent/protocol'
+import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, EditProposal, ExecutionSandbox, PlanConfirmation, RuntimeProcessSummary, RuntimeStateArtifact } from '../../shared/agent/protocol'
 import { deleteAgentModelProfile, listAgentModelProfiles, readAgentConfigSnapshot, saveAgentConfig, saveAgentModelProfile, selectAgentModelProfile } from './config'
 import { testAgentProvider } from './provider'
 import { AgentThread } from './thread'
@@ -7,9 +7,9 @@ import { exportSessionTrace } from './trace'
 import { appendSessionEvent, archiveSessionMeta, deleteSessionStore, findLastSession, listSessionSummaries, readSessionMeta, renameSessionMeta, saveSessionMeta } from './sessionStore'
 import { listArtifacts, readArtifact } from './artifactStore'
 import { cleanupRuntimeProcesses, listRuntimeProcesses, stopRuntimeProcess } from './processRegistry'
-import { createCheckpoint, restoreCheckpointAsProposal } from './checkpointStore'
+import { createCheckpoint, restoreCheckpointAsProposals } from './checkpointStore'
 import { captureRuntimeState } from './runtimeState'
-import { createWorktreeSandbox, disposeSandbox } from './worktreeSandbox'
+import { createWorktreeSandbox, disposeSandbox, sandboxDiffAsProposals } from './worktreeSandbox'
 
 const threads = new Map<string, AgentThread>()
 
@@ -131,6 +131,8 @@ export async function submitAgentTurn(op: Extract<AgentOp, { type: 'turn.submit'
 type AgentDispatchValue =
   | AgentSession
   | EditProposal
+  | EditProposal[]
+  | PlanConfirmation
   | boolean
   | null
   | ArtifactPayload
@@ -165,10 +167,24 @@ export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<Agent
       const session = readSessionMeta(op.sessionId)
       if (!session) throw new Error('Agent session does not exist.')
       const turn: AgentTurn = { id: `turn_checkpoint_${Date.now()}`, sessionId: op.sessionId, text: 'Restore checkpoint as proposal', createdAt: Date.now(), status: 'completed' }
-      return ok(await restoreCheckpointAsProposal(op.checkpointId, session, turn, op.filePath))
+      const proposals = await restoreCheckpointAsProposals(op.checkpointId, session, turn, op.filePath)
+      for (const proposal of proposals) {
+        void appendSessionEvent({ type: 'edit.proposed', sessionId: op.sessionId, turnId: proposal.turnId, proposal })
+      }
+      return ok(proposals.length === 1 ? proposals[0] : proposals)
     }
     if (op.type === 'sandbox.create') return ok(await createWorktreeSandbox(op))
     if (op.type === 'sandbox.dispose') return ok(await disposeSandbox(op.sessionId, op.sandboxId))
+    if (op.type === 'sandbox.diffAsProposals') {
+      const session = readSessionMeta(op.sessionId)
+      if (!session) throw new Error('Agent session does not exist.')
+      const turn: AgentTurn = { id: op.turnId || `turn_sandbox_${Date.now()}`, sessionId: op.sessionId, text: 'Create sandbox diff proposals', createdAt: Date.now(), status: 'completed' }
+      const proposals = await sandboxDiffAsProposals(session, turn, op.sandboxId)
+      for (const proposal of proposals) {
+        void appendSessionEvent({ type: 'edit.proposed', sessionId: op.sessionId, turnId: proposal.turnId, proposal })
+      }
+      return ok(proposals)
+    }
     if (op.type === 'runtime.state.capture') {
       const { state } = await captureRuntimeState({ sessionId: op.sessionId, turnId: op.turnId, workspace: op.workspace })
       return ok(state)

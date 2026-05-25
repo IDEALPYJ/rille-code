@@ -15,15 +15,15 @@
 
 | Phase | 名称 | 当前完成状态 | 源码能力状态 | 当前完成范围 | 下一步入口 |
 | --- | --- | --- | --- | --- | --- |
-| A | Product Contract + System Boundaries | 已完成 | 已实现 | IDE-native runtime 边界、七层架构、用户控制点、完成定义已落地 | D6 |
-| B | Durable Session + Event Log | 已完成 | 已实现 | JSONL session、turn、MessagePart、sequence、resume、archive/unarchive、artifact store 已落地 | D6 |
-| C | Workspace + Execution Substrate | 已完成 | 已实现 | local/WSL/SSH/worktree、path guard、timeout/output cap、process registry、checkpoint、sandbox、runtime state artifact 已落地 | D6 |
-| D | Model Gateway + Streaming Protocol | 已完成 | 已实现 | Responses adapter、SSE streaming、fallback trace、cache metrics 已落地 | G6 |
-| E | Tool Runtime + Tool Design | 已完成 | 已实现 | artifactRef、deferred discovery、组合工具、tool trajectory eval 已落地 | G6 |
-| F | Policy + Approval + Security | 已完成 | 已实现 | workspace grant、Guardian、BashArity subject、sandbox policy 已落地 | G6 |
-| G | Task Contract + Plan Mode | 部分完成 | 部分实现 | TaskContract、Plan、update tools、Task/Plan UI 已落地 | G6 |
-| H | Context Engine + Prompt Cache | 部分完成 | 部分实现 | ContextFragment pipeline、project rules、deterministic trimming、cacheKey hints 已落地 | H8 |
-| I | Reviewable Editing + Rollback | 部分完成 | 部分实现 | diff proposal、runtime-only apply、dirty guard、rollback proposal 已落地 | I6 |
+| A | Product Contract + System Boundaries | 已完成 | 已实现 | IDE-native runtime 边界、七层架构、用户控制点、完成定义已落地 | J7 |
+| B | Durable Session + Event Log | 已完成 | 已实现 | JSONL session、turn、MessagePart、sequence、resume、archive/unarchive、artifact store 已落地 | J7 |
+| C | Workspace + Execution Substrate | 已完成 | 已实现 | local/WSL/SSH/worktree、path guard、timeout/output cap、process registry、checkpoint、sandbox、runtime state artifact 已落地 | J7 |
+| D | Model Gateway + Streaming Protocol | 已完成 | 已实现 | Responses adapter、SSE streaming、fallback trace、cache metrics 已落地 | J7 |
+| E | Tool Runtime + Tool Design | 已完成 | 已实现 | artifactRef、deferred discovery、组合工具、tool trajectory eval 已落地 | J7 |
+| F | Policy + Approval + Security | 已完成 | 已实现 | workspace grant、Guardian、BashArity subject、sandbox policy 已落地 | J7 |
+| G | Task Contract + Plan Mode | 已完成 | 已实现 | explicit Plan Mode、PlanConfirmation、跨 turn plan continuity、PlanItem evidence gate 已落地 | J7 |
+| H | Context Engine + Prompt Cache | 已完成 | 已实现 | cache trace metrics、symbols/selections collector、untrusted boundary 已落地 | J7 |
+| I | Reviewable Editing + Rollback | 已完成 | 已实现 | 多文件 checkpoint restore、proposal set、sandbox diff proposals 已落地 | J7 |
 | J | Verification + Evidence Gate | 部分完成 | 部分实现 | Evidence、Coverage、VerifierRunner、before-stop gate、coverage UI 已落地 | J7 |
 | K | Review + Evaluator | 部分完成 | 部分实现 | rule review、LLM evaluator MVP、source badge、blocking gate 已落地 | K6 |
 | L | Long-running Memory + Compaction | 部分完成 | 部分实现 | Progress/Handoff、resume injection、ProjectMemory MVP、memory_ref 已落地 | L6 |
@@ -106,10 +106,10 @@
 - [x] G3. update_plan tool。
 - [x] G4. update_task_contract tool。
 - [x] G5. Task/Plan UI。
-- [ ] G6. explicit Plan Mode。
-- [ ] G7. user confirmation gate。
-- [ ] G8. plan continuity across turns。
-- [ ] G9. PlanItem evidence binding gate。
+- [x] G6. explicit Plan Mode。
+- [x] G7. user confirmation gate。
+- [x] G8. plan continuity across turns。
+- [x] G9. PlanItem evidence binding gate。
 
 ## Phase H Checklist
 
@@ -120,9 +120,9 @@
 - [x] H5. context.built event。
 - [x] H6. evidence/review/handoff/memory fragments。
 - [x] H7. cacheKey hints。
-- [ ] H8. cache hit/miss metrics。
-- [ ] H9. LSP/MCP context。
-- [ ] H10. untrusted content isolation tags。
+- [x] H8. cache hit/miss metrics。
+- [x] H9. LSP/MCP context。
+- [x] H10. untrusted content isolation tags。
 
 ## Phase I Checklist
 
@@ -131,9 +131,9 @@
 - [x] I3. conflict check。
 - [x] I4. dirty snapshot guard。
 - [x] I5. reject and rollback proposal。
-- [ ] I6. side-git snapshot。
-- [ ] I7. checkpoint restore。
-- [ ] I8. worktree patch merge UI。
+- [x] I6. side-git snapshot。
+- [x] I7. checkpoint restore。
+- [x] I8. worktree patch merge UI。
 
 ## Phase J Checklist
 
@@ -268,7 +268,18 @@
 验证命令: `npm test`, `npm run typecheck`, `npm run build`
 验证结果: `npm test` 18 个 test files、151 个 tests 通过；`npm run typecheck` 通过；`npm run build` 通过。
 剩余风险: OpenAI Responses streaming 是完整路径；Anthropic/Gemini 当前保持非流式 fallback trace。Workspace grant 的审计列表已持久化，完整管理 UI 可在 Phase N 扩展。
-下一步: G6
+下一步: J7 browser evidence / J8 explicit user evidence / J9 waiver UI。
+
+步骤: Phase G/H/I acceptance closure
+状态: 已完成
+完成日期: 2026-05-24
+涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/thread.ts`, `src/main/agent/runtime.ts`, `src/main/agent/permissions.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/editStore.ts`, `src/main/agent/checkpointStore.ts`, `src/main/agent/worktreeSandbox.ts`, `src/main/agent/verificationGate.ts`, `src/preload/index.ts`, `src/renderer/components/agent/AgentPanel.tsx`
+实现摘要: Phase G 完成 PlanConfirmation、显式 Plan Mode 禁写边界、跨 turn confirmed plan 复用、PlanItem evidence gate；Phase H 完成 context cache key/hash/eligible token trace、symbols/selections collector、untrusted context boundary；Phase I 完成 checkpoint 多文件 restore-as-proposals、proposalSet metadata、sandbox diff proposals 和 UI 确认入口。
+测试文件: `tests/agent/contextBuilder.test.ts`, `tests/agent/runtime.test.ts`, `tests/agent/thread.test.ts`, `tests/agent/runtimeSubstrate.test.ts`
+验证命令: `npm test -- tests/agent/contextBuilder.test.ts tests/agent/runtime.test.ts tests/agent/thread.test.ts tests/agent/runtimeSubstrate.test.ts --reporter verbose`
+验证结果: 4 个 test files、36 个 tests 通过。
+剩余风险: Phase H 的 MCP lifecycle 仍按规划保留到 Phase O；Phase I 的 proposal set UI 复用现有 diff modal 与 proposal metadata，完整 sandbox 专属工作台可在 Phase N 扩展。
+下一步: J7 browser evidence / J8 explicit user evidence / J9 waiver UI。
 
 步骤: Phase A/B/C final usable implementation
 状态: 已完成
@@ -279,4 +290,4 @@
 验证命令: `npm test`, `npm run typecheck`
 验证结果: `npm test` 18 个测试文件、145 个测试全部通过；`npm run typecheck` 通过。
 剩余风险: remote/WSL worktree sandbox 依赖目标环境可执行 `git worktree`；失败时返回可操作 reason，不静默降级。
-下一步: G6 explicit Plan Mode。
+下一步: J7 browser evidence / J8 explicit user evidence / J9 waiver UI。

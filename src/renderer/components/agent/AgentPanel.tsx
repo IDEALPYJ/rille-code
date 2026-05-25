@@ -30,6 +30,7 @@ import type {
   ApprovalRequest,
   EditProposal,
   MessagePart,
+  PlanConfirmation,
   TaskContract,
 } from '../../../shared/agent/protocol'
 import type { OpenFile } from '../../App'
@@ -442,6 +443,56 @@ function PlanPart({ part }: { part: Extract<MessagePart, { type: 'plan' }> }) {
   )
 }
 
+function planConfirmationLabel(status: PlanConfirmation['status']): string {
+  if (status === 'confirmed') return '已确认'
+  if (status === 'rejected') return '已拒绝'
+  if (status === 'superseded') return '已替换'
+  return '待确认'
+}
+
+function isPlanConfirmation(value: unknown): value is PlanConfirmation {
+  return Boolean(value && typeof value === 'object' && 'contractId' in value && 'planItemIds' in value)
+}
+
+function PlanConfirmationPart({
+  part,
+  sessionId,
+  onResolved,
+}: {
+  part: Extract<MessagePart, { type: 'plan_confirmation' }>
+  sessionId: string | null | undefined
+  onResolved: (confirmation: PlanConfirmation) => void
+}) {
+  const confirmation = part.confirmation
+  const disabled = !sessionId || confirmation.status !== 'pending'
+  const confirm = useCallback(async () => {
+    if (!sessionId) return
+    const result = await window.rille.agentConfirmPlan(sessionId, confirmation.id)
+    if (isPlanConfirmation(result)) onResolved(result)
+  }, [confirmation.id, onResolved, sessionId])
+  const reject = useCallback(async () => {
+    if (!sessionId) return
+    const reason = window.prompt('拒绝原因（可留空）：') || undefined
+    const result = await window.rille.agentRejectPlan(sessionId, confirmation.id, reason)
+    if (isPlanConfirmation(result)) onResolved(result)
+  }, [confirmation.id, onResolved, sessionId])
+  return (
+    <div className={'agent-plan-confirmation status-' + confirmation.status}>
+      <div className="agent-contract-header">
+        <ListChecks size={15} />
+        <span>Plan Confirmation</span>
+        <small>{planConfirmationLabel(confirmation.status)} · {riskText(confirmation.riskLevel)}</small>
+      </div>
+      <p>{confirmation.reason}</p>
+      {confirmation.rejectedReason && <small>拒绝原因：{confirmation.rejectedReason}</small>}
+      <div className="agent-plan-confirmation-actions">
+        <button type="button" disabled={disabled} onClick={() => void confirm()}>Confirm</button>
+        <button type="button" disabled={disabled} onClick={() => void reject()}>Reject</button>
+      </div>
+    </div>
+  )
+}
+
 function EditResultPart({ part }: { part: Extract<MessagePart, { type: 'edit_result' }> }) {
   return (
     <div className={'agent-edit-result state-' + part.state}>
@@ -517,15 +568,20 @@ function MessagePartView({
   part,
   proposals,
   onOpenProposal,
+  sessionId,
+  onPlanConfirmationResolved,
 }: {
   part: MessagePart
   proposals: Record<string, EditProposal>
   onOpenProposal: (proposal: EditProposal) => void
+  sessionId?: string | null
+  onPlanConfirmationResolved: (confirmation: PlanConfirmation) => void
 }) {
   if (part.type === 'tool') return <ToolPart part={part} />
   if (part.type === 'stage') return <StagePart part={part} />
   if (part.type === 'task_contract') return <TaskContractPart part={part} />
   if (part.type === 'plan') return <PlanPart part={part} />
+  if (part.type === 'plan_confirmation') return <PlanConfirmationPart part={part} sessionId={sessionId} onResolved={onPlanConfirmationResolved} />
   if (part.type === 'diagnostic') return <DiagnosticPart part={part} />
   if (part.type === 'verification') return <VerificationPart part={part} />
   if (part.type === 'evidence_coverage') return <EvidenceCoveragePart part={part} />
@@ -969,6 +1025,14 @@ export function AgentPanel(props: Props) {
     setExpandedToolGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }))
   }, [])
 
+  const updatePlanConfirmationPart = useCallback((confirmation: PlanConfirmation) => {
+    setParts(prev => prev.map(part => (
+      part.type === 'plan_confirmation' && part.confirmation.id === confirmation.id
+        ? { ...part, confirmation }
+        : part
+    )))
+  }, [])
+
   return (
     <aside className="agent-panel" aria-label="Vibe Coding">
       {projectContextLabel && (
@@ -1000,6 +1064,8 @@ export function AgentPanel(props: Props) {
                   part={item.part}
                   proposals={proposals}
                   onOpenProposal={setReviewProposal}
+                  sessionId={props.sessionId}
+                  onPlanConfirmationResolved={updatePlanConfirmationPart}
                 />
               </div>
             )
