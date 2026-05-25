@@ -20,15 +20,14 @@
 
 当前状态：
 
-- Phase B 已实现。
-- Phase A/C 部分实现。
+- Phase A-C 已实现。
 
-优先任务：
+已完成任务：
 
-- 补齐 `plan` 自身的执行总控和完成标记规则。
-- 增加 archive session 设计和实现。
-- 建立 ArtifactRef store 作为后续大输出、trace、diff、snapshot 的基础。
-- 为 workspace runtime state 定义统一事件。
+- 已补齐 `plan` 自身的执行总控和完成标记规则。
+- 已增加 archive/unarchive session 设计和实现。
+- 已建立 ArtifactRef store 作为大输出、trace、verification output、runtime state、checkpoint 的基础。
+- 已为 workspace runtime state 定义统一 artifact/event 路径。
 
 里程碑验收：
 
@@ -50,16 +49,16 @@ Event replay 后 UI 状态一致。
 
 当前状态：
 
-- D-H 均部分实现。
+- Phase D-H 已实现。
 
-优先任务：
+已完成任务：
 
-- 实现 SSE streaming event model。
-- 完成 OpenAI Responses API adapter。
-- 加入 provider fallback matrix。
-- 为 tools 加 artifactRef 和组合工具。
-- 引入 explicit Plan Mode 和 user confirmation gate。
-- 将 cache metrics 与 ContextTrace 打通。
+- 已实现 SSE streaming event model。
+- 已完成 OpenAI Responses API adapter。
+- 已加入 provider fallback matrix。
+- 已为 tools 加 artifactRef、deferred discovery 和组合工具。
+- 已引入 explicit Plan Mode、PlanConfirmation 和 user confirmation gate。
+- 已将 cache metrics 与 ContextTrace 打通。
 
 里程碑验收：
 
@@ -80,16 +79,16 @@ Context trace 能解释 included/excluded 和 cache behavior。
 
 当前状态：
 
-- I-M 均部分实现。
+- Phase I-M 已实现。
 
 优先任务：
 
-- 实现 checkpoint/side-git snapshot。
-- 增加 browser/user evidence 和 waiver UI。
-- 将 evaluator config 提升为可追踪 public protocol。
-- 实现 explicit `context.compacted`、cache-safe compact fork。
-- 扩展 eval runner：fixture setup/teardown、single-step、full-turn。
-- 增加 lifecycle hooks。
+- 已实现 checkpoint/side-git snapshot、checkpoint restore proposal 和 sandbox diff proposal。
+- 已增加 browser/user evidence 和 waiver UI。
+- 已将 evaluator config/run 提升为可追踪 public protocol。
+- 已实现 explicit `context.compacted`、cache-safe compact fork 和 compaction task。
+- 已扩展 eval runner：fixture setup/teardown、single-step、full-turn。
+- 已增加 lifecycle hooks。
 
 里程碑验收：
 
@@ -111,14 +110,14 @@ eval runner 能验证 trajectory、state 和 forbidden actions。
 
 当前状态：
 
-- N 部分实现。
+- N 已实现。
 - O 未实现。
 
 优先任务：
 
-- Session card 展示 risk、latest verification、last action、handoff。
-- Composer 支持 `/plan`、`/fix`、`@file`、`#selection`。
-- Trace/debug view。
+- 已完成 Session card 展示 risk、latest verification、last action、handoff。
+- 已完成 Composer 支持 `/plan`、`/fix`、`/verify`、`@file`、`#selection`。
+- 已完成 Trace/debug view 和 subagent 协议占位树。
 - SkillContract、skill discovery、progressive disclosure。
 - MCP registry、namespace、policy 和 lifecycle。
 
@@ -174,6 +173,8 @@ Advisor 只给建议，不调用工具，不面向用户输出。
 10. Skills/plugins/MCP.
 11. Subagents and advisor。
 12. Release governance。
+
+当前入口：A-N 已收口，后续从 Phase O1 SkillContract 和扩展体系继续。
 
 ## 每阶段固定记录
 

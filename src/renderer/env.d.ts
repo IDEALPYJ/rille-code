@@ -22,6 +22,7 @@ import type {
   PlanConfirmation,
   RuntimeProcessSummary,
   RuntimeStateArtifact,
+  TraceEvent,
   VerificationStatus,
 } from '../shared/agent/protocol'
 
@@ -409,6 +410,7 @@ declare global {
     agentAcceptReviewRisk(sessionId: string, findingId: string, reason: string, turnId?: string): Promise<AgentSession | null>
     agentDismissReviewFinding(sessionId: string, findingId: string, reason?: string, turnId?: string): Promise<AgentSession | null>
     agentCompactContext(sessionId: string, turnId?: string, reason?: string): Promise<CompactionResult>
+    agentExportTrace(sessionId: string, redacted?: boolean): Promise<TraceEvent[]>
     agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>
     agentUpdatePermission(sessionId: string, permissionMode: AgentPermissionMode): Promise<AgentSession | null>
     agentApplyEdit(sessionId: string, proposalId: string, context?: AgentContextSnapshot): Promise<EditProposal>

@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import type {
   AgentContextSnapshot,
   AgentEvent,
+  AgentHookName,
   AgentPlanItem,
   AgentRunStage,
   AgentSession,
@@ -45,6 +46,7 @@ import {
   runRuleBasedReview,
 } from './verificationGate'
 import { EvaluatorRunner } from './evaluatorRunner'
+import { invokeAgentHook } from './hooks'
 
 interface RuntimeOptions {
   session: AgentSession
@@ -276,6 +278,7 @@ export class AgentLoop {
       createdAt: now(),
     })
     this.traceCollector.contextBuilt(this.options.session.id, this.options.turn.id, contextResult.trace)
+    await this.invokeHook('context.built', { included: contextResult.trace.included.length, excluded: contextResult.trace.excluded.length })
     if (this.taskContract) {
       this.traceCollector.taskCreated(this.options.session.id, this.options.turn.id, this.taskContract.id, this.taskContract.goal)
     }
@@ -296,9 +299,11 @@ export class AgentLoop {
         description: t.description,
         inputSchema: t.inputSchema,
       }))
+      await this.invokeHook('model.before', { iteration, toolCount: tools.length })
       const modelResult = await this.callModelStreaming(messages, tools, assistantMessageId, cacheKeyForContext(this.options.session.id, this.options.turn.id, contextResult.prompt))
       const { text: modelText, usage, toolCalls: nativeToolCalls, fallbackTrace, cacheMetrics, streamedTextPart } = modelResult
       if (this.options.signal.aborted) return this.finalize('interrupted')
+      await this.invokeHook('model.after', { iteration, toolCallCount: nativeToolCalls?.length ?? 0, hasUsage: Boolean(usage) })
       const executorUsage = usage ? { ...usage, purpose: 'executor' as const } : undefined
       this.traceCollector.modelCalled(this.options.session.id, this.options.turn.id, executorUsage)
       if (executorUsage) this.traceCollector.costUpdated(this.options.session.id, this.options.turn.id, executorUsage)
@@ -542,6 +547,7 @@ export class AgentLoop {
   }
 
   private async executeAndRecord(call: RuntimeToolCall, toolPart: Extract<MessagePart, { type: 'tool' }>, runningCall: ToolCallView): Promise<{ call: RuntimeToolCall; result: unknown }> {
+    await this.invokeHook('tool.before', { callId: call.id, name: call.name })
     const result = await executeToolCall(call, {
       session: this.options.session,
       turn: this.options.turn,
@@ -570,6 +576,7 @@ export class AgentLoop {
     const evidence = evidenceFromToolResult({ sessionId: this.options.session.id, turnId: this.options.turn.id, call, result })
     if (evidence) this.recordEvidence(evidence)
     this.completeToolPart(toolPart, runningCall, result)
+    await this.invokeHook('tool.after', { callId: call.id, name: call.name, status: (result as ToolResultView).status || 'ok' })
     return { call, result }
   }
 
@@ -647,6 +654,7 @@ export class AgentLoop {
     const { result, evidence } = await new VerifierRunner(this.options.session, this.options.turn).runFirstAvailableWithEvidence()
     this.options.emit({ type: 'verification.completed', sessionId: this.options.session.id, turnId: this.options.turn.id, result })
     this.traceCollector.verificationRan(this.options.session.id, this.options.turn.id, result)
+    await this.invokeHook('verification.after', { verifier: result.verifier, status: result.status })
     this.recordEvidence(evidence)
     this.emitPart({
       id: createPartId(),
@@ -745,6 +753,7 @@ export class AgentLoop {
     const review = mergeReviews(ruleReview, llmReview)
     this.emitReview(review)
     this.traceCollector.reviewCompleted(this.options.session.id, this.options.turn.id, review)
+    await this.invokeHook('review.after', { status: review.status, findingCount: review.findings.length })
     if (review.status !== 'approved') {
       this.emitObservation(observationFromReview(review))
     }
@@ -926,9 +935,23 @@ export class AgentLoop {
     })
   }
 
-  private finalize(reason: TurnStopReason): TurnStopReason {
+  private async invokeHook(name: AgentHookName, payload?: Record<string, unknown>): Promise<void> {
+    const invocations = await invokeAgentHook({
+      sessionId: this.options.session.id,
+      turnId: this.options.turn.id,
+      name,
+      payload,
+    })
+    for (const hook of invocations) {
+      this.options.emit({ type: 'hook.invoked', sessionId: this.options.session.id, turnId: this.options.turn.id, hook })
+      this.traceCollector.hookInvoked(hook)
+    }
+  }
+
+  private async finalize(reason: TurnStopReason): Promise<TurnStopReason> {
     this.emitProgress()
     this.emitHandoff(reason)
+    await this.invokeHook('finalize', { reason })
     const traceEvents = this.traceCollector.flush()
     if (traceEvents.length > 0) {
       this.options.emit({

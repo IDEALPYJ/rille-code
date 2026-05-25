@@ -45,6 +45,7 @@ import { readArtifactRef } from './artifactStore'
 import { FeatureStore } from './featureStore'
 import { MemoryStore } from './memory'
 import { createCompactionTask, markCompactionTaskFailed, runCompactionTask } from './compaction'
+import { invokeAgentHook } from './hooks'
 
 function now(): number {
   return Date.now()
@@ -517,6 +518,7 @@ export class AgentThread {
 
     this.emit({ type: 'session.updated', session: this.session })
     this.emit({ type: 'turn.started', sessionId: this.session.id, turn })
+    await this.invokeHook(turn.id, 'turn.start', { textLength: text.length })
     await this.captureRuntime(turn.id, context.workspace)
 
     const userMessageId = createMessageId('user')
@@ -794,5 +796,10 @@ export class AgentThread {
     if (!this.sender.isDestroyed()) {
       this.sender.send('agent:event', _event)
     }
+  }
+
+  private async invokeHook(turnId: string, name: 'turn.start', payload?: Record<string, unknown>): Promise<void> {
+    const invocations = await invokeAgentHook({ sessionId: this.session.id, turnId, name, payload })
+    for (const hook of invocations) this.emit({ type: 'hook.invoked', sessionId: this.session.id, turnId, hook })
   }
 }

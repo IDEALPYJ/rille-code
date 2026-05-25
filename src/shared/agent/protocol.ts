@@ -764,6 +764,30 @@ export interface ModelDecision {
   fallbackTrace?: ProviderFallbackTrace[]
 }
 
+export type AgentHookName =
+  | 'turn.start'
+  | 'context.built'
+  | 'model.before'
+  | 'model.after'
+  | 'tool.before'
+  | 'tool.after'
+  | 'verification.after'
+  | 'review.after'
+  | 'finalize'
+
+export type AgentHookStatus = 'completed' | 'failed'
+
+export interface AgentHookInvocation {
+  id: string
+  sessionId: string
+  turnId: string
+  name: AgentHookName
+  status: AgentHookStatus
+  durationMs: number
+  error?: string
+  createdAt: number
+}
+
 export type TraceEvent =
   | { type: 'task.created'; sessionId: string; turnId: string; contractId: string; summary: string; createdAt: number }
   | { type: 'context.built'; sessionId: string; turnId: string; trace: ContextTrace; createdAt: number }
@@ -780,14 +804,34 @@ export type TraceEvent =
   | { type: 'runtime.state.captured'; sessionId: string; turnId?: string; artifact: ArtifactRef; createdAt: number }
   | { type: 'checkpoint.created'; sessionId: string; turnId?: string; checkpoint: CheckpointRef; createdAt: number }
   | { type: 'context.compacted'; sessionId: string; turnId?: string; result: CompactionResult; createdAt: number }
+  | { type: 'hook.invoked'; sessionId: string; turnId: string; hook: AgentHookInvocation; createdAt: number }
+
+export type EvalMode = 'trace_replay' | 'single_step' | 'full_turn'
+
+export interface EvalFixtureStep {
+  name: string
+  command?: string
+}
+
+export interface EvalExpectedState {
+  finalGate?: 'allow_final' | 'repair' | 'blocked'
+  reviewStatus?: ReviewResult['status']
+  handoffCompleted?: boolean
+}
 
 export interface EvalCase {
   id: string
   title: string
   task: string
+  mode?: EvalMode
   workspaceFixture?: string
+  traceFixture?: TraceEvent[]
+  setup?: EvalFixtureStep[]
+  teardown?: EvalFixtureStep[]
   expectedTrajectory: string[]
   expectedEvidence: string[]
+  expectedState?: EvalExpectedState
+  forbiddenActions?: string[]
   safetyExpectations: string[]
 }
 
@@ -1035,6 +1079,7 @@ export type AgentEvent =
   | { type: 'handoff.created'; sessionId: string; turnId: string; handoff: Handoff }
   | { type: 'trace.exported'; sessionId: string; format: 'json'; redacted: boolean; traceEvents: TraceEvent[] }
   | { type: 'trace.batch'; sessionId: string; turnId: string; traceEvents: TraceEvent[] }
+  | { type: 'hook.invoked'; sessionId: string; turnId: string; hook: AgentHookInvocation }
   | { type: 'context.compaction.started'; sessionId: string; turnId?: string; task: CompactionTask }
   | { type: 'context.compacted'; sessionId: string; turnId?: string; task: CompactionTask; result: CompactionResult }
   | { type: 'context.compaction.failed'; sessionId: string; turnId?: string; task: CompactionTask; error: string }

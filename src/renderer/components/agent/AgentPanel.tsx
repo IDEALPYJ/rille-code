@@ -32,9 +32,11 @@ import type {
   MessagePart,
   PlanConfirmation,
   TaskContract,
+  TraceEvent,
 } from '../../../shared/agent/protocol'
 import type { OpenFile } from '../../App'
 import type { EditorDiagnostic } from '../Editor'
+import { expandComposerDraft, subagentNodes, summarizeAgentWorkbench, traceDebugSummary } from './workbenchState'
 
 interface Props {
   workspace: WorkspaceLocation | null
@@ -854,6 +856,10 @@ export function AgentPanel(props: Props) {
   const [reviewProposal, setReviewProposal] = useState<EditProposal | null>(null)
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest>>({})
   const [latestContextSummary, setLatestContextSummary] = useState<Extract<AgentEvent, { type: 'context.built' }>['summary'] | null>(null)
+  const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([])
+  const [traceEvents, setTraceEvents] = useState<TraceEvent[]>([])
+  const [isTraceOpen, setIsTraceOpen] = useState(false)
+  const [isTraceLoading, setIsTraceLoading] = useState(false)
   const [expandedToolGroups, setExpandedToolGroups] = useState<Record<string, boolean>>({})
   const [modelStore, setModelStore] = useState<AgentModelStoreSnapshot | null>(null)
   const [draft, setDraft] = useState('')
@@ -872,6 +878,7 @@ export function AgentPanel(props: Props) {
       }
       if (!props.sessionId) return
       if ('sessionId' in event && event.sessionId !== props.sessionId) return
+      setAgentEvents(prev => [...prev.slice(-120), event])
       if (event.type === 'message.part.created') {
         setParts(prev => prev.some(part => part.id === event.part.id)
           ? prev.map(part => part.id === event.part.id ? event.part : part)
@@ -900,6 +907,8 @@ export function AgentPanel(props: Props) {
         })
       } else if (event.type === 'context.built') {
         setLatestContextSummary(event.summary)
+      } else if (event.type === 'trace.batch') {
+        setTraceEvents(prev => [...prev, ...event.traceEvents])
       }
     })
     return unsubscribe
@@ -911,6 +920,9 @@ export function AgentPanel(props: Props) {
     setProposals({})
     setApprovals({})
     setLatestContextSummary(null)
+    setAgentEvents([])
+    setTraceEvents([])
+    setIsTraceOpen(false)
     setReviewProposal(null)
     setActiveTurn(null)
     setError(null)
@@ -959,6 +971,10 @@ export function AgentPanel(props: Props) {
     return `${props.workspace?.label ?? '未打开工作区'} · ${file} · ${dirty} dirty · ${props.diagnostics.length} diagnostics${contextTrace}`
   }, [latestContextSummary, props.activeFile?.name, props.diagnostics.length, props.openFiles, props.workspace?.label])
 
+  const riskSummary = useMemo(() => summarizeAgentWorkbench(parts, agentEvents), [agentEvents, parts])
+  const traceSummary = useMemo(() => traceDebugSummary(traceEvents), [traceEvents])
+  const subagents = useMemo(() => subagentNodes(agentEvents), [agentEvents])
+
   const timelineItems = useMemo(() => {
     const toolGroups = new Map<string, Array<Extract<MessagePart, { type: 'tool' }>>>()
     for (const part of parts) {
@@ -1004,7 +1020,7 @@ export function AgentPanel(props: Props) {
   }, [props.gitMeta?.branch, props.gitMeta?.isRepo, props.gitMeta?.remoteName, props.workspace])
 
   const submit = useCallback(async () => {
-    const text = draft.trim()
+    const text = expandComposerDraft(draft.trim(), { activeFile: props.activeFile, cursor: props.cursor })
     if (!text || !session || session.status === 'running') return
     try {
       const latestConfig = await window.rille.agentGetConfig()
@@ -1019,6 +1035,19 @@ export function AgentPanel(props: Props) {
       setError(submitError instanceof Error ? submitError.message : '提交失败。')
     }
   }, [draft, props, session])
+
+  const refreshTrace = useCallback(async () => {
+    if (!session) return
+    setIsTraceLoading(true)
+    try {
+      setTraceEvents(await window.rille.agentExportTrace(session.id, true))
+      setIsTraceOpen(true)
+    } catch (traceError) {
+      setError(traceError instanceof Error ? traceError.message : 'Trace 导出失败。')
+    } finally {
+      setIsTraceLoading(false)
+    }
+  }, [session])
 
   const interrupt = useCallback(async () => {
     if (!session || !activeTurn) return
@@ -1081,6 +1110,41 @@ export function AgentPanel(props: Props) {
       <div className="agent-context-bar">
         <div className="agent-context-line" title={contextLine}>{contextLine}</div>
       </div>
+      <div className={'agent-risk-card risk-' + riskSummary.risk}>
+        <div>
+          <strong>{riskText(riskSummary.risk)}</strong>
+          <span>{riskSummary.lastAction}</span>
+        </div>
+        <div>
+          <span>验证 {riskSummary.latestVerification || '无'}</span>
+          <span>Review {riskSummary.latestReview || '无'}</span>
+          {riskSummary.nextStep && <span>下一步 {riskSummary.nextStep}</span>}
+        </div>
+      </div>
+      <div className="agent-debug-bar">
+        <button type="button" onClick={() => void refreshTrace()} disabled={!session || isTraceLoading}>
+          Trace
+        </button>
+        <span>{activeTurn ? 'Streaming active' : 'Streaming idle'}</span>
+        <span>{traceSummary}</span>
+        <span>{subagents.map(node => `${node.label}: ${node.status}`).join(' · ')}</span>
+      </div>
+      {isTraceOpen && (
+        <div className="agent-trace-debug">
+          <div className="agent-trace-debug-header">
+            <strong>Trace debug</strong>
+            <button type="button" onClick={() => setIsTraceOpen(false)}>Close</button>
+          </div>
+          <div className="agent-trace-list">
+            {traceEvents.slice(-20).map((event, index) => (
+              <div className="agent-trace-row" key={`${event.type}-${event.createdAt}-${index}`}>
+                <span>{event.type}</span>
+                <small>{event.type === 'hook.invoked' ? `${event.hook.name} · ${event.hook.status}` : new Date(event.createdAt).toLocaleTimeString()}</small>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="agent-thread" ref={threadRef}>
         {parts.length === 0 ? (

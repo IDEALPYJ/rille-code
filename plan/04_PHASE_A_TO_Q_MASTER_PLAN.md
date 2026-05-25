@@ -16,8 +16,8 @@
 | J | Verification + Evidence Gate | 已实现 |
 | K | Review + Evaluator | 已实现 |
 | L | Long-running Memory + Compaction | 已实现 |
-| M | Observability + Hooks + Eval Harness | 部分实现 |
-| N | Product UX Workbench | 部分实现 |
+| M | Observability + Hooks + Eval Harness | 已实现 |
+| N | Product UX Workbench | 已实现 |
 | O | Skills + Plugins + MCP | 未实现 |
 | P | Subagents + Advisor + Parallel Work | 未实现 |
 | Q | Release Governance + Entropy Cleanup | 未实现 |
@@ -364,13 +364,13 @@ Checklist：
 - [x] M4. redacted trace export。
 - [x] M5. trajectory metrics。
 - [x] M6. eval skeleton。
-- [ ] M7. hooks lifecycle。
-- [ ] M8. eval fixture setup/teardown。
-- [ ] M9. single-step eval runner。
-- [ ] M10. full-turn eval runner。
-- [ ] M11. CI eval suite。
+- [x] M7. hooks lifecycle。
+- [x] M8. eval fixture setup/teardown。
+- [x] M9. single-step eval runner。
+- [x] M10. full-turn eval runner。
+- [x] M11. CI eval suite。
 
-当前状态：部分实现。
+当前状态：已实现。Hook lifecycle、hook trace、deterministic trace fixture eval、single-step/full-turn runner 和 `npm run eval:agent` CI 入口已落地。
 
 ## Phase N: Product UX Workbench
 
@@ -395,13 +395,13 @@ Checklist：
 - [x] N4. verification/evidence/review cards。
 - [x] N5. handoff display。
 - [x] N6. rule/LLM review source badge。
-- [ ] N7. session risk card。
-- [ ] N8. streaming UI。
-- [ ] N9. slash/@file/#selection composer。
-- [ ] N10. trace/debug view。
-- [ ] N11. subagent tree。
+- [x] N7. session risk card。
+- [x] N8. streaming UI。
+- [x] N9. slash/@file/#selection composer。
+- [x] N10. trace/debug view。
+- [x] N11. subagent tree。
 
-当前状态：部分实现。
+当前状态：已实现。Workbench 已显示 session risk/latest verification/latest review/last action/handoff next step，支持 streaming status、slash/@file/#selection composer、redacted trace/debug view 和 reviewer subagent 协议占位树。
 
 ## Phase O: Skills + Plugins + MCP
 

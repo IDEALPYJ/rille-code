@@ -322,10 +322,10 @@ Implemented details:
 已有 FeatureItem、ProgressState、Handoff、turn-end finalize、resume handoff injection、workspace freshness 基础检查；turn end 写入 `.rille/features.json`，resume/context build 注入 feature list；context.compact 生成 compact artifact 和 context.compacted event，不重写 JSONL。
 
 Missing pieces:
-更强的 git hash/diff freshness 和后台自动调度留到 Phase M/Q。
+更强的 git hash/diff freshness 和后台自动调度留到 Phase Q。
 
 Next phase:
-Phase M
+Phase Q
 
 Verification:
 Runtime/session tests 覆盖 progress/handoff 持久化和恢复；FeatureStore/compaction tests 覆盖 feature persistence、stale evidence downgrade 和 compact artifact。
@@ -344,57 +344,57 @@ Implemented details:
 已有 ProjectMemoryEntry、MemoryStore、create_memory tool、memory_ref fragment、基础 CRUD；turn start 对缺失 evidence sourceRefs 进行 stale 标记并注入 stale observation。
 
 Missing pieces:
-更细粒度 conflict/superseded 推断和 memory policy review 留到 Phase M/Q。
+更细粒度 conflict/superseded 推断和 memory policy review 留到 Phase Q。
 
 Next phase:
-Phase M
+Phase Q
 
 Verification:
 Memory tests 覆盖 add/list/update/delete/filter/persist；thread freshness 路径由 runtime flow 覆盖。
 
-## Capability: TraceEvent/usage/eval skeleton
+## Capability: TraceEvent/usage/eval harness
 
 Target:
 Agent 过程可导出、可脱敏、可聚合、可用于 eval。
 
-Current status: 部分实现
+Current status: 已实现
 
 Evidence files:
-`src/shared/agent/protocol.ts`, `src/main/agent/trace.ts`, `src/main/agent/provider.ts`, `eval/runner.ts`, `tests/agent/trace.test.ts`
+`src/shared/agent/protocol.ts`, `src/main/agent/hooks.ts`, `src/main/agent/trace.ts`, `src/main/agent/provider.ts`, `eval/runner.ts`, `eval/cases/*.json`, `tests/agent/trace.test.ts`, `tests/agent/hooks.test.ts`, `tests/agent/evalRunner.test.ts`
 
 Implemented details:
-已有 TraceEvent、AgentUsage、TraceCollector、redacted export、trajectory metrics、eval case skeleton。
+已有 TraceEvent、AgentUsage、TraceCollector、redacted export、trajectory metrics、hook lifecycle、hook.invoked trace、deterministic eval case schema、fixture setup/teardown metadata、single-step/full-turn eval runner 和 `npm run eval:agent`。
 
 Missing pieces:
-hooks lifecycle、fixture setup/teardown、single-step eval、full-turn eval、CI eval suite。
+用户脚本/plugin hook、外部 MCP hook 和 eval regression report 留到 Phase O/Q。
 
 Next phase:
-Phase M
+Phase O/Q
 
 Verification:
-Trace tests 覆盖 redaction、metrics 和 collector。
+Trace/hooks/eval tests 覆盖 redaction、metrics、collector、hook 顺序/失败非阻塞、fixture setup/teardown、single-step/full-turn 和 forbidden action；`npm run eval:agent` 覆盖本地 fixture eval。
 
 ## Capability: AgentPanel 基础工作台
 
 Target:
 用户能看到目标、计划、工具、审批、diff、证据、review、handoff 和状态。
 
-Current status: 部分实现
+Current status: 已实现
 
 Evidence files:
-`src/renderer/components/agent/AgentPanel.tsx`, `src/shared/agent/protocol.ts`
+`src/renderer/components/agent/AgentPanel.tsx`, `src/renderer/components/agent/workbenchState.ts`, `src/shared/agent/protocol.ts`, `src/preload/index.ts`, `tests/agent/workbenchState.test.ts`
 
 Implemented details:
-已有 timeline、Task/Plan cards、tool group、approval、diff modal、verification/evidence/review cards、handoff、rule/LLM badge。
+已有 timeline、Task/Plan cards、tool group、approval、diff modal、verification/evidence/review cards、handoff、rule/LLM badge、session risk/latest verification/latest review/last action/handoff 摘要、streaming status、slash/@file/#selection composer、redacted trace/debug view、reviewer subagent 协议占位树。
 
 Missing pieces:
-session risk/latest verification card、streaming UI、slash/@file/#selection composer、trace/debug view、subagent tree。
+真实 SubagentRunner、parallel scheduling 和 parent-child execution 留到 Phase P；更完整 trace analytics 可在 Phase Q 做 regression report。
 
 Next phase:
-Phase N
+Phase P/Q
 
 Verification:
-当前主要依赖 runtime event replay 和手工 UI 验收；后续需要 reducer/UI 测试。
+Workbench helper tests 覆盖 risk/latest status、composer 展开、trace summary 和 subagent placeholder；runtime replay 继续覆盖 timeline 基础事件。
 
 ## Capability: Skills / Plugins / MCP
 

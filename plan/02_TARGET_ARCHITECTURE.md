@@ -43,7 +43,7 @@ Subagents / Advisor
 - low-level tool events 聚合展示，高风险信息展开展示。
 - streaming delta、command output delta、subagent tree 都有稳定 UI 模型。
 
-当前状态：已实现 A/B/C 基础控制点；后续阶段继续补 streaming、trace/debug、subagent tree 等高级工作台能力。
+当前状态：A-N 工作台范围已实现。Task/Plan、approval、diff review、Evidence、Review、Handoff、archive/unarchive、waiver、accepted risk、session risk、streaming status、trace/debug 和 subagent 协议占位树已落地；真实 SubagentRunner 仍归 Phase P。
 
 ### Session and Event Log
 
@@ -75,7 +75,7 @@ Subagents / Advisor
 - final 前必须通过 evidence/review gate。
 - 所有失败都转成 Observation 或 Finding，再进入 repair context。
 
-当前状态：部分实现；主 loop 已有，subagent/advisor/streaming/explicit compaction 未实现。
+当前状态：A-L 范围已实现。主 loop 已支持 TaskContract、Context、streaming model gateway、tool execution、approval、verification/review/evaluator、repair/final gate、progress/handoff 和 explicit context compaction；subagent/advisor 完整 runner 仍归 Phase P。
 
 ### Brain Gateway
 
@@ -91,7 +91,7 @@ Subagents / Advisor
 - Tool schema 稳定排序，支持 deferred tool loading。
 - 流式事件和最终结果必须能合并为同一个 ModelDecision。
 
-当前状态：部分实现；已有 JSON fallback、native tools、usage、evaluator maxTokens，缺 streaming、Responses API 完整适配和 fallback trace。
+当前状态：已实现。已有 Text JSON fallback、OpenAI/Anthropic/Gemini native tools、OpenAI Responses adapter、Responses SSE streaming、usage/cache metrics、fallback trace、evaluator maxTokens 和 purpose trace；Anthropic/Gemini streaming UI 深化仍归 Phase N。
 
 ### Context Engine
 
@@ -107,7 +107,7 @@ Subagents / Advisor
 - 外部内容默认是 data，不是 instruction。
 - Compaction 后必须重新注入关键上下文，而不是只保留摘要。
 
-当前状态：部分实现；fragment pipeline 已有，cache-safe compaction、LSP/MCP context、deferred skills 未实现。
+当前状态：A-L 范围已实现。Fragment pipeline、stable/dynamic trace、cache key/hash、project rules、evidence/review/handoff/memory fragments、symbols/selections collector、untrusted boundary 和 cache-safe compaction 已落地；完整 MCP lifecycle 和 deferred skills 仍归 Phase O。
 
 ### Hands Runtime
 
@@ -123,7 +123,7 @@ Subagents / Advisor
 - 副作用动作串行，安全只读动作可并行。
 - Runtime-only apply 不对模型暴露。
 
-当前状态：部分实现；metadata、validation、parallel read、runtime-only apply、artifact store 已有，组合工具、tool search 未实现。
+当前状态：已实现。工具 metadata、schema validation、visibility/sideEffect、parallel read、runtime-only apply、artifact-backed output、deferred `search_tools`、`explore_codebase`、`verify_changes` 和 `inspect_runtime_state` 已落地；插件化工具包和 MCP namespace 仍归 Phase O。
 
 ### Workspace and Execution Substrate
 
@@ -139,7 +139,7 @@ Subagents / Advisor
 - 高风险执行可进入隔离 worktree/sandbox。
 - rollback 不污染项目主 git。
 
-当前状态：已实现 A/B/C 范围。local/WSL/SSH/worktree 路由、path guard、process registry、checkpoint、worktree sandbox、runtime state artifact 已落地；后续继续扩展 sandbox policy 和 patch merge UI。
+当前状态：已实现。local/WSL/SSH/worktree 路由、path guard、protected paths、process registry、checkpoint、worktree sandbox、runtime state artifact、sandbox policy 和 sandbox diff proposal 路径已落地；更完整的 sandbox 专属工作台仍归 Phase N。
 
 ## 端到端数据流
 

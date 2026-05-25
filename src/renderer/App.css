@@ -7817,3 +7817,96 @@ select {
   background: #ffffff;
   border-right: 1px solid rgba(20, 27, 38, 0.055);
 }
+
+.agent-risk-card,
+.agent-debug-bar,
+.agent-trace-debug {
+  margin: 8px 12px 0;
+  border: 1px solid rgba(20, 27, 38, 0.08);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.agent-risk-card {
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+  color: #374151;
+  font-size: 12px;
+}
+
+.agent-risk-card > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.agent-risk-card strong {
+  color: #111827;
+}
+
+.agent-risk-card.risk-high,
+.agent-risk-card.risk-critical {
+  border-color: rgba(220, 38, 38, 0.28);
+}
+
+.agent-risk-card.risk-medium {
+  border-color: rgba(217, 119, 6, 0.28);
+}
+
+.agent-debug-bar {
+  min-height: 32px;
+  padding: 5px 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  overflow: hidden;
+  color: #66717f;
+  font-size: 11px;
+}
+
+.agent-debug-bar button,
+.agent-trace-debug button {
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  color: #374151;
+  background: #eef1f5;
+}
+
+.agent-debug-bar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-trace-debug {
+  max-height: 220px;
+  overflow: hidden;
+}
+
+.agent-trace-debug-header,
+.agent-trace-row {
+  min-height: 30px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.agent-trace-list {
+  max-height: 180px;
+  overflow: auto;
+}
+
+.agent-trace-row {
+  border-top: 1px solid rgba(20, 27, 38, 0.055);
+  color: #374151;
+}
+
+.agent-trace-row small {
+  color: #7f8794;
+}

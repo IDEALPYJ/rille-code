@@ -12,6 +12,7 @@ import type {
   ProviderFallbackTrace,
   ReviewResult,
   TraceEvent,
+  AgentHookInvocation,
   VerificationResult,
 } from '../../shared/agent/protocol'
 import { readSessionEvents } from './sessionStore'
@@ -71,6 +72,10 @@ export class TraceCollector {
 
   modelCache(sessionId: string, turnId: string, cache: ModelCacheMetrics): void {
     this.emit({ type: 'model.cache', sessionId, turnId, cache, createdAt: now() })
+  }
+
+  hookInvoked(invocation: AgentHookInvocation): void {
+    this.emit({ type: 'hook.invoked', sessionId: invocation.sessionId, turnId: invocation.turnId, hook: invocation, createdAt: now() })
   }
 
   flush(): TraceEvent[] {
@@ -236,7 +241,15 @@ function deriveTraceEvents(event: { type: string; [key: string]: unknown }): Tra
         createdAt: Date.now(),
       }]
     case 'trace.batch':
-      return event.traceEvents as TraceEvent[]
+      return (event.traceEvents as TraceEvent[]).filter(traceEvent => traceEvent.type !== 'hook.invoked')
+    case 'hook.invoked':
+      return [{
+        type: 'hook.invoked',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string,
+        hook: event.hook as AgentHookInvocation,
+        createdAt: Date.now(),
+      }]
     case 'artifact.created':
       return [{
         type: 'artifact.created',

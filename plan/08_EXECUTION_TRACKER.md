@@ -27,8 +27,8 @@
 | J | Verification + Evidence Gate | 已完成 | 已实现 | browser/user evidence、waiver UI、artifact-backed evidence、coverage recompute 已落地 | M7 |
 | K | Review + Evaluator | 已完成 | 已实现 | accepted risk、EvaluatorRun 事件、并行 rule/evaluator review、reviewer subagent 占位协议已落地 | M7 |
 | L | Long-running Memory + Compaction | 已完成 | 已实现 | `.rille/features.json`、explicit compaction、cache-safe compact fork、stale checks、local async compact task 已落地 | M7 |
-| M | Observability + Hooks + Eval Harness | 部分完成 | 部分实现 | TraceEvent、usage、redacted export、metrics、eval skeleton 已落地 | M7 |
-| N | Product UX Workbench | 部分完成 | 部分实现 | timeline、Task/Plan、approval、diff、evidence、review、handoff 已落地 | N7 |
+| M | Observability + Hooks + Eval Harness | 已完成 | 已实现 | hook lifecycle、hook trace、deterministic eval、single-step/full-turn runner、CI eval 入口已落地 | O1 |
+| N | Product UX Workbench | 已完成 | 已实现 | session risk card、streaming status、slash/@file/#selection composer、trace/debug view、subagent 占位树已落地 | O1 |
 | O | Skills + Plugins + MCP | 未开始 | 未实现 | 无 runtime 能力 | O1 |
 | P | Subagents + Advisor + Parallel Work | 未开始 | 未实现 | 无 runtime 能力 | P1 |
 | Q | Release Governance + Entropy Cleanup | 未开始 | 未实现 | 无 runtime 能力 | Q1 |
@@ -181,11 +181,11 @@
 - [x] M4. redacted trace export。
 - [x] M5. trajectory metrics。
 - [x] M6. eval skeleton。
-- [ ] M7. hooks lifecycle。
-- [ ] M8. eval fixture setup/teardown。
-- [ ] M9. single-step eval runner。
-- [ ] M10. full-turn eval runner。
-- [ ] M11. CI eval suite。
+- [x] M7. hooks lifecycle。
+- [x] M8. eval fixture setup/teardown。
+- [x] M9. single-step eval runner。
+- [x] M10. full-turn eval runner。
+- [x] M11. CI eval suite。
 
 ## Phase N Checklist
 
@@ -195,11 +195,11 @@
 - [x] N4. verification/evidence/review cards。
 - [x] N5. handoff display。
 - [x] N6. rule/LLM review source badge。
-- [ ] N7. session risk card。
-- [ ] N8. streaming UI。
-- [ ] N9. slash/@file/#selection composer。
-- [ ] N10. trace/debug view。
-- [ ] N11. subagent tree。
+- [x] N7. session risk card。
+- [x] N8. streaming UI。
+- [x] N9. slash/@file/#selection composer。
+- [x] N10. trace/debug view。
+- [x] N11. subagent tree。
 
 ## Phase O Checklist
 
@@ -249,6 +249,28 @@
 ```
 
 ## 当前基线记录
+
+步骤: Phase M/N closure
+状态: 已完成
+完成日期: 2026-05-25
+涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/hooks.ts`, `src/main/agent/runtime.ts`, `src/main/agent/thread.ts`, `src/main/agent/trace.ts`, `eval/runner.ts`, `eval/cases/*.json`, `src/preload/index.ts`, `src/renderer/env.d.ts`, `src/renderer/components/agent/AgentPanel.tsx`, `src/renderer/components/agent/workbenchState.ts`, `src/renderer/App.css`
+实现摘要: Phase M 完成 hook lifecycle、hook.invoked trace/event、deterministic eval fixture schema、single-step/full-turn runner 和 `npm run eval:agent`；Phase N 完成 session risk/latest verification/latest review/last action/handoff 摘要、streaming status、slash/@file/#selection composer、redacted trace/debug view 和 reviewer subagent 协议占位树。
+测试文件: `tests/agent/hooks.test.ts`, `tests/agent/evalRunner.test.ts`, `tests/agent/workbenchState.test.ts`, `tests/agent/trace.test.ts`
+验证命令: `npm test`; `npm run typecheck`; `npm run build`; `npm run eval:agent`; M/N checklist 状态检索。
+验证结果: `npm test` 22 files / 173 tests passed；`npm run typecheck` passed；`npm run build` passed（保留既有 memory dynamic/static import warning）；`npm run eval:agent` 3/3 cases passed；M/N 未完成 checklist 检索无输出。
+剩余风险: subagent tree 仍是 Phase N 的协议/UX 占位，真实 SubagentRunner、parallel scheduling 和 parent-child execution 仍归 Phase P；hooks 本阶段为内部 extension point，不加载用户脚本或插件。
+下一步: Phase O1
+
+步骤: Phase A-L plan consistency audit
+状态: 已完成
+完成日期: 2026-05-25
+涉及模块: `plan/02_TARGET_ARCHITECTURE.md`, `plan/03_PROTOCOL_AND_EVENTS.md`, `plan/05_IMPLEMENTATION_ROADMAP.md`
+实现摘要: 已按当前源码能力重新核对 Phase A-L。主计划、状态矩阵和执行总控已显示 A-L 完成；本次同步修正目标架构、协议事件和路线图中的旧状态，移除早期 “部分实现/未实现” 表述，明确剩余工作从 Phase M/N/P/O/Q 继续。
+测试文件: 无新增测试；本次为 plan consistency 修正。
+验证命令: 文档漂移关键词检索；A-L checklist 未完成项检索；`npm test`
+验证结果: 无输出，旧状态描述已清理。
+剩余风险: reviewer subagent 仍仅为 Phase K read-only 占位协议，完整 SubagentRunner 仍归 Phase P；Phase M/N 仍有 hooks/eval/UX backlog。
+下一步: Phase M7
 
 步骤: Phase J/K/L closure
 状态: 已完成

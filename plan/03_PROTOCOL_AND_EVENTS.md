@@ -60,7 +60,7 @@ interface AgentPlanItem {
 }
 ```
 
-当前状态：部分实现；缺用户确认 gate 和 plan-only mode 完整 UX。
+当前状态：已实现。TaskContract、AgentPlanItem、PlanConfirmation、显式 Plan Mode、计划确认 gate、跨 turn confirmed plan 复用和 PlanItem evidence binding gate 已落地。
 
 ### Model Stream
 
@@ -165,7 +165,7 @@ interface ReviewFinding {
 }
 ```
 
-当前状态：部分实现；browser/manual evidence、waiver UI、reviewer subagent 未实现。
+当前状态：A-L 范围已实现。Evidence、VerificationCoverage、browser/user evidence、waiver UI、ReviewFinding/ReviewResult、accepted risk、rule/LLM source badge、EvaluatorRun public protocol、并行 rule/evaluator review 和 reviewer subagent read-only 占位协议已落地；完整 reviewer SubagentRunner 仍归 Phase P。
 
 ### Memory / Compaction / Handoff
 
@@ -189,7 +189,7 @@ interface ContextCompactionResult {
 }
 ```
 
-当前状态：ProjectMemory MVP 部分实现，explicit compaction event 未实现。
+当前状态：已实现。ProjectMemoryEntry、MemoryStore MVP、memory_ref context fragment、FeatureItem/ProgressState/Handoff、`.rille/features.json`、stale/superseded 基础检查、`context.compaction.started`、`context.compacted`、`context.compaction.failed` 和 cache-safe compact artifact 已落地。
 
 ### Subagent / Advisor
 
@@ -260,4 +260,4 @@ MessagePart 用于 UI 展示：
 - `streaming_text`
 - `artifact`
 
-当前状态：已有大部分基础 part，缺 streaming、artifact、subagent、rich trace summary。
+当前状态：A-N 基础投影已实现。已有 text、stage、task_contract、plan、tool_group、approval、edit_proposal、edit_result、evidence_coverage、review、handoff、streaming_text、trace/debug 摘要和 subagent 协议占位树；真实 subagent execution 仍归 Phase P。
