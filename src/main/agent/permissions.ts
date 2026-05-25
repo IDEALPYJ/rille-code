@@ -18,6 +18,7 @@ import type {
   ToolResultView,
 } from '../../shared/agent/protocol'
 import { getRegisteredTool, isModelVisibleTool, type RuntimeToolCall } from './tools'
+import { listMcpTools, registerMcpToolDescriptors } from './mcpManager'
 import { needsShell, workspaceReadFile } from './workspace'
 
 export type CommandRisk =
@@ -314,6 +315,14 @@ export function permissionPattern(call: RuntimeToolCall): string {
 }
 
 export function permissionForCall(call: RuntimeToolCall): PolicyPermission {
+  if (call.name.startsWith('mcp.')) {
+    const descriptor = listMcpTools().find(tool => tool.namespace === call.name)
+      ?? registerMcpToolDescriptors().find(tool => tool.namespace === call.name)
+    if (descriptor?.sideEffect === 'none' || descriptor?.sideEffect === 'workspace_read') return 'file.read'
+    if (descriptor?.sideEffect === 'workspace_write') return 'file.write'
+    if (descriptor?.sideEffect === 'network' || descriptor?.sideEffect === 'external' || !descriptor) return 'network.access'
+    return 'command.run'
+  }
   if (call.name === 'run_command') {
     const commandLine = typeof call.input.commandLine === 'string' ? call.input.commandLine.trim() : ''
     const risk = classifyCommandRisk(commandLine)

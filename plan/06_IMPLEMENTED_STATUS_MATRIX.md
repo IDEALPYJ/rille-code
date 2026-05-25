@@ -80,10 +80,10 @@ Implemented details:
 已有 ContextFragment、ContextTrace、ContextBuildResult、project rules、stable/dynamic sort、deterministic trimming、context.built event、verification/review/handoff/memory fragments、cacheKey hints、stable prefix cache key、dynamic suffix hash、cache eligible token estimate、symbols/selections collector、untrusted boundary tags。
 
 Missing pieces:
-完整 MCP server lifecycle、cache-safe explicit compaction。
+HTTP/SSE MCP transport 和更丰富的 extension UI 归后续治理/UX 范围；stdio MCP lifecycle 已在 Phase O 落地。
 
 Next phase:
-Phase L, Phase O
+Phase Q
 
 Verification:
 Context builder tests 覆盖 collectors、排序、裁剪、cache key 稳定性、symbols/selections、untrusted prompt boundary。
@@ -102,10 +102,10 @@ Implemented details:
 RegisteredTool 具备 visibility、sideEffect、validate、deferred、category、keywords、activationHint；非法输入返回结构化 failure；`search_tools` 只返回 schema 摘要；`explore_codebase`、`verify_changes`、`inspect_runtime_state` 复用底层 runtime 能力并输出 Observation/Evidence/ArtifactRef。
 
 Missing pieces:
-插件化工具包、外部 MCP lifecycle、技能治理。
+在线 marketplace、签名、沙箱化插件运行时、用户 JS hook execution 归后续治理；Phase O 已落地 manifest/skill/MCP stdio runtime。
 
 Next phase:
-Phase O
+Phase Q
 
 Verification:
 Tool tests 覆盖 validation、runtime-only deny、update tools、deferred discovery、组合工具和 artifact-backed 输出。
@@ -401,22 +401,22 @@ Workbench helper tests 覆盖 risk/latest status、composer 展开、trace summa
 Target:
 专业知识和外部工具按需加载、可分发、可治理。
 
-Current status: 未实现
+Current status: 已实现
 
 Evidence files:
-无当前 runtime 证据。
+`src/shared/agent/protocol.ts`, `src/main/agent/skillStore.ts`, `src/main/agent/mcpManager.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/tools.ts`, `src/main/agent/permissions.ts`, `src/main/agent/index.ts`, `src/main/agent/trace.ts`, `src/preload/index.ts`, `src/renderer/env.d.ts`, `tests/agent/skillStore.test.ts`, `tests/agent/mcpManager.test.ts`, `tests/agent/contextBuilder.test.ts`, `tests/agent/tools.test.ts`, `eval/cases/skill_activation_happy.json`, `eval/cases/plugin_mcp_discovery.json`, `eval/cases/mcp_plan_mode_denied.json`, `eval/cases/mcp_startup_failure_recorded.json`
 
 Implemented details:
-无。
+已实现 SkillContract、PluginManifest、McpServerConfig、McpToolDescriptor、SkillActivation、PluginActivation、McpServerState；新增 skill/plugin/mcp_tool context fragment 和 skill/plugin/MCP trace/event；discovery 扫描项目 `.rille/skills`、`.rille/plugins` 与 userData `agent/skills`、`agent/plugins`，同 id 冲突保留更高优先级并记录；context builder 按关键词注入少量 active skills 和 MCP 摘要；`search_tools`/`search_skills` 可发现 deferred tools、skills 和 plugin MCP tools；`activate_skill` 写 activation trace，不执行外部代码；MCP manager 使用 stdio child_process 实现 initialize、tools/list、tools/call、start/stop/state/log artifact；MCP namespace 固定为 `mcp.<pluginId>.<serverId>.<toolName>`，未知 sideEffect 默认 external，Plan Mode 仅允许 read-only MCP tool。
 
 Missing pieces:
-SkillContract、skill discovery、plugin manifest、MCP registry、namespace policy、activation trace。
+HTTP/SSE MCP transport、在线 marketplace、插件签名、沙箱化插件 runtime、任意用户 JS hook 和 Phase P SubagentRunner 不在 Phase O 范围。
 
 Next phase:
-Phase O
+Phase P/Q
 
 Verification:
-后续以 skill loading tests、MCP lifecycle tests、policy namespace tests 验收。
+Vitest 覆盖 skill/plugin discovery、冲突优先级、activation、context fragment、真实 stdio MCP lifecycle、MCP namespace/policy、tool discovery；eval cases 覆盖 skill activation、plugin MCP discovery、Plan Mode deny side-effect MCP、MCP startup failure。
 
 ## Capability: Subagents / Advisor / Parallel Work
 

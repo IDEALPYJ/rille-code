@@ -23,6 +23,10 @@ import type {
   PlanConfirmation,
   RuntimeProcessSummary,
   RuntimeStateArtifact,
+  ExtensionDiscoverySnapshot,
+  McpServerState,
+  PluginManifest,
+  SkillContract,
   TraceEvent,
   VerificationStatus,
 } from '../shared/agent/protocol'
@@ -126,6 +130,12 @@ export interface RilleAPI {
   agentDismissReviewFinding(sessionId: string, findingId: string, reason?: string, turnId?: string): Promise<AgentSession | null>
   agentCompactContext(sessionId: string, turnId?: string, reason?: string): Promise<CompactionResult>
   agentExportTrace(sessionId: string, redacted?: boolean): Promise<TraceEvent[]>
+  agentRefreshExtensions(sessionId: string, workspace?: AgentWorkspaceLocation | null): Promise<ExtensionDiscoverySnapshot>
+  agentListSkills(sessionId: string, workspace?: AgentWorkspaceLocation | null): Promise<SkillContract[]>
+  agentListPlugins(sessionId: string, workspace?: AgentWorkspaceLocation | null): Promise<PluginManifest[]>
+  agentListMcpServers(sessionId: string): Promise<McpServerState[]>
+  agentStartMcpServer(sessionId: string, pluginId: string, serverId: string, workspace?: AgentWorkspaceLocation | null): Promise<McpServerState>
+  agentStopMcpServer(sessionId: string, pluginId: string, serverId: string): Promise<McpServerState>
   agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>
   agentUpdatePermission(sessionId: string, permissionMode: AgentPermissionMode): Promise<AgentSession | null>
   agentApplyEdit(sessionId: string, proposalId: string, context?: AgentContextSnapshot): Promise<EditProposal>
@@ -571,6 +581,12 @@ const api: RilleAPI = {
     const result = await invokeAgent<{ traceEvents: TraceEvent[] }>('agent:dispatch', { type: 'trace.export', sessionId, redacted })
     return result.traceEvents
   },
+  agentRefreshExtensions: (sessionId, workspace) => invokeAgent<ExtensionDiscoverySnapshot>('agent:dispatch', { type: 'extension.refresh', sessionId, workspace }),
+  agentListSkills: (sessionId, workspace) => invokeAgent<SkillContract[]>('agent:dispatch', { type: 'skill.list', sessionId, workspace }),
+  agentListPlugins: (sessionId, workspace) => invokeAgent<PluginManifest[]>('agent:dispatch', { type: 'plugin.list', sessionId, workspace }),
+  agentListMcpServers: (sessionId) => invokeAgent<McpServerState[]>('agent:dispatch', { type: 'mcp.server.list', sessionId }),
+  agentStartMcpServer: (sessionId, pluginId, serverId, workspace) => invokeAgent<McpServerState>('agent:dispatch', { type: 'mcp.server.start', sessionId, pluginId, serverId, workspace }),
+  agentStopMcpServer: (sessionId, pluginId, serverId) => invokeAgent<McpServerState>('agent:dispatch', { type: 'mcp.server.stop', sessionId, pluginId, serverId }),
   agentRespondApproval: (requestId, decision) => invokeAgent<boolean>('agent:dispatch', { type: 'approval.respond', requestId, decision }),
   agentUpdatePermission: (sessionId, permissionMode) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'permission.update', sessionId, permissionMode }),
   agentApplyEdit: (sessionId, proposalId, context) => invokeAgent<EditProposal>('agent:dispatch', { type: 'edit.apply', sessionId, proposalId, context }),

@@ -269,6 +269,9 @@ export type ContextFragmentType =
   | 'symbols'
   | 'selection'
   | 'runtime_state'
+  | 'skill'
+  | 'plugin'
+  | 'mcp_tool'
 export type ContextFragmentSection = 'stable_prefix' | 'dynamic_suffix'
 export type ContextTrustLevel = 'system' | 'workspace' | 'tool_output' | 'user' | 'external'
 export type ToolVisibility = 'model' | 'runtime' | 'ui'
@@ -288,6 +291,10 @@ export type ToolFailureType =
 export type PolicyPermission = 'file.read' | 'file.write' | 'command.run' | 'git.write' | 'network.access' | 'memory.write'
 export type PolicyAction = 'allow' | 'ask' | 'deny'
 export type GrantScope = 'once' | 'session' | 'workspace'
+export type SkillSource = 'project' | 'user' | 'plugin'
+export type SkillTrust = 'trusted' | 'untrusted'
+export type McpTransport = 'stdio'
+export type McpServerStatus = 'stopped' | 'starting' | 'running' | 'failed' | 'stopped_error'
 
 export interface ToolValidationResult {
   ok: boolean
@@ -764,6 +771,93 @@ export interface ModelDecision {
   fallbackTrace?: ProviderFallbackTrace[]
 }
 
+export interface SkillContract {
+  id: string
+  name: string
+  description: string
+  activationKeywords: string[]
+  source: SkillSource
+  content: string
+  priority: number
+  trust: SkillTrust
+  pluginId?: string
+  filePath?: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface McpServerConfig {
+  id: string
+  name: string
+  command: string
+  cwd?: string
+  env?: Record<string, string>
+  transport: McpTransport
+  enabled: boolean
+  sideEffect?: ToolSideEffect
+}
+
+export interface McpToolDescriptor {
+  name: string
+  title?: string
+  description?: string
+  inputSchema: Record<string, unknown>
+  sideEffect: ToolSideEffect
+  namespace: string
+  pluginId: string
+  serverId: string
+  readOnly: boolean
+}
+
+export interface PluginManifest {
+  id: string
+  name: string
+  version: string
+  description: string
+  skills: SkillContract[]
+  hooks: string[]
+  mcpServers: McpServerConfig[]
+  toolNamespaces: string[]
+  enabled: boolean
+  filePath?: string
+}
+
+export interface ExtensionDiscoverySnapshot {
+  skills: SkillContract[]
+  plugins: PluginManifest[]
+  conflicts: string[]
+}
+
+export interface SkillActivation {
+  id: string
+  sessionId: string
+  turnId: string
+  skillId: string
+  source: SkillSource
+  reason: string
+  createdAt: number
+}
+
+export interface PluginActivation {
+  id: string
+  pluginId: string
+  status: 'loaded' | 'failed'
+  error?: string
+  createdAt: number
+}
+
+export interface McpServerState {
+  id: string
+  pluginId: string
+  serverId: string
+  status: McpServerStatus
+  pid?: number
+  startedAt?: number
+  updatedAt: number
+  lastError?: string
+  tools: McpToolDescriptor[]
+}
+
 export type AgentHookName =
   | 'turn.start'
   | 'context.built'
@@ -805,6 +899,10 @@ export type TraceEvent =
   | { type: 'checkpoint.created'; sessionId: string; turnId?: string; checkpoint: CheckpointRef; createdAt: number }
   | { type: 'context.compacted'; sessionId: string; turnId?: string; result: CompactionResult; createdAt: number }
   | { type: 'hook.invoked'; sessionId: string; turnId: string; hook: AgentHookInvocation; createdAt: number }
+  | { type: 'skill.activated'; sessionId: string; turnId: string; activation: SkillActivation; createdAt: number }
+  | { type: 'plugin.loaded'; sessionId: string; activation: PluginActivation; createdAt: number }
+  | { type: 'mcp.server.started' | 'mcp.server.completed' | 'mcp.server.failed' | 'mcp.server.stopped'; sessionId: string; state: McpServerState; createdAt: number }
+  | { type: 'mcp.tool.discovered'; sessionId: string; tool: McpToolDescriptor; createdAt: number }
 
 export type EvalMode = 'trace_replay' | 'single_step' | 'full_turn'
 
@@ -1037,6 +1135,12 @@ export type AgentOp =
   | { type: 'edit.rollback'; sessionId: string; proposalId: string }
   | { type: 'permission.update'; sessionId: string; permissionMode: AgentPermissionMode }
   | { type: 'trace.export'; sessionId: string; redacted?: boolean }
+  | { type: 'extension.refresh'; sessionId: string; workspace?: AgentWorkspaceLocation | null }
+  | { type: 'skill.list'; sessionId: string; workspace?: AgentWorkspaceLocation | null }
+  | { type: 'plugin.list'; sessionId: string; workspace?: AgentWorkspaceLocation | null }
+  | { type: 'mcp.server.list'; sessionId: string }
+  | { type: 'mcp.server.start'; sessionId: string; pluginId: string; serverId: string; workspace?: AgentWorkspaceLocation | null }
+  | { type: 'mcp.server.stop'; sessionId: string; pluginId: string; serverId: string }
   | { type: 'memory.create'; workspacePath: string; kind: ProjectMemoryKind; text: string; sourceRefs: string[] }
   | { type: 'memory.update'; workspacePath: string; entryId: string; changes: Partial<Pick<ProjectMemoryEntry, 'text' | 'status' | 'sourceRefs'>> }
   | { type: 'memory.delete'; workspacePath: string; entryId: string }
@@ -1080,6 +1184,13 @@ export type AgentEvent =
   | { type: 'trace.exported'; sessionId: string; format: 'json'; redacted: boolean; traceEvents: TraceEvent[] }
   | { type: 'trace.batch'; sessionId: string; turnId: string; traceEvents: TraceEvent[] }
   | { type: 'hook.invoked'; sessionId: string; turnId: string; hook: AgentHookInvocation }
+  | { type: 'skill.activated'; sessionId: string; turnId: string; activation: SkillActivation }
+  | { type: 'plugin.loaded'; sessionId: string; activation: PluginActivation }
+  | { type: 'mcp.server.started'; sessionId: string; state: McpServerState }
+  | { type: 'mcp.server.completed'; sessionId: string; state: McpServerState }
+  | { type: 'mcp.server.failed'; sessionId: string; state: McpServerState }
+  | { type: 'mcp.server.stopped'; sessionId: string; state: McpServerState }
+  | { type: 'mcp.tool.discovered'; sessionId: string; tool: McpToolDescriptor }
   | { type: 'context.compaction.started'; sessionId: string; turnId?: string; task: CompactionTask }
   | { type: 'context.compacted'; sessionId: string; turnId?: string; task: CompactionTask; result: CompactionResult }
   | { type: 'context.compaction.failed'; sessionId: string; turnId?: string; task: CompactionTask; error: string }

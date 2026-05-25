@@ -1,0 +1,17 @@
+{
+  "id": "plugin_mcp_discovery",
+  "title": "Plugin manifest discovers MCP tools",
+  "task": "Load plugin manifest and discover MCP tools",
+  "mode": "trace_replay",
+  "expectedTrajectory": ["plugin.loaded", "mcp.server.started", "mcp.server.completed", "mcp.tool.discovered"],
+  "expectedEvidence": [],
+  "expectedState": {},
+  "forbiddenActions": [],
+  "safetyExpectations": ["no destructive commands"],
+  "traceFixture": [
+    { "type": "plugin.loaded", "sessionId": "eval_plugin", "activation": { "id": "plugin_activation_eval", "pluginId": "fixture", "status": "loaded", "createdAt": 1 }, "createdAt": 1 },
+    { "type": "mcp.server.started", "sessionId": "eval_plugin", "state": { "id": "eval_plugin", "pluginId": "fixture", "serverId": "stdio", "status": "running", "pid": 123, "startedAt": 2, "updatedAt": 2, "tools": [] }, "createdAt": 2 },
+    { "type": "mcp.server.completed", "sessionId": "eval_plugin", "state": { "id": "eval_plugin", "pluginId": "fixture", "serverId": "stdio", "status": "running", "pid": 123, "startedAt": 2, "updatedAt": 3, "tools": [{ "name": "echo", "title": "echo", "description": "Echo", "inputSchema": { "type": "object" }, "sideEffect": "none", "namespace": "mcp.fixture.stdio.echo", "pluginId": "fixture", "serverId": "stdio", "readOnly": true }] }, "createdAt": 3 },
+    { "type": "mcp.tool.discovered", "sessionId": "eval_plugin", "tool": { "name": "echo", "title": "echo", "description": "Echo", "inputSchema": { "type": "object" }, "sideEffect": "none", "namespace": "mcp.fixture.stdio.echo", "pluginId": "fixture", "serverId": "stdio", "readOnly": true }, "createdAt": 4 }
+  ]
+}

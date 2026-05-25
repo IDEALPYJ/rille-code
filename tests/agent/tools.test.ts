@@ -8,6 +8,7 @@ import { executeToolCall, getModelVisibleToolDefinitions, getToolDefinitions, to
 import { createInitialTaskContract } from '../../src/main/agent/taskContract'
 
 let root = ''
+let extensionUserData = ''
 
 function session(): AgentSession {
   return {
@@ -57,8 +58,11 @@ function localContext(workspacePath: string, filePath: string, content: string):
 }
 
 afterEach(async () => {
+  delete process.env.RILLE_AGENT_EXTENSION_USER_DATA
   if (root) await rm(root, { recursive: true, force: true })
+  if (extensionUserData) await rm(extensionUserData, { recursive: true, force: true })
   root = ''
+  extensionUserData = ''
 })
 
 describe('update_plan tool', () => {
@@ -90,6 +94,35 @@ describe('update_plan tool', () => {
     )
     expect(result.status).toBe('ok')
     expect(result.output).toContain('inspect_runtime_state')
+  })
+
+  it('discovers skills through search_tools/search_skills while keeping activation deferred', async () => {
+    root = mkdtempSync(join(tmpdir(), 'rille-tools-skill-'))
+    extensionUserData = mkdtempSync(join(tmpdir(), 'rille-tools-user-'))
+    process.env.RILLE_AGENT_EXTENSION_USER_DATA = extensionUserData
+    mkdirSync(join(root, '.rille/skills'), { recursive: true })
+    writeFileSync(join(root, '.rille/skills/review.json'), JSON.stringify({
+      id: 'review',
+      name: 'Review Skill',
+      description: 'Review helper',
+      activationKeywords: ['review'],
+      content: 'Review only after evidence is collected.',
+    }), 'utf8')
+    const runtimeContext = { ...context(), workspace: { kind: 'local' as const, path: root, label: 'tmp' } }
+
+    const tools = await executeToolCall(
+      { id: 'tool_search', name: 'search_tools', input: { query: 'review' } },
+      { session: localSession(root), turn: turn(), context: runtimeContext, emitProposal: vi.fn() },
+    )
+    const skills = await executeToolCall(
+      { id: 'skill_search', name: 'search_skills', input: { query: 'review' } },
+      { session: localSession(root), turn: turn(), context: runtimeContext, emitProposal: vi.fn() },
+    )
+
+    expect(getToolDefinitions().some(tool => tool.name === 'activate_skill' && tool.deferred)).toBe(true)
+    expect(getModelVisibleToolDefinitions().some(tool => tool.name === 'activate_skill')).toBe(false)
+    expect(tools.output).toContain('Review Skill')
+    expect(skills.output).toContain('review')
   })
 
   it('rejects invalid input before tool execution', async () => {

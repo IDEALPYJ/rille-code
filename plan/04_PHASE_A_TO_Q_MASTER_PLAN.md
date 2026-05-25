@@ -18,7 +18,7 @@
 | L | Long-running Memory + Compaction | 已实现 |
 | M | Observability + Hooks + Eval Harness | 已实现 |
 | N | Product UX Workbench | 已实现 |
-| O | Skills + Plugins + MCP | 未实现 |
+| O | Skills + Plugins + MCP | 已实现 |
 | P | Subagents + Advisor + Parallel Work | 未实现 |
 | Q | Release Governance + Entropy Cleanup | 未实现 |
 
@@ -418,15 +418,15 @@ Checklist：
 
 Checklist：
 
-- [ ] O1. SkillContract protocol。
-- [ ] O2. skill discovery。
-- [ ] O3. skill activation trace。
-- [ ] O4. plugin manifest。
-- [ ] O5. MCP server registry。
-- [ ] O6. MCP tool namespace and policy。
-- [ ] O7. skill/plugin eval cases。
+- [x] O1. SkillContract protocol。
+- [x] O2. skill discovery。
+- [x] O3. skill activation trace。
+- [x] O4. plugin manifest。
+- [x] O5. MCP server registry。
+- [x] O6. MCP tool namespace and policy。
+- [x] O7. skill/plugin eval cases。
 
-当前状态：未实现。
+当前状态：已实现。已新增 SkillContract/PluginManifest/MCP protocol、项目与 userData discovery store、keyword/manual activation trace、plugin manifest 扫描、真实 stdio MCP server lifecycle、MCP JSON-RPC initialize/tools/list/tools/call、`mcp.<pluginId>.<serverId>.<toolName>` namespace、Plan Mode/policy sideEffect 约束、`search_skills`/`activate_skill` deferred tools、extension IPC，以及 Phase O deterministic eval cases。
 
 ## Phase P: Subagents + Advisor + Parallel Work
 

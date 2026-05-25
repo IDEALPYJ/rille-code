@@ -27,9 +27,9 @@
 | J | Verification + Evidence Gate | 已完成 | 已实现 | browser/user evidence、waiver UI、artifact-backed evidence、coverage recompute 已落地 | M7 |
 | K | Review + Evaluator | 已完成 | 已实现 | accepted risk、EvaluatorRun 事件、并行 rule/evaluator review、reviewer subagent 占位协议已落地 | M7 |
 | L | Long-running Memory + Compaction | 已完成 | 已实现 | `.rille/features.json`、explicit compaction、cache-safe compact fork、stale checks、local async compact task 已落地 | M7 |
-| M | Observability + Hooks + Eval Harness | 已完成 | 已实现 | hook lifecycle、hook trace、deterministic eval、single-step/full-turn runner、CI eval 入口已落地 | O1 |
-| N | Product UX Workbench | 已完成 | 已实现 | session risk card、streaming status、slash/@file/#selection composer、trace/debug view、subagent 占位树已落地 | O1 |
-| O | Skills + Plugins + MCP | 未开始 | 未实现 | 无 runtime 能力 | O1 |
+| M | Observability + Hooks + Eval Harness | 已完成 | 已实现 | hook lifecycle、hook trace、deterministic eval、single-step/full-turn runner、CI eval 入口已落地 | P1 |
+| N | Product UX Workbench | 已完成 | 已实现 | session risk card、streaming status、slash/@file/#selection composer、trace/debug view、subagent 占位树已落地 | P1 |
+| O | Skills + Plugins + MCP | 已完成 | 已实现 | SkillContract、project/user/plugin discovery、activation trace、plugin manifest、真实 stdio MCP lifecycle、namespace/policy、Phase O eval 已落地 | P1 |
 | P | Subagents + Advisor + Parallel Work | 未开始 | 未实现 | 无 runtime 能力 | P1 |
 | Q | Release Governance + Entropy Cleanup | 未开始 | 未实现 | 无 runtime 能力 | Q1 |
 
@@ -203,13 +203,13 @@
 
 ## Phase O Checklist
 
-- [ ] O1. SkillContract protocol。
-- [ ] O2. skill discovery。
-- [ ] O3. skill activation trace。
-- [ ] O4. plugin manifest。
-- [ ] O5. MCP server registry。
-- [ ] O6. MCP tool namespace and policy。
-- [ ] O7. skill/plugin eval cases。
+- [x] O1. SkillContract protocol。
+- [x] O2. skill discovery。
+- [x] O3. skill activation trace。
+- [x] O4. plugin manifest。
+- [x] O5. MCP server registry。
+- [x] O6. MCP tool namespace and policy。
+- [x] O7. skill/plugin eval cases。
 
 ## Phase P Checklist
 
@@ -259,7 +259,18 @@
 验证命令: `npm test`; `npm run typecheck`; `npm run build`; `npm run eval:agent`; M/N checklist 状态检索。
 验证结果: `npm test` 22 files / 173 tests passed；`npm run typecheck` passed；`npm run build` passed（保留既有 memory dynamic/static import warning）；`npm run eval:agent` 3/3 cases passed；M/N 未完成 checklist 检索无输出。
 剩余风险: subagent tree 仍是 Phase N 的协议/UX 占位，真实 SubagentRunner、parallel scheduling 和 parent-child execution 仍归 Phase P；hooks 本阶段为内部 extension point，不加载用户脚本或插件。
-下一步: Phase O1
+下一步: Phase P1
+
+步骤: Phase O closure
+状态: 已完成
+完成日期: 2026-05-26
+涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/skillStore.ts`, `src/main/agent/mcpManager.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/tools.ts`, `src/main/agent/permissions.ts`, `src/main/agent/index.ts`, `src/main/agent/trace.ts`, `src/preload/index.ts`, `src/renderer/env.d.ts`, `eval/cases/*.json`
+实现摘要: Phase O 完成 SkillContract/PluginManifest/MCP protocol、项目与 userData skill/plugin discovery、keyword/manual skill activation trace、plugin manifest 扫描、真实 stdio MCP process lifecycle、最小 MCP JSON-RPC initialize/tools/list/tools/call、`mcp.<pluginId>.<serverId>.<toolName>` namespace、MCP sideEffect policy、Plan Mode read-only 限制、`search_skills`/`activate_skill` deferred tools 和 extension IPC。
+测试文件: `tests/agent/skillStore.test.ts`, `tests/agent/mcpManager.test.ts`, `tests/agent/contextBuilder.test.ts`, `tests/agent/tools.test.ts`, `eval/cases/skill_activation_happy.json`, `eval/cases/plugin_mcp_discovery.json`, `eval/cases/mcp_plan_mode_denied.json`, `eval/cases/mcp_startup_failure_recorded.json`
+验证命令: `npm test`; `npm run typecheck`; `npm run build`; `npm run eval:agent`; Phase O checklist 状态检索。
+验证结果: `npm test` 24 files / 180 tests passed；`npm run typecheck` passed；`npm run build` passed（保留既有 memory dynamic/static import warning）；`npm run eval:agent` 7/7 cases passed；Phase O checklist/status 检索无输出。
+剩余风险: Phase O 不加载任意插件 JS，不实现 HTTP/SSE MCP transport、online marketplace、签名/沙箱插件 runtime，也不提前实现 Phase P SubagentRunner、parallel scheduling 或 parent-child session execution。
+下一步: Phase P1
 
 步骤: Phase A-L plan consistency audit
 状态: 已完成

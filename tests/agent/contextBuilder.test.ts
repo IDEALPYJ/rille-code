@@ -172,6 +172,24 @@ describe('buildAgentContext', () => {
     ])
   })
 
+  it('injects matching skill fragments as dynamic context when discovered', async () => {
+    const root = createRulesWorkspace({
+      '.rille/skills/verify.json': JSON.stringify({
+        id: 'verify',
+        name: 'Verify Skill',
+        description: 'Verification helper',
+        activationKeywords: ['verify'],
+        content: 'Always collect deterministic evidence before finalizing.',
+      }),
+    })
+    const result = await buildAgentContext(input({ contextSnapshot: snapshotWithWorkspace(root), turn: { ...turn(), text: 'please verify this change' } }))
+    const fragment = result.fragments.find(item => item.type === 'skill')
+
+    expect(fragment).toMatchObject({ type: 'skill', section: 'dynamic_suffix', trusted: true })
+    expect(fragment?.text).toContain('Verify Skill')
+    expect(fragment?.text).toContain('deterministic evidence')
+  })
+
   it('creates trace metadata without storing diagnostic details in trace reasons', async () => {
     const result = await buildAgentContext(input())
 

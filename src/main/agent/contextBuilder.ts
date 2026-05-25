@@ -13,6 +13,8 @@ import type {
 import { workspaceGitStatus, workspaceReadDirectory, workspaceReadFile } from './workspace'
 import { MemoryStore } from './memory'
 import { FeatureStore } from './featureStore'
+import { findMatchingSkills } from './skillStore'
+import { registerMcpToolDescriptors } from './mcpManager'
 
 const PROJECT_RULE_PREFIX_FILES = ['AGENTS.md', 'CLAUDE.md', 'RILLE.md', '.rille/rules.md'] as const
 const PROJECT_RULES_DIRECTORY = '.rille/rules'
@@ -421,6 +423,39 @@ function collectReviewFragment(input: ContextBuildInput): ContextFragment | null
   })
 }
 
+function collectSkillFragments(input: ContextBuildInput): ContextFragment[] {
+  const query = [
+    input.turn.text,
+    input.contextSnapshot.activeFile?.name,
+    input.taskContract?.goal,
+  ].filter(Boolean).join(' ')
+  return findMatchingSkills(query, input.contextSnapshot.workspace, 3).map(skill => fragment({
+    id: `context_skill_${skill.id}`,
+    type: 'skill',
+    section: 'dynamic_suffix',
+    priority: skill.priority,
+    source: `${skill.source}:${skill.id}`,
+    trust: skill.trust === 'trusted' ? 'workspace' : 'external',
+    text: [`Skill: ${skill.name}`, skill.description, skill.content].join('\n'),
+    cacheEligible: false,
+  }))
+}
+
+function collectMcpToolFragment(input: ContextBuildInput): ContextFragment | null {
+  const tools = registerMcpToolDescriptors(input.contextSnapshot.workspace).slice(0, 12)
+  if (tools.length === 0) return null
+  return fragment({
+    id: 'context_mcp_tools',
+    type: 'mcp_tool',
+    section: 'dynamic_suffix',
+    priority: 34,
+    source: 'mcp.registry',
+    trust: 'tool_output',
+    text: ['MCP tools:', ...tools.map(tool => `- ${tool.namespace}: ${tool.description || tool.title || tool.name} sideEffect=${tool.sideEffect}`)].join('\n'),
+    cacheEligible: false,
+  })
+}
+
 async function collectGitFragment(context: AgentContextSnapshot): Promise<ContextFragment | null> {
   if (!context.workspace) return null
   const text = ['Git status:', await readGitStatus(context.workspace)].join('\n')
@@ -471,6 +506,8 @@ async function collectContextFragments(input: ContextBuildInput): Promise<Contex
     collectSymbolsFragment(context),
     collectVerificationFragment(input),
     collectReviewFragment(input),
+    ...collectSkillFragments(input),
+    collectMcpToolFragment(input),
     await collectGitFragment(context),
   ].filter((item): item is ContextFragment => Boolean(item))
   return [...stable, ...dynamic]

@@ -1,5 +1,5 @@
 import type { WebContents } from 'electron'
-import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, CompactionResult, EditProposal, ExecutionSandbox, PlanConfirmation, RuntimeProcessSummary, RuntimeStateArtifact } from '../../shared/agent/protocol'
+import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, CompactionResult, EditProposal, ExecutionSandbox, ExtensionDiscoverySnapshot, McpServerState, PlanConfirmation, PluginManifest, RuntimeProcessSummary, RuntimeStateArtifact, SkillContract } from '../../shared/agent/protocol'
 import { deleteAgentModelProfile, listAgentModelProfiles, readAgentConfigSnapshot, saveAgentConfig, saveAgentModelProfile, selectAgentModelProfile } from './config'
 import { testAgentProvider } from './provider'
 import { AgentThread } from './thread'
@@ -10,6 +10,8 @@ import { cleanupRuntimeProcesses, listRuntimeProcesses, stopRuntimeProcess } fro
 import { createCheckpoint, restoreCheckpointAsProposals } from './checkpointStore'
 import { captureRuntimeState } from './runtimeState'
 import { createWorktreeSandbox, disposeSandbox, sandboxDiffAsProposals } from './worktreeSandbox'
+import { discoverExtensions } from './skillStore'
+import { listMcpServerStates, startMcpServer, stopMcpServer } from './mcpManager'
 
 const threads = new Map<string, AgentThread>()
 
@@ -143,6 +145,11 @@ type AgentDispatchValue =
   | ExecutionSandbox
   | RuntimeStateArtifact
   | CompactionResult
+  | ExtensionDiscoverySnapshot
+  | SkillContract[]
+  | PluginManifest[]
+  | McpServerState[]
+  | McpServerState
   | { traceEvents: unknown[] }
 
 export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<AgentDispatchValue>> {
@@ -208,6 +215,31 @@ export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<Agent
     }
     if (op.type === 'trace.export') {
       return ok({ traceEvents: await exportSessionTrace(op.sessionId, op.redacted !== false) })
+    }
+    if (op.type === 'extension.refresh') {
+      const snapshot = discoverExtensions(op.workspace)
+      for (const plugin of snapshot.plugins) {
+        void appendSessionEvent({ type: 'plugin.loaded', sessionId: op.sessionId, activation: { id: `plugin_activation_${plugin.id}_${Date.now()}`, pluginId: plugin.id, status: 'loaded', createdAt: Date.now() } })
+      }
+      return ok(snapshot)
+    }
+    if (op.type === 'skill.list') return ok(discoverExtensions(op.workspace).skills)
+    if (op.type === 'plugin.list') return ok(discoverExtensions(op.workspace).plugins)
+    if (op.type === 'mcp.server.list') return ok(listMcpServerStates())
+    if (op.type === 'mcp.server.start') {
+      const state = await startMcpServer(op)
+      void appendSessionEvent({ type: state.status === 'failed' ? 'mcp.server.failed' : 'mcp.server.started', sessionId: op.sessionId, state })
+      if (state.status === 'running') {
+        void appendSessionEvent({ type: 'mcp.server.completed', sessionId: op.sessionId, state })
+        for (const tool of state.tools) void appendSessionEvent({ type: 'mcp.tool.discovered', sessionId: op.sessionId, tool })
+      }
+      return ok(state)
+    }
+    if (op.type === 'mcp.server.stop') {
+      const state = stopMcpServer(op.pluginId, op.serverId)
+      if (!state) throw new Error('MCP server does not exist.')
+      void appendSessionEvent({ type: 'mcp.server.stopped', sessionId: op.sessionId, state })
+      return ok(state)
     }
     if ('sessionId' in op) {
       return ok(requireThread(op.sessionId).handle(op))

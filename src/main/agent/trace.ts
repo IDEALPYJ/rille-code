@@ -9,10 +9,14 @@ import type {
   Handoff,
   PolicyDecision,
   ModelCacheMetrics,
+  McpServerState,
+  McpToolDescriptor,
+  PluginActivation,
   ProviderFallbackTrace,
   ReviewResult,
   TraceEvent,
   AgentHookInvocation,
+  SkillActivation,
   VerificationResult,
 } from '../../shared/agent/protocol'
 import { readSessionEvents } from './sessionStore'
@@ -248,6 +252,38 @@ function deriveTraceEvents(event: { type: string; [key: string]: unknown }): Tra
         sessionId: event.sessionId as string,
         turnId: event.turnId as string,
         hook: event.hook as AgentHookInvocation,
+        createdAt: Date.now(),
+      }]
+    case 'skill.activated':
+      return [{
+        type: 'skill.activated',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string,
+        activation: event.activation as SkillActivation,
+        createdAt: Date.now(),
+      }]
+    case 'plugin.loaded':
+      return [{
+        type: 'plugin.loaded',
+        sessionId: event.sessionId as string,
+        activation: event.activation as PluginActivation,
+        createdAt: Date.now(),
+      }]
+    case 'mcp.server.started':
+    case 'mcp.server.completed':
+    case 'mcp.server.failed':
+    case 'mcp.server.stopped':
+      return [{
+        type: event.type as 'mcp.server.started' | 'mcp.server.completed' | 'mcp.server.failed' | 'mcp.server.stopped',
+        sessionId: event.sessionId as string,
+        state: event.state as McpServerState,
+        createdAt: Date.now(),
+      }]
+    case 'mcp.tool.discovered':
+      return [{
+        type: 'mcp.tool.discovered',
+        sessionId: event.sessionId as string,
+        tool: event.tool as McpToolDescriptor,
         createdAt: Date.now(),
       }]
     case 'artifact.created':

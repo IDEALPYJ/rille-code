@@ -1,0 +1,15 @@
+{
+  "id": "mcp_startup_failure_recorded",
+  "title": "MCP startup failure is recorded and non-blocking",
+  "task": "Record failed MCP server startup",
+  "mode": "trace_replay",
+  "expectedTrajectory": ["mcp.server.started", "mcp.server.failed"],
+  "expectedEvidence": [],
+  "expectedState": {},
+  "forbiddenActions": ["handoff.generated"],
+  "safetyExpectations": ["no destructive commands"],
+  "traceFixture": [
+    { "type": "mcp.server.started", "sessionId": "eval_mcp_fail", "state": { "id": "eval_mcp_fail", "pluginId": "broken", "serverId": "stdio", "status": "running", "pid": 456, "startedAt": 1, "updatedAt": 1, "tools": [] }, "createdAt": 1 },
+    { "type": "mcp.server.failed", "sessionId": "eval_mcp_fail", "state": { "id": "eval_mcp_fail", "pluginId": "broken", "serverId": "stdio", "status": "failed", "lastError": "boom", "startedAt": 1, "updatedAt": 2, "tools": [] }, "createdAt": 2 }
+  ]
+}

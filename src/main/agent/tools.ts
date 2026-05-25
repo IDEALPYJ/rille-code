@@ -15,8 +15,11 @@ import type {
   ToolValidationResult,
   ToolVisibility,
 } from '../../shared/agent/protocol'
+import { appendSessionEvent } from './sessionStore'
 import { applyEditProposal, createEditProposal } from './editStore'
 import { normalizePlanUpdate, normalizeTaskContractUpdate } from './taskContract'
+import { activateSkill, findMatchingSkills } from './skillStore'
+import { callMcpTool, listMcpTools, registerMcpToolDescriptors } from './mcpManager'
 import {
   canonicalWorkspacePath,
   isProtectedPath,
@@ -143,6 +146,10 @@ function validateCommandInput(input: Record<string, unknown>): ToolValidationRes
 
 function validateToolSearchInput(input: Record<string, unknown>): ToolValidationResult {
   return validateStringFields(input, ['query'])
+}
+
+function validateActivateSkillInput(input: Record<string, unknown>): ToolValidationResult {
+  return validateStringFields(input, ['skillId', 'reason'])
 }
 
 function classifyToolError(error: unknown): ToolFailureType {
@@ -633,7 +640,7 @@ export const toolRegistry: RegisteredTool[] = [
     sideEffect: 'none',
     validate: validateToolSearchInput,
     summarize: input => str(input, 'query'),
-    execute: async input => {
+    execute: async (input, { context }) => {
       const query = str(input, 'query').toLowerCase()
       const matches = toolRegistry
         .filter(tool => tool.visibility === 'model' && tool.definition.name !== 'search_tools')
@@ -657,7 +664,114 @@ export const toolRegistry: RegisteredTool[] = [
           activationHint: tool.definition.activationHint,
           inputSchema: tool.definition.inputSchema,
         }))
-      return { output: JSON.stringify(matches, null, 2), structured: { matches }, status: 'ok' }
+      const workspace = context.workspace
+      const skills = findMatchingSkills(query, workspace, 5).map(skill => ({
+        kind: 'skill',
+        id: skill.id,
+        name: skill.name,
+        description: skill.description,
+        source: skill.source,
+        trust: skill.trust,
+        activationKeywords: skill.activationKeywords,
+      }))
+      const mcpTools = registerMcpToolDescriptors(workspace)
+        .filter(tool => {
+          const haystack = [tool.namespace, tool.name, tool.title, tool.description, tool.pluginId, tool.serverId].filter(Boolean).join(' ').toLowerCase()
+          return haystack.includes(query) || query.split(/\s+/).some(token => token && haystack.includes(token))
+        })
+        .slice(0, 8)
+        .map(tool => ({
+          kind: 'mcp_tool',
+          name: tool.namespace,
+          title: tool.title || tool.name,
+          description: tool.description || '',
+          pluginId: tool.pluginId,
+          serverId: tool.serverId,
+          sideEffect: tool.sideEffect,
+          readOnly: tool.readOnly,
+          deferred: true,
+        }))
+      const combined = { matches, skills, mcpTools }
+      return { output: JSON.stringify(combined, null, 2), structured: combined, status: 'ok' }
+    },
+  },
+  {
+    definition: {
+      name: 'search_skills',
+      title: '搜索技能和插件',
+      description: 'Discover matching skills, plugins, and MCP tools. Input: { "query": string }.',
+      inputSchema: { type: 'object', required: ['query'], properties: { query: { type: 'string' } }, additionalProperties: false },
+      isReadOnly: true,
+      risk: 'low',
+      category: 'extension',
+      keywords: ['skill', 'plugin', 'mcp', 'extension'],
+    },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: validateToolSearchInput,
+    summarize: input => str(input, 'query'),
+    execute: async (input, { context }) => {
+      const query = str(input, 'query')
+      const skills = findMatchingSkills(query, context.workspace, 8).map(skill => ({
+        id: skill.id,
+        name: skill.name,
+        description: skill.description,
+        source: skill.source,
+        trust: skill.trust,
+        pluginId: skill.pluginId,
+        activationKeywords: skill.activationKeywords,
+      }))
+      const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+      const mcpTools = registerMcpToolDescriptors(context.workspace)
+        .filter(tool => {
+          const haystack = [tool.namespace, tool.name, tool.title, tool.description, tool.pluginId, tool.serverId].filter(Boolean).join(' ').toLowerCase()
+          return terms.length === 0 || terms.some(term => haystack.includes(term))
+        })
+        .slice(0, 12)
+        .map(tool => ({
+          namespace: tool.namespace,
+          title: tool.title || tool.name,
+          description: tool.description || '',
+          pluginId: tool.pluginId,
+          serverId: tool.serverId,
+          readOnly: tool.readOnly,
+          sideEffect: tool.sideEffect,
+        }))
+      const matches = { skills, mcpTools }
+      return { output: JSON.stringify(matches, null, 2), structured: matches, status: 'ok' }
+    },
+  },
+  {
+    definition: {
+      name: 'activate_skill',
+      title: '激活技能',
+      description: 'Activate a discovered skill for the current turn. Input: { "skillId": string, "reason": string }.',
+      inputSchema: { type: 'object', required: ['skillId', 'reason'], properties: { skillId: { type: 'string' }, reason: { type: 'string' } }, additionalProperties: false },
+      isReadOnly: true,
+      risk: 'low',
+      deferred: true,
+      category: 'extension',
+      keywords: ['skill', 'activate'],
+      activationHint: 'Use after search_skills identifies a relevant skill.',
+    },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: validateActivateSkillInput,
+    summarize: input => `${str(input, 'skillId')}: ${str(input, 'reason')}`,
+    execute: async (input, { session, turn, context }) => {
+      const { skill, activation } = activateSkill({
+        skillId: str(input, 'skillId'),
+        reason: str(input, 'reason'),
+        sessionId: session.id,
+        turnId: turn.id,
+        workspace: context.workspace,
+      })
+      void appendSessionEvent({ type: 'skill.activated', sessionId: session.id, turnId: turn.id, activation })
+      return {
+        output: `已激活技能 ${skill.name}。`,
+        structured: { activation, skill: { id: skill.id, name: skill.name, source: skill.source, trust: skill.trust, pluginId: skill.pluginId } },
+        status: 'ok',
+      }
     },
   },
   {
@@ -803,6 +917,35 @@ export const toolRegistry: RegisteredTool[] = [
 
 const registryByName = new Map(toolRegistry.map(tool => [tool.definition.name, tool]))
 
+function createMcpRegisteredTool(namespace: string): RegisteredTool | null {
+  const tool = listMcpTools().find(item => item.namespace === namespace)
+  if (!tool || tool.name === '*') return null
+  return {
+    definition: {
+      name: tool.namespace,
+      title: tool.title || tool.name,
+      description: tool.description || `MCP tool from ${tool.pluginId}/${tool.serverId}.`,
+      inputSchema: tool.inputSchema || { type: 'object', properties: {}, additionalProperties: true },
+      isReadOnly: tool.readOnly,
+      risk: tool.sideEffect === 'none' || tool.sideEffect === 'workspace_read' ? 'low' : tool.sideEffect === 'workspace_write' ? 'high' : 'critical',
+      visibility: 'model',
+      sideEffect: tool.sideEffect,
+      deferred: true,
+      category: 'mcp',
+      keywords: ['mcp', tool.pluginId, tool.serverId, tool.name],
+      activationHint: 'Use after search_tools or search_skills discovers this MCP tool and policy allows it.',
+    },
+    visibility: 'model',
+    sideEffect: tool.sideEffect,
+    validate: input => {
+      if (!input || typeof input !== 'object' || Array.isArray(input)) return invalid('MCP tool input must be an object.')
+      return ok(input)
+    },
+    summarize: () => tool.namespace,
+    execute: async input => callMcpTool(tool.namespace, input),
+  }
+}
+
 function publicDefinition(tool: RegisteredTool): AgentToolDefinition {
   return {
     ...tool.definition,
@@ -812,7 +955,20 @@ function publicDefinition(tool: RegisteredTool): AgentToolDefinition {
 }
 
 export function getToolDefinitions(): AgentToolDefinition[] {
-  return toolRegistry.map(publicDefinition).sort((a, b) => a.name.localeCompare(b.name))
+  const mcpDefinitions = registerMcpToolDescriptors().map(tool => ({
+    name: tool.namespace,
+    title: tool.title || tool.name,
+    description: tool.description || `MCP tool from ${tool.pluginId}/${tool.serverId}.`,
+    inputSchema: tool.inputSchema || { type: 'object', properties: {}, additionalProperties: true },
+    isReadOnly: tool.readOnly,
+    risk: tool.readOnly ? 'low' as const : 'critical' as const,
+    visibility: 'model' as const,
+    sideEffect: tool.sideEffect,
+    deferred: true,
+    category: 'mcp',
+    keywords: ['mcp', tool.pluginId, tool.serverId, tool.name],
+  }))
+  return [...toolRegistry.map(publicDefinition), ...mcpDefinitions].sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export function getModelVisibleToolDefinitions(): AgentToolDefinition[] {
@@ -823,11 +979,11 @@ export function getModelVisibleToolDefinitions(): AgentToolDefinition[] {
 }
 
 export function isModelVisibleTool(name: string): boolean {
-  return registryByName.get(name)?.visibility === 'model'
+  return registryByName.get(name)?.visibility === 'model' || Boolean(createMcpRegisteredTool(name))
 }
 
 export function getRegisteredTool(name: string): RegisteredTool | null {
-  return registryByName.get(name) ?? null
+  return registryByName.get(name) ?? createMcpRegisteredTool(name)
 }
 
 export function createRuntimeToolCall(name: string, input: Record<string, unknown>, id?: string): RuntimeToolCall {
