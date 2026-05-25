@@ -184,19 +184,19 @@ Target:
 Current status: 已实现
 
 Evidence files:
-`src/shared/agent/protocol.ts`, `src/main/agent/verificationGate.ts`, `src/main/agent/verifier.ts`, `src/main/agent/runtime.ts`, `tests/agent/verificationGate.test.ts`, `tests/agent/verifier.test.ts`
+`src/shared/agent/protocol.ts`, `src/main/agent/verificationGate.ts`, `src/main/agent/verifier.ts`, `src/main/agent/runtime.ts`, `src/main/agent/thread.ts`, `src/renderer/components/agent/AgentPanel.tsx`, `tests/agent/verificationGate.test.ts`, `tests/agent/verifier.test.ts`
 
 Implemented details:
-已有 Evidence、VerificationCoverage、before-stop gate、command/diagnostics/diff evidence、VerifierRunner。
+已有 Evidence、VerificationCoverage、before-stop gate、command/diagnostics/diff evidence、VerifierRunner；browser/user evidence op、waiver op/UI、coverage recompute 和 artifact-backed evidence 引用已落地。
 
 Missing pieces:
-browser/user evidence、waiver UI。
+自动浏览器采集依赖外部浏览器/Playwright，当前 Phase J 范围只支持用户或 runtime 提交 browser observation/screenshot artifact。
 
 Next phase:
-Phase J
+Phase M/N
 
 Verification:
-Verification tests 覆盖 coverage、failed evidence、review gate 交互。
+Verification tests 覆盖 coverage、failed evidence、review gate 交互、user/browser evidence 和 waiver gate。
 
 ## Capability: session archive/unarchive
 
@@ -272,38 +272,38 @@ Target:
 Current status: 已实现
 
 Evidence files:
-`src/main/agent/verificationGate.ts`, `tests/agent/verificationGate.test.ts`, `src/renderer/components/agent/AgentPanel.tsx`
+`src/main/agent/verificationGate.ts`, `src/main/agent/thread.ts`, `tests/agent/verificationGate.test.ts`, `src/renderer/components/agent/AgentPanel.tsx`
 
 Implemented details:
-runRuleBasedReview 生成 ReviewFinding，blocking finding 阻止 final 并显示在 UI。
+runRuleBasedReview 生成 ReviewFinding，blocking finding 阻止 final 并显示在 UI；accepted risk / dismiss finding 通过显式用户操作更新 finding lifecycle，accepted risk 不再阻塞 final。
 
 Missing pieces:
-accepted risk UI、finding lifecycle、reviewer subagent。
+完整 reviewer subagent runner 留到 Phase P。
 
 Next phase:
-Phase K
+Phase P
 
 Verification:
-Verification gate tests 覆盖 request_changes 和 blocking finding。
+Verification gate tests 覆盖 request_changes、blocking finding、accepted risk 和 dismiss finding。
 
 ## Capability: LLM evaluator MVP
 
 Target:
 独立 LLM evaluator 以 skeptical reviewer 角色审查 diff/evidence/contract。
 
-Current status: 部分实现
+Current status: 已实现
 
 Evidence files:
-`src/main/agent/evaluatorConfig.ts`, `src/main/agent/evaluatorPrompts.ts`, `src/main/agent/evaluatorRunner.ts`, `src/main/agent/runtime.ts`, `tests/agent/evaluator.test.ts`, `tests/agent/provider.test.ts`
+`src/shared/agent/protocol.ts`, `src/main/agent/evaluatorConfig.ts`, `src/main/agent/evaluatorPrompts.ts`, `src/main/agent/evaluatorRunner.ts`, `src/main/agent/runtime.ts`, `tests/agent/evaluator.test.ts`, `tests/agent/provider.test.ts`
 
 Implemented details:
-已有可选 evaluator、独立 model profile、maxTokens、timeout、usage purpose、rule/LLM merge、source badge。
+已有可选 evaluator、独立 model profile、maxTokens、timeout、usage purpose、rule/LLM merge、source badge；EvaluatorRun public protocol 和 evaluator started/completed/failed events 已落地；rule review 与 evaluator review 并行执行；reviewerSubagent read_only 占位协议已落地。
 
 Missing pieces:
-public protocol、parallel evaluator execution、reviewer subagent、accepted risk flow。
+完整 reviewer subagent runner、parent-child session tree 和 permission-scoped subagent tool runtime 留到 Phase P。
 
 Next phase:
-Phase K, Phase P
+Phase P
 
 Verification:
 Evaluator tests 覆盖 prompt、parse、merge 和 provider maxTokens。
@@ -313,44 +313,44 @@ Evaluator tests 覆盖 prompt、parse、merge 和 provider maxTokens。
 Target:
 长任务在 pause/resume/turn boundary 生成可靠进度和交接状态。
 
-Current status: 部分实现
+Current status: 已实现
 
 Evidence files:
-`src/shared/agent/protocol.ts`, `src/main/agent/runtime.ts`, `src/main/agent/thread.ts`, `src/main/agent/contextBuilder.ts`, `tests/agent/runtime.test.ts`, `tests/agent/sessionStore.test.ts`
+`src/shared/agent/protocol.ts`, `src/main/agent/runtime.ts`, `src/main/agent/thread.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/featureStore.ts`, `src/main/agent/compaction.ts`, `tests/agent/runtime.test.ts`, `tests/agent/sessionStore.test.ts`, `tests/agent/memory.test.ts`, `tests/agent/compaction.test.ts`
 
 Implemented details:
-已有 FeatureItem、ProgressState、Handoff、turn-end finalize、resume handoff injection、workspace freshness 基础检查。
+已有 FeatureItem、ProgressState、Handoff、turn-end finalize、resume handoff injection、workspace freshness 基础检查；turn end 写入 `.rille/features.json`，resume/context build 注入 feature list；context.compact 生成 compact artifact 和 context.compacted event，不重写 JSONL。
 
 Missing pieces:
-`.rille/features.json`、中间 checkpoint、git hash/diff freshness、remote workspace freshness。
+更强的 git hash/diff freshness 和后台自动调度留到 Phase M/Q。
 
 Next phase:
-Phase L
+Phase M
 
 Verification:
-Runtime/session tests 覆盖 progress/handoff 持久化和恢复。
+Runtime/session tests 覆盖 progress/handoff 持久化和恢复；FeatureStore/compaction tests 覆盖 feature persistence、stale evidence downgrade 和 compact artifact。
 
 ## Capability: ProjectMemory MVP
 
 Target:
 项目级长期记忆可追溯、可更新、可标记 stale/superseded/conflict。
 
-Current status: 部分实现
+Current status: 已实现
 
 Evidence files:
-`src/shared/agent/protocol.ts`, `src/main/agent/memory.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/tools.ts`, `tests/agent/memory.test.ts`
+`src/shared/agent/protocol.ts`, `src/main/agent/memory.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/tools.ts`, `src/main/agent/thread.ts`, `tests/agent/memory.test.ts`
 
 Implemented details:
-已有 ProjectMemoryEntry、MemoryStore、create_memory tool、memory_ref fragment、基础 CRUD。
+已有 ProjectMemoryEntry、MemoryStore、create_memory tool、memory_ref fragment、基础 CRUD；turn start 对缺失 evidence sourceRefs 进行 stale 标记并注入 stale observation。
 
 Missing pieces:
-自动 stale/superseded 检测、memory policy review、sourceRefs 强校验 UI。
+更细粒度 conflict/superseded 推断和 memory policy review 留到 Phase M/Q。
 
 Next phase:
-Phase L
+Phase M
 
 Verification:
-Memory tests 覆盖 add/list/update/delete/filter/persist。
+Memory tests 覆盖 add/list/update/delete/filter/persist；thread freshness 路径由 runtime flow 覆盖。
 
 ## Capability: TraceEvent/usage/eval skeleton
 

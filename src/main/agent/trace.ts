@@ -4,6 +4,7 @@ import type {
   AgentUsage,
   ArtifactRef,
   CheckpointRef,
+  CompactionResult,
   ContextTrace,
   Handoff,
   PolicyDecision,
@@ -258,6 +259,14 @@ function deriveTraceEvents(event: { type: string; [key: string]: unknown }): Tra
         sessionId: event.sessionId as string,
         turnId: event.turnId as string | undefined,
         checkpoint: event.checkpoint as CheckpointRef,
+        createdAt: Date.now(),
+      }]
+    case 'context.compacted':
+      return [{
+        type: 'context.compacted',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string | undefined,
+        result: event.result as CompactionResult,
         createdAt: Date.now(),
       }]
     default:

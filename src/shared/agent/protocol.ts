@@ -264,6 +264,7 @@ export type ContextFragmentType =
   | 'review'
   | 'session_summary'
   | 'memory_ref'
+  | 'feature_list'
   | 'handoff'
   | 'symbols'
   | 'selection'
@@ -370,7 +371,36 @@ export interface Evidence {
   output?: string
   artifact?: ArtifactRef
   artifactRef?: string
+  waiver?: WaiverRef
+  reviewFindingIds?: string[]
+  acceptedRiskIds?: string[]
   data?: Record<string, unknown>
+  createdAt: number
+}
+
+export interface WaiverRef {
+  id: string
+  criterionId?: string
+  evidenceIds: string[]
+  reason: string
+  scope: 'criterion' | 'evidence' | 'turn'
+  createdBy: 'user'
+  createdAt: number
+  expiresAt?: number
+}
+
+export interface Waiver extends WaiverRef {
+  sessionId: string
+  turnId: string
+}
+
+export interface AcceptedRisk {
+  id: string
+  sessionId: string
+  turnId: string
+  findingId: string
+  reason: string
+  createdBy: 'user'
   createdAt: number
 }
 
@@ -425,6 +455,26 @@ export interface ReviewResult {
   findings: ReviewFinding[]
   summary: string
   createdAt: number
+}
+
+export interface ReviewerSubagentConfig {
+  role: 'reviewer'
+  modelProfileId?: string
+  permissionScope: 'read_only'
+}
+
+export interface EvaluatorRun {
+  id: string
+  sessionId: string
+  turnId: string
+  status: 'running' | 'completed' | 'failed'
+  configSnapshot?: Record<string, unknown>
+  reviewerSubagent?: ReviewerSubagentConfig
+  reviewResult?: ReviewResult | null
+  usage?: AgentUsage
+  error?: string
+  createdAt: number
+  completedAt?: number
 }
 
 export interface ContractScopeItem {
@@ -602,6 +652,12 @@ export interface ProgressState {
   updatedAt: number
 }
 
+export interface FeatureStoreSnapshot {
+  taskContractId?: string
+  featureList: FeatureItem[]
+  updatedAt: number
+}
+
 export interface Handoff {
   id: string
   sessionId: string
@@ -631,6 +687,29 @@ export interface ProjectMemoryEntry {
   status: ProjectMemoryStatus
   createdAt: number
   updatedAt: number
+}
+
+export interface CompactionTask {
+  id: string
+  sessionId: string
+  turnId?: string
+  status: 'running' | 'completed' | 'failed'
+  reason?: string
+  createdAt: number
+  completedAt?: number
+}
+
+export interface CompactionResult {
+  id: string
+  taskId: string
+  sessionId: string
+  turnId?: string
+  summaryArtifact: ArtifactRef
+  retainedFeatureList: FeatureItem[]
+  handoff?: Handoff
+  stablePrefixCacheKey?: string
+  cacheInvalidatedReason?: string
+  createdAt: number
 }
 
 // === Trace / Usage / Eval ===
@@ -700,6 +779,7 @@ export type TraceEvent =
   | { type: 'artifact.created'; sessionId: string; turnId?: string; artifact: ArtifactRef; createdAt: number }
   | { type: 'runtime.state.captured'; sessionId: string; turnId?: string; artifact: ArtifactRef; createdAt: number }
   | { type: 'checkpoint.created'; sessionId: string; turnId?: string; checkpoint: CheckpointRef; createdAt: number }
+  | { type: 'context.compacted'; sessionId: string; turnId?: string; result: CompactionResult; createdAt: number }
 
 export interface EvalCase {
   id: string
@@ -901,6 +981,12 @@ export type AgentOp =
   | { type: 'turn.interrupt'; sessionId: string; turnId: string }
   | { type: 'plan.confirm'; sessionId: string; confirmationId: string }
   | { type: 'plan.reject'; sessionId: string; confirmationId: string; reason?: string }
+  | { type: 'evidence.user.add'; sessionId: string; turnId?: string; criterionId?: string; status?: VerificationStatus; summary: string; output?: string; artifactId?: string }
+  | { type: 'evidence.browser.add'; sessionId: string; turnId?: string; criterionId?: string; url: string; title?: string; status?: VerificationStatus; summary: string; screenshotArtifactId?: string; domExcerptArtifactId?: string }
+  | { type: 'evidence.waive'; sessionId: string; turnId?: string; criterionId?: string; evidenceIds?: string[]; reason: string; scope?: Waiver['scope']; expiresAt?: number }
+  | { type: 'review.acceptRisk'; sessionId: string; turnId?: string; findingId: string; reason: string }
+  | { type: 'review.dismissFinding'; sessionId: string; turnId?: string; findingId: string; reason?: string }
+  | { type: 'context.compact'; sessionId: string; turnId?: string; reason?: string }
   | { type: 'approval.respond'; requestId: string; decision: ApprovalDecision }
   | { type: 'edit.apply'; sessionId: string; proposalId: string; context?: AgentContextSnapshot }
   | { type: 'edit.reject'; sessionId: string; proposalId: string; reason?: string }
@@ -931,8 +1017,12 @@ export type AgentEvent =
   | { type: 'tool.completed'; sessionId: string; turnId: string; callId: string; result: ToolResultView }
   | { type: 'observation.created'; sessionId: string; turnId: string; observation: Observation }
   | { type: 'evidence.created'; sessionId: string; turnId: string; evidence: Evidence }
+  | { type: 'evidence.waived'; sessionId: string; turnId: string; waiver: Waiver; evidence: Evidence }
   | { type: 'verification.coverage.updated'; sessionId: string; turnId: string; coverage: VerificationCoverage; gate: VerificationGateResult }
   | { type: 'review.completed'; sessionId: string; turnId: string; result: ReviewResult }
+  | { type: 'evaluator.started'; sessionId: string; turnId: string; run: EvaluatorRun }
+  | { type: 'evaluator.completed'; sessionId: string; turnId: string; run: EvaluatorRun }
+  | { type: 'evaluator.failed'; sessionId: string; turnId: string; run: EvaluatorRun }
   | { type: 'approval.requested'; sessionId: string; turnId: string; request: ApprovalRequest }
   | { type: 'approval.resolved'; sessionId: string; turnId: string; requestId: string; decision: ApprovalDecision }
   | { type: 'edit.proposed'; sessionId: string; turnId: string; proposal: EditProposal }
@@ -945,6 +1035,9 @@ export type AgentEvent =
   | { type: 'handoff.created'; sessionId: string; turnId: string; handoff: Handoff }
   | { type: 'trace.exported'; sessionId: string; format: 'json'; redacted: boolean; traceEvents: TraceEvent[] }
   | { type: 'trace.batch'; sessionId: string; turnId: string; traceEvents: TraceEvent[] }
+  | { type: 'context.compaction.started'; sessionId: string; turnId?: string; task: CompactionTask }
+  | { type: 'context.compacted'; sessionId: string; turnId?: string; task: CompactionTask; result: CompactionResult }
+  | { type: 'context.compaction.failed'; sessionId: string; turnId?: string; task: CompactionTask; error: string }
   | { type: 'artifact.created'; sessionId: string; turnId?: string; artifact: ArtifactRef }
   | { type: 'runtime.process.updated'; sessionId: string; process: RuntimeProcessSummary }
   | { type: 'checkpoint.created'; sessionId: string; turnId?: string; checkpoint: CheckpointRef }

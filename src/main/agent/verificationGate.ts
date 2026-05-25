@@ -9,12 +9,15 @@ import type {
   ReviewFinding,
   ReviewResult,
   AgentPlanItem,
+  ArtifactRef,
+  AcceptedRisk,
   TaskContract,
   VerificationCoverage,
   VerificationCoverageItem,
   VerificationGateResult,
   VerificationResult,
   VerificationStatus,
+  Waiver,
 } from '../../shared/agent/protocol'
 import type { RuntimeToolCall } from './tools'
 
@@ -118,6 +121,107 @@ export function evidenceFromToolResult(input: {
     }
   }
   return null
+}
+
+export function createUserEvidence(input: {
+  sessionId: string
+  turnId: string
+  criterionId?: string
+  status?: VerificationStatus
+  summary: string
+  output?: string
+  artifact?: ArtifactRef
+  artifactRef?: string
+  reviewFindingIds?: string[]
+  acceptedRiskIds?: string[]
+}): Evidence {
+  return {
+    id: `evidence_${randomUUID()}`,
+    sessionId: input.sessionId,
+    turnId: input.turnId,
+    criterionId: input.criterionId,
+    source: 'user',
+    status: input.status ?? 'passed',
+    summary: input.summary,
+    output: input.output,
+    artifact: input.artifact,
+    artifactRef: input.artifactRef,
+    reviewFindingIds: input.reviewFindingIds,
+    acceptedRiskIds: input.acceptedRiskIds,
+    createdAt: now(),
+  }
+}
+
+export function createBrowserEvidence(input: {
+  sessionId: string
+  turnId: string
+  criterionId?: string
+  status?: VerificationStatus
+  url: string
+  title?: string
+  summary: string
+  screenshotArtifact?: ArtifactRef
+  domExcerptArtifact?: ArtifactRef
+}): Evidence {
+  return {
+    id: `evidence_${randomUUID()}`,
+    sessionId: input.sessionId,
+    turnId: input.turnId,
+    criterionId: input.criterionId,
+    source: 'browser',
+    status: input.status ?? 'passed',
+    summary: input.summary,
+    artifact: input.screenshotArtifact ?? input.domExcerptArtifact,
+    artifactRef: (input.screenshotArtifact ?? input.domExcerptArtifact)?.id,
+    data: {
+      url: input.url,
+      title: input.title,
+      screenshotArtifactId: input.screenshotArtifact?.id,
+      domExcerptArtifactId: input.domExcerptArtifact?.id,
+    },
+    createdAt: now(),
+  }
+}
+
+export function createWaiver(input: {
+  sessionId: string
+  turnId: string
+  criterionId?: string
+  evidenceIds?: string[]
+  reason: string
+  scope?: Waiver['scope']
+  expiresAt?: number
+}): Waiver {
+  const reason = input.reason.trim()
+  if (!reason) throw new Error('Waiver reason is required.')
+  return {
+    id: `waiver_${randomUUID()}`,
+    sessionId: input.sessionId,
+    turnId: input.turnId,
+    criterionId: input.criterionId,
+    evidenceIds: input.evidenceIds ?? [],
+    reason,
+    scope: input.scope ?? (input.criterionId ? 'criterion' : input.evidenceIds?.length ? 'evidence' : 'turn'),
+    createdBy: 'user',
+    createdAt: now(),
+    expiresAt: input.expiresAt,
+  }
+}
+
+export function evidenceFromWaiver(waiver: Waiver): Evidence {
+  return {
+    id: `evidence_${randomUUID()}`,
+    sessionId: waiver.sessionId,
+    turnId: waiver.turnId,
+    criterionId: waiver.criterionId,
+    source: 'user',
+    status: 'waived',
+    summary: `User waiver: ${waiver.reason}`,
+    waiver,
+    reviewFindingIds: [],
+    data: { scope: waiver.scope, evidenceIds: waiver.evidenceIds },
+    createdAt: now(),
+  }
 }
 
 function requirementEvidence(requirement: AcceptanceEvidenceRequirement, evidence: Evidence[]): Evidence[] {
@@ -342,6 +446,10 @@ export function observationFromReview(result: ReviewResult): Observation {
   }
 }
 
+function isBlockingFinding(finding: ReviewFinding): boolean {
+  return finding.blocking && finding.status === 'open'
+}
+
 export function mergeReviews(ruleReview: ReviewResult, llmReview: ReviewResult | null): ReviewResult {
   if (!llmReview) return ruleReview
 
@@ -355,8 +463,9 @@ export function mergeReviews(ruleReview: ReviewResult, llmReview: ReviewResult |
     llmReview.summary ? `LLM: ${llmReview.summary}` : null,
   ].filter(Boolean).join(' | ')
 
-  const eitherBlocked = ruleReview.status !== 'approved' || llmReview.status !== 'approved'
-  const status: ReviewResult['status'] = eitherBlocked ? 'request_changes' : 'approved'
+  const openBlocking = allFindings.some(isBlockingFinding)
+  const nonBlockingStatus = ruleReview.status !== 'approved' || llmReview.status !== 'approved'
+  const status: ReviewResult['status'] = openBlocking || nonBlockingStatus ? 'request_changes' : 'approved'
 
   return {
     ...ruleReview,
@@ -364,5 +473,49 @@ export function mergeReviews(ruleReview: ReviewResult, llmReview: ReviewResult |
     findingIds: allFindings.map(f => f.id),
     findings: allFindings,
     summary: combinedSummary || ruleReview.summary || llmReview.summary,
+  }
+}
+
+export function acceptReviewRisk(result: ReviewResult, findingId: string, reason: string): { review: ReviewResult; acceptedRisk: AcceptedRisk } {
+  const trimmed = reason.trim()
+  if (!trimmed) throw new Error('Accepted risk reason is required.')
+  const finding = result.findings.find(item => item.id === findingId)
+  if (!finding) throw new Error('Review finding does not exist.')
+  const acceptedRisk: AcceptedRisk = {
+    id: `accepted_risk_${randomUUID()}`,
+    sessionId: result.sessionId,
+    turnId: result.turnId,
+    findingId,
+    reason: trimmed,
+    createdBy: 'user',
+    createdAt: now(),
+  }
+  const findings = result.findings.map(item => item.id === findingId
+    ? { ...item, status: 'accepted_risk' as const, recommendation: [item.recommendation, `Accepted risk: ${trimmed}`].filter(Boolean).join('\n') }
+    : item)
+  const status: ReviewResult['status'] = findings.some(isBlockingFinding) ? result.status : 'approved'
+  return {
+    acceptedRisk,
+    review: {
+      ...result,
+      status,
+      findings,
+      summary: status === 'approved' ? 'Review approved with accepted risk.' : result.summary,
+    },
+  }
+}
+
+export function dismissReviewFinding(result: ReviewResult, findingId: string, reason?: string): ReviewResult {
+  const finding = result.findings.find(item => item.id === findingId)
+  if (!finding) throw new Error('Review finding does not exist.')
+  const findings = result.findings.map(item => item.id === findingId
+    ? { ...item, status: 'dismissed' as const, recommendation: reason ? [item.recommendation, `Dismissed: ${reason}`].filter(Boolean).join('\n') : item.recommendation }
+    : item)
+  const status: ReviewResult['status'] = findings.some(isBlockingFinding) ? result.status : 'approved'
+  return {
+    ...result,
+    status,
+    findings,
+    summary: status === 'approved' ? 'Review approved after dismissed finding.' : result.summary,
   }
 }

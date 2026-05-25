@@ -4341,6 +4341,34 @@ button {
   border-color: #9aa6bd;
 }
 
+.agent-card-actions,
+.agent-inline-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 6px;
+}
+
+.agent-card-actions {
+  margin-top: 8px;
+  margin-left: 0;
+}
+
+.agent-card-actions button,
+.agent-inline-actions button {
+  border: 1px solid #d6dbe6;
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 3px 7px;
+  color: #4d5666;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.agent-card-actions button:hover,
+.agent-inline-actions button:hover {
+  border-color: #9aa6bd;
+}
+
 .agent-tool-card.running {
   border-color: #cfe0ff;
   background: #f5f9ff;

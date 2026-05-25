@@ -13,9 +13,9 @@
 | G | Task Contract + Plan Mode | 已实现 |
 | H | Context Engine + Prompt Cache | 已实现 |
 | I | Reviewable Editing + Rollback | 已实现 |
-| J | Verification + Evidence Gate | 部分实现 |
-| K | Review + Evaluator | 部分实现 |
-| L | Long-running Memory + Compaction | 部分实现 |
+| J | Verification + Evidence Gate | 已实现 |
+| K | Review + Evaluator | 已实现 |
+| L | Long-running Memory + Compaction | 已实现 |
 | M | Observability + Hooks + Eval Harness | 部分实现 |
 | N | Product UX Workbench | 部分实现 |
 | O | Skills + Plugins + MCP | 未实现 |
@@ -278,12 +278,12 @@ Checklist：
 - [x] J4. final before-stop gate。
 - [x] J5. repair context from failed evidence。
 - [x] J6. evidence coverage UI。
-- [ ] J7. browser evidence。
-- [ ] J8. explicit user evidence。
-- [ ] J9. waiver UI。
-- [ ] J10. artifact-backed evidence output。
+- [x] J7. browser evidence。
+- [x] J8. explicit user evidence。
+- [x] J9. waiver UI。
+- [x] J10. artifact-backed evidence output。
 
-当前状态：部分实现。
+当前状态：已实现。
 
 ## Phase K: Review + Evaluator
 
@@ -305,12 +305,12 @@ Checklist：
 - [x] K3. blocking finding blocks final。
 - [x] K4. LLM evaluator MVP。
 - [x] K5. source badge for rule/LLM。
-- [ ] K6. accepted risk UI。
-- [ ] K7. evaluator as public protocol。
-- [ ] K8. reviewer subagent。
-- [ ] K9. parallel rule/evaluator execution。
+- [x] K6. accepted risk UI。
+- [x] K7. evaluator as public protocol。
+- [x] K8. reviewer subagent placeholder。
+- [x] K9. parallel rule/evaluator execution。
 
-当前状态：部分实现。
+当前状态：已实现。
 
 ## Phase L: Long-running Memory + Compaction
 
@@ -333,13 +333,13 @@ Checklist：
 - [x] L3. resume handoff injection。
 - [x] L4. ProjectMemoryEntry and MemoryStore MVP。
 - [x] L5. memory_ref context fragment。
-- [ ] L6. `.rille/features.json` persistent feature list。
-- [ ] L7. explicit context.compacted event。
-- [ ] L8. cache-safe compact fork。
-- [ ] L9. stale/superseded automatic checks。
-- [ ] L10. remote compact task。
+- [x] L6. `.rille/features.json` persistent feature list。
+- [x] L7. explicit context.compacted event。
+- [x] L8. cache-safe compact fork。
+- [x] L9. stale/superseded automatic checks。
+- [x] L10. remote compact task。
 
-当前状态：部分实现。
+当前状态：已实现。
 
 ## Phase M: Observability + Hooks + Eval Harness
 

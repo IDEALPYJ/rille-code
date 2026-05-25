@@ -2,8 +2,14 @@ import { describe, expect, it } from 'vitest'
 import type { AgentContextSnapshot, Evidence, ReviewResult, TaskContract } from '../../src/shared/agent/protocol'
 import {
   computeVerificationCoverage,
+  acceptReviewRisk,
+  createBrowserEvidence,
+  createUserEvidence,
+  createWaiver,
+  dismissReviewFinding,
   evaluateVerificationGate,
   evidenceFromDiagnostics,
+  evidenceFromWaiver,
   mergeReviews,
   runRuleBasedReview,
 } from '../../src/main/agent/verificationGate'
@@ -87,6 +93,25 @@ describe('verification gate', () => {
     expect(coverage?.criteria.find(item => item.criterionId === 'ac_verify')?.reason).toContain('missing: diagnostics')
   })
 
+  it('creates user and browser evidence for manual verification paths', () => {
+    const user = createUserEvidence({ sessionId: 's1', turnId: 't1', summary: 'I verified the screen.' })
+    const browser = createBrowserEvidence({ sessionId: 's1', turnId: 't1', url: 'http://localhost:5173', status: 'passed', summary: 'Page rendered.' })
+    expect(user.source).toBe('user')
+    expect(browser.source).toBe('browser')
+    expect(browser.data?.url).toBe('http://localhost:5173')
+  })
+
+  it('allows waiver evidence to satisfy a user criterion', () => {
+    const userOnly: TaskContract = {
+      ...contract(),
+      acceptanceCriteria: [{ id: 'ac_user', text: 'manual approval', evidenceRequired: ['user'], status: 'unverified' }],
+    }
+    const waiver = createWaiver({ sessionId: 'session_test', turnId: 'turn_test', criterionId: 'ac_user', reason: 'User accepts residual visual risk.' })
+    const gate = evaluateVerificationGate({ contract: userOnly, evidence: [evidenceFromWaiver(waiver)], codeChanged: false })
+    expect(gate.coverage?.criteria[0].status).toBe('waived')
+    expect(gate.nextAction).toBe('allow_final')
+  })
+
   it('creates blocking review findings for out-of-scope changed files', () => {
     const review = runRuleBasedReview({
       sessionId: 'session_test',
@@ -156,5 +181,13 @@ describe('mergeReviews', () => {
     const llm = makeReview('approved', 'llm', 0)
     const result = mergeReviews(rule, llm)
     expect(result.findings[0].source).toBe('rule')
+  })
+
+  it('accepted risk and dismissed findings do not block merged review', () => {
+    const rule = makeReview('request_changes', 'rule', 1)
+    const accepted = acceptReviewRisk(rule, rule.findings[0].id, 'User accepts this risk.').review
+    expect(accepted.status).toBe('approved')
+    const dismissed = dismissReviewFinding(makeReview('request_changes', 'rule', 1), 'f_rule_0', 'Not applicable.')
+    expect(dismissed.status).toBe('approved')
   })
 })

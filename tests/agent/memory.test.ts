@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterAll, describe, expect, it } from 'vitest'
+import { FeatureStore } from '../../src/main/agent/featureStore'
 import { MemoryStore } from '../../src/main/agent/memory'
 
 const tempDirs: string[] = []
@@ -93,5 +94,56 @@ describe('MemoryStore', () => {
     store2.load()
     expect(store2.list()).toHaveLength(1)
     expect(store2.list()[0].text).toBe('Use Vitest for testing')
+  })
+})
+
+describe('FeatureStore', () => {
+  it('persists feature progress to .rille/features.json', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rille-features-'))
+    tempDirs.push(dir)
+    const store = new FeatureStore(dir)
+    const snapshot = store.save({
+      taskContractId: 'contract_1',
+      activeFeatureId: 'feature_1',
+      featureList: [{
+        id: 'feature_1',
+        title: 'Manual evidence support',
+        status: 'verified',
+        acceptanceCriteriaIds: ['ac_1'],
+        evidenceRefs: ['evidence_1'],
+        riskRefs: [],
+        updatedAt: 1,
+      }],
+      failedAttempts: [],
+      unresolvedRisks: [],
+      nextSteps: [],
+      updatedAt: 1,
+    })
+    expect(snapshot.featureList).toHaveLength(1)
+    expect(new FeatureStore(dir).load().featureList[0].title).toBe('Manual evidence support')
+  })
+
+  it('downgrades verified features with missing evidence refs', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rille-features-stale-'))
+    tempDirs.push(dir)
+    const store = new FeatureStore(dir)
+    store.save({
+      taskContractId: 'contract_1',
+      featureList: [{
+        id: 'feature_1',
+        title: 'Needs evidence',
+        status: 'verified',
+        acceptanceCriteriaIds: ['ac_1'],
+        evidenceRefs: ['missing_evidence'],
+        riskRefs: [],
+        updatedAt: 1,
+      }],
+      failedAttempts: [],
+      unresolvedRisks: [],
+      nextSteps: [],
+      updatedAt: 1,
+    })
+    const snapshot = store.markStaleMissingEvidence(new Set(['other_evidence']))
+    expect(snapshot.featureList[0].status).toBe('implemented_unverified')
   })
 })

@@ -304,11 +304,26 @@ function VerificationPart({ part }: { part: Extract<MessagePart, { type: 'verifi
   )
 }
 
-function EvidenceCoveragePart({ part }: { part: Extract<MessagePart, { type: 'evidence_coverage' }> }) {
+function EvidenceCoveragePart({ part, sessionId }: { part: Extract<MessagePart, { type: 'evidence_coverage' }>; sessionId?: string | null }) {
   const counts = part.coverage.criteria.reduce<Record<string, number>>((acc, item) => {
     acc[item.status] = (acc[item.status] || 0) + 1
     return acc
   }, {})
+  const addUserEvidence = async () => {
+    if (!sessionId) return
+    const summary = window.prompt('User evidence summary')
+    if (!summary?.trim()) return
+    const blocked = part.coverage.criteria.find(item => item.status !== 'covered' && item.status !== 'waived')
+    await window.rille.agentAddUserEvidence(sessionId, { turnId: part.evidence[0]?.turnId, criterionId: blocked?.criterionId, summary: summary.trim(), status: 'passed' })
+  }
+  const waive = async () => {
+    if (!sessionId) return
+    const blocked = part.coverage.criteria.find(item => item.status !== 'covered' && item.status !== 'waived')
+    if (!blocked) return
+    const reason = window.prompt('Waiver reason')
+    if (!reason?.trim()) return
+    await window.rille.agentWaiveEvidence(sessionId, { turnId: part.evidence[0]?.turnId, criterionId: blocked.criterionId, evidenceIds: blocked.evidenceIds, reason: reason.trim(), scope: 'criterion' })
+  }
   return (
     <div className={'agent-verification-card status-' + (part.gate?.status || 'partial')}>
       <div className="agent-tool-icon">{part.gate?.nextAction === 'allow_final' ? <CheckCircle2 size={14} /> : <ListChecks size={14} />}</div>
@@ -318,13 +333,30 @@ function EvidenceCoveragePart({ part }: { part: Extract<MessagePart, { type: 'ev
           {Object.entries(counts).map(([status, count]) => `${status} ${count}`).join(' · ') || '无验收项'}{part.gate ? ` · ${part.gate.nextAction}` : ''}
         </div>
         {part.gate?.summary && <p>{part.gate.summary}</p>}
+        {sessionId && (
+          <div className="agent-card-actions">
+            <button type="button" onClick={addUserEvidence}>Add user evidence</button>
+            <button type="button" onClick={waive}>Waive</button>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function ReviewPart({ part }: { part: Extract<MessagePart, { type: 'review' }> }) {
+function ReviewPart({ part, sessionId }: { part: Extract<MessagePart, { type: 'review' }>; sessionId?: string | null }) {
   const blocking = part.result.findings.filter(item => item.blocking).length
+  const acceptRisk = async (findingId: string) => {
+    if (!sessionId) return
+    const reason = window.prompt('Accepted risk reason')
+    if (!reason?.trim()) return
+    await window.rille.agentAcceptReviewRisk(sessionId, findingId, reason.trim(), part.result.turnId)
+  }
+  const dismiss = async (findingId: string) => {
+    if (!sessionId) return
+    const reason = window.prompt('Dismiss reason')
+    await window.rille.agentDismissReviewFinding(sessionId, findingId, reason?.trim() || undefined, part.result.turnId)
+  }
   return (
     <div className={'agent-verification-card status-' + (blocking > 0 ? 'blocked' : 'passed')}>
       <div className="agent-tool-icon">{blocking > 0 ? <AlertCircle size={14} /> : <CheckCircle2 size={14} />}</div>
@@ -338,7 +370,13 @@ function ReviewPart({ part }: { part: Extract<MessagePart, { type: 'review' }> }
                 <span className={'agent-review-source-badge ' + (finding.source === 'llm' ? 'source-llm' : 'source-rule')}>
                   {finding.source === 'llm' ? 'AI' : 'Rule'}
                 </span>
-                {finding.blocking ? 'blocking' : finding.severity}: {finding.title}
+                {finding.status !== 'open' ? `${finding.status}: ` : finding.blocking ? 'blocking: ' : `${finding.severity}: `}{finding.title}
+                {sessionId && finding.status === 'open' && (
+                  <span className="agent-inline-actions">
+                    <button type="button" onClick={() => acceptRisk(finding.id)}>Accept risk</button>
+                    <button type="button" onClick={() => dismiss(finding.id)}>Dismiss</button>
+                  </span>
+                )}
               </span>
             ))}
           </div>
@@ -584,8 +622,8 @@ function MessagePartView({
   if (part.type === 'plan_confirmation') return <PlanConfirmationPart part={part} sessionId={sessionId} onResolved={onPlanConfirmationResolved} />
   if (part.type === 'diagnostic') return <DiagnosticPart part={part} />
   if (part.type === 'verification') return <VerificationPart part={part} />
-  if (part.type === 'evidence_coverage') return <EvidenceCoveragePart part={part} />
-  if (part.type === 'review') return <ReviewPart part={part} />
+  if (part.type === 'evidence_coverage') return <EvidenceCoveragePart part={part} sessionId={sessionId} />
+  if (part.type === 'review') return <ReviewPart part={part} sessionId={sessionId} />
   if (part.type === 'edit_result') return <EditResultPart part={part} />
   if (part.type === 'artifact') {
     return (

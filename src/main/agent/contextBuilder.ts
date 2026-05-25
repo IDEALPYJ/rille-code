@@ -12,6 +12,7 @@ import type {
 } from '../../shared/agent/protocol'
 import { workspaceGitStatus, workspaceReadDirectory, workspaceReadFile } from './workspace'
 import { MemoryStore } from './memory'
+import { FeatureStore } from './featureStore'
 
 const PROJECT_RULE_PREFIX_FILES = ['AGENTS.md', 'CLAUDE.md', 'RILLE.md', '.rille/rules.md'] as const
 const PROJECT_RULES_DIRECTORY = '.rille/rules'
@@ -350,6 +351,26 @@ function collectMemoryRefsFragment(input: ContextBuildInput): ContextFragment | 
   })
 }
 
+function collectFeatureListFragment(input: ContextBuildInput): ContextFragment | null {
+  const workspacePath = input.contextSnapshot.workspace?.path
+  if (!workspacePath || input.contextSnapshot.workspace?.kind !== 'local') return null
+  const snapshot = new FeatureStore(workspacePath).load()
+  if (snapshot.featureList.length === 0) return null
+  return fragment({
+    id: 'context_feature_list',
+    type: 'feature_list',
+    section: 'stable_prefix',
+    priority: 88,
+    source: '.rille/features.json',
+    trust: 'workspace',
+    cacheKey: `features:${snapshot.updatedAt}:${snapshot.featureList.map(item => `${item.id}:${item.status}`).join('|')}`,
+    text: [
+      'Persistent feature list:',
+      ...snapshot.featureList.slice(0, 20).map(item => `- [${item.status}] ${item.title} (criteria: ${item.acceptanceCriteriaIds.join(', ') || 'none'}; evidence: ${item.evidenceRefs.join(', ') || 'none'})`),
+    ].join('\n'),
+  })
+}
+
 function collectHandoffFragment(input: ContextBuildInput): ContextFragment | null {
   const handoff = input.handoff
   if (!handoff) return null
@@ -438,6 +459,7 @@ async function collectContextFragments(input: ContextBuildInput): Promise<Contex
     collectHandoffFragment(input),
     collectSessionSummaryFragment(input),
     collectMemoryRefsFragment(input),
+    collectFeatureListFragment(input),
     collectWorkspaceFragment(context),
     await collectProjectRulesFragment(context),
   ].filter((item): item is ContextFragment => Boolean(item))

@@ -19,6 +19,7 @@ import type {
   Observation,
   AgentPlanItem,
   PlanConfirmation,
+  ReviewResult,
   TaskContract,
   VerificationCoverage,
 } from '../../shared/agent/protocol'
@@ -29,8 +30,21 @@ import { appendSessionEvent, readSessionEvents, saveSessionMeta } from './sessio
 import { createInitialPlanItems, createInitialTaskContract } from './taskContract'
 import { VerifierRunner } from './verifier'
 import { observationFromVerification } from './verificationGate'
+import {
+  acceptReviewRisk,
+  createBrowserEvidence,
+  createUserEvidence,
+  createWaiver,
+  dismissReviewFinding,
+  evaluateVerificationGate,
+  evidenceFromWaiver,
+} from './verificationGate'
 import { createCheckpoint } from './checkpointStore'
 import { captureRuntimeState, rememberEvidence } from './runtimeState'
+import { readArtifactRef } from './artifactStore'
+import { FeatureStore } from './featureStore'
+import { MemoryStore } from './memory'
+import { createCompactionTask, markCompactionTaskFailed, runCompactionTask } from './compaction'
 
 function now(): number {
   return Date.now()
@@ -73,6 +87,7 @@ export class AgentThread {
   private latestPlanConfirmation: PlanConfirmation | null = null
   private latestEvidence: Evidence[] = []
   private latestCoverage: VerificationCoverage | null = null
+  private latestReviewResult: ReviewResult | null = null
   private readonly grants = new PermissionGrantStore()
 
   constructor(
@@ -140,6 +155,7 @@ export class AgentThread {
         this.latestEvidence = [...this.latestEvidence.filter(item => item.id !== event.evidence.id), event.evidence].slice(-50)
       }
       if (event.type === 'verification.coverage.updated') this.latestCoverage = event.coverage
+      if (event.type === 'review.completed') this.latestReviewResult = event.result
       this.send(event)
     }
     for (const request of pendingApprovals.values()) {
@@ -192,6 +208,26 @@ export class AgentThread {
     }
     if (op.type === 'plan.reject') {
       return this.rejectPlan(op.confirmationId, op.reason)
+    }
+    if (op.type === 'evidence.user.add') {
+      this.addUserEvidence(op)
+      return this.session
+    }
+    if (op.type === 'evidence.browser.add') {
+      this.addBrowserEvidence(op)
+      return this.session
+    }
+    if (op.type === 'evidence.waive') {
+      this.waiveEvidence(op)
+      return this.session
+    }
+    if (op.type === 'review.acceptRisk') {
+      this.acceptRisk(op)
+      return this.session
+    }
+    if (op.type === 'review.dismissFinding') {
+      this.dismissFinding(op)
+      return this.session
     }
     if (op.type === 'edit.reject') {
       this.rejectEdit(op.proposalId, op.reason)
@@ -311,6 +347,141 @@ export class AgentThread {
     return this.resolvePlanConfirmation(confirmationId, 'rejected', reason)
   }
 
+  private resolveTurnId(turnId?: string): string {
+    return turnId || this.activeTurn?.id || this.latestTaskContract?.turnId || `turn_ui_${randomUUID()}`
+  }
+
+  private refreshCoverage(turnId: string): void {
+    if (!this.latestTaskContract) return
+    const gate = evaluateVerificationGate({ contract: this.latestTaskContract, evidence: this.latestEvidence, codeChanged: false })
+    if (gate.coverage) {
+      this.emit({ type: 'verification.coverage.updated', sessionId: this.session.id, turnId, coverage: gate.coverage, gate })
+      this.emitPart(turnId, {
+        id: createPartId(),
+        messageId: createMessageId('assistant'),
+        type: 'evidence_coverage',
+        coverage: gate.coverage,
+        evidence: this.latestEvidence,
+        gate,
+        createdAt: now(),
+      })
+    }
+  }
+
+  private addUserEvidence(op: Extract<AgentOp, { type: 'evidence.user.add' }>): Evidence {
+    const artifact = op.artifactId ? readArtifactRef(op.sessionId, op.artifactId) ?? undefined : undefined
+    const evidence = createUserEvidence({
+      sessionId: this.session.id,
+      turnId: this.resolveTurnId(op.turnId),
+      criterionId: op.criterionId,
+      status: op.status,
+      summary: op.summary,
+      output: op.output,
+      artifact,
+      artifactRef: artifact?.id ?? op.artifactId,
+    })
+    rememberEvidence(evidence)
+    this.emitEvidence(evidence)
+    this.refreshCoverage(evidence.turnId)
+    return evidence
+  }
+
+  private addBrowserEvidence(op: Extract<AgentOp, { type: 'evidence.browser.add' }>): Evidence {
+    const screenshotArtifact = op.screenshotArtifactId ? readArtifactRef(op.sessionId, op.screenshotArtifactId) ?? undefined : undefined
+    const domExcerptArtifact = op.domExcerptArtifactId ? readArtifactRef(op.sessionId, op.domExcerptArtifactId) ?? undefined : undefined
+    const evidence = createBrowserEvidence({
+      sessionId: this.session.id,
+      turnId: this.resolveTurnId(op.turnId),
+      criterionId: op.criterionId,
+      status: op.status,
+      url: op.url,
+      title: op.title,
+      summary: op.summary,
+      screenshotArtifact,
+      domExcerptArtifact,
+    })
+    rememberEvidence(evidence)
+    this.emitEvidence(evidence)
+    this.refreshCoverage(evidence.turnId)
+    return evidence
+  }
+
+  private waiveEvidence(op: Extract<AgentOp, { type: 'evidence.waive' }>): Evidence {
+    const waiver = createWaiver({
+      sessionId: this.session.id,
+      turnId: this.resolveTurnId(op.turnId),
+      criterionId: op.criterionId,
+      evidenceIds: op.evidenceIds,
+      reason: op.reason,
+      scope: op.scope,
+      expiresAt: op.expiresAt,
+    })
+    const evidence = evidenceFromWaiver(waiver)
+    rememberEvidence(evidence)
+    this.emit({ type: 'evidence.waived', sessionId: this.session.id, turnId: waiver.turnId, waiver, evidence })
+    this.emitEvidence(evidence)
+    this.refreshCoverage(waiver.turnId)
+    return evidence
+  }
+
+  private acceptRisk(op: Extract<AgentOp, { type: 'review.acceptRisk' }>): ReviewResult {
+    if (!this.latestReviewResult) throw new Error('No review result exists.')
+    const { review, acceptedRisk } = acceptReviewRisk(this.latestReviewResult, op.findingId, op.reason)
+    this.emit({ type: 'review.completed', sessionId: this.session.id, turnId: review.turnId, result: review })
+    this.emitPart(review.turnId, {
+      id: createPartId(),
+      messageId: createMessageId('assistant'),
+      type: 'review',
+      result: review,
+      createdAt: now(),
+    })
+    const evidence = createUserEvidence({
+      sessionId: this.session.id,
+      turnId: op.turnId || review.turnId,
+      status: 'waived',
+      summary: `Accepted risk for review finding ${op.findingId}: ${op.reason}`,
+      reviewFindingIds: [op.findingId],
+      acceptedRiskIds: [acceptedRisk.id],
+    })
+    rememberEvidence(evidence)
+    this.emitEvidence(evidence)
+    this.refreshCoverage(evidence.turnId)
+    return review
+  }
+
+  private dismissFinding(op: Extract<AgentOp, { type: 'review.dismissFinding' }>): ReviewResult {
+    if (!this.latestReviewResult) throw new Error('No review result exists.')
+    const review = dismissReviewFinding(this.latestReviewResult, op.findingId, op.reason)
+    this.emit({ type: 'review.completed', sessionId: this.session.id, turnId: review.turnId, result: review })
+    this.emitPart(review.turnId, {
+      id: createPartId(),
+      messageId: createMessageId('assistant'),
+      type: 'review',
+      result: review,
+      createdAt: now(),
+    })
+    return review
+  }
+
+  async compactContext(turnId?: string, reason?: string) {
+    const task = createCompactionTask(this.session.id, turnId, reason)
+    this.emit({ type: 'context.compaction.started', sessionId: this.session.id, turnId, task })
+    try {
+      const { task: completedTask, result } = await runCompactionTask({
+        task,
+        workspacePath: this.session.workspace?.kind === 'local' ? this.session.workspace.path : undefined,
+      })
+      this.emit({ type: 'artifact.created', sessionId: this.session.id, turnId, artifact: result.summaryArtifact })
+      this.emit({ type: 'context.compacted', sessionId: this.session.id, turnId, task: completedTask, result })
+      return result
+    } catch (error) {
+      const failedTask = markCompactionTaskFailed(task)
+      const message = error instanceof Error ? error.message : String(error)
+      this.emit({ type: 'context.compaction.failed', sessionId: this.session.id, turnId, task: failedTask, error: message })
+      throw error
+    }
+  }
+
   private useConfirmedPlanForTurn(turn: AgentTurn): { contract?: TaskContract; planItems?: AgentPlanItem[]; reason?: string } {
     if (this.latestPlanConfirmation?.status !== 'confirmed' || !this.latestTaskContract || this.latestPlanItems.length === 0) return {}
     return {
@@ -399,6 +570,7 @@ export class AgentThread {
           this.emitStaleWarning(turn.id, freshness.warnings)
         }
       }
+      this.checkLongRunningFreshness(turn.id, context)
 
       const reason = await new AgentLoop({
         session: this.session,
@@ -556,6 +728,24 @@ export class AgentThread {
     return { fresh: staleFiles.length === 0, staleFiles, warnings }
   }
 
+  private checkLongRunningFreshness(turnId: string, context: AgentContextSnapshot): void {
+    const workspacePath = context.workspace?.path
+    if (!workspacePath || context.workspace?.kind !== 'local') return
+    const evidenceIds = new Set(this.latestEvidence.map(item => item.id))
+    const featureSnapshot = new FeatureStore(workspacePath).markStaleMissingEvidence(evidenceIds)
+    const downgraded = featureSnapshot.featureList.filter(item => item.status === 'implemented_unverified' && item.evidenceRefs.some(ref => !evidenceIds.has(ref)))
+    const memoryStore = new MemoryStore(workspacePath)
+    memoryStore.load()
+    const activeEntries = memoryStore.listActive(20)
+    const missingMemoryRefs = activeEntries.filter(entry => entry.sourceRefs.some(ref => ref.startsWith('evidence_') && !evidenceIds.has(ref)))
+    for (const entry of missingMemoryRefs) memoryStore.markStale(entry.id)
+    const warnings = [
+      ...downgraded.map(item => `Feature ${item.title} has stale or missing evidence refs.`),
+      ...missingMemoryRefs.map(item => `Memory ${item.id} has stale source refs.`),
+    ]
+    if (warnings.length > 0) this.emitStaleWarning(turnId, warnings)
+  }
+
   private emitStaleWarning(turnId: string, warnings: string[]): void {
     if (warnings.length === 0) return
     const observation: Observation = {
@@ -590,6 +780,10 @@ export class AgentThread {
     if (event.type === 'plan.confirmation.requested' || event.type === 'plan.confirmation.resolved') this.latestPlanConfirmation = event.confirmation
     if (event.type === 'evidence.created') this.latestEvidence = [...this.latestEvidence.filter(item => item.id !== event.evidence.id), event.evidence].slice(-50)
     if (event.type === 'verification.coverage.updated') this.latestCoverage = event.coverage
+    if (event.type === 'review.completed') this.latestReviewResult = event.result
+    if (event.type === 'progress.updated' && this.session.workspace?.kind === 'local') {
+      new FeatureStore(this.session.workspace.path).save(event.progress)
+    }
     void appendSessionEvent(event).catch(error => {
       console.warn('Failed to persist agent event', error)
     })

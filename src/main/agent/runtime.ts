@@ -10,6 +10,7 @@ import type {
   ApprovalDecision,
   ApprovalRequest,
   Evidence,
+  EvaluatorRun,
   FeatureItem,
   FeatureStatus,
   Handoff,
@@ -668,25 +669,67 @@ export class AgentLoop {
   }
 
   private async runLlmEvaluator(codeChanged: boolean): Promise<ReviewResult | null> {
-    const result = await new EvaluatorRunner().run({
+    const runBase: EvaluatorRun = {
+      id: `evaluator_${randomUUID()}`,
       sessionId: this.options.session.id,
       turnId: this.options.turn.id,
-      workspace: this.options.context.workspace,
-      codeChanged,
-      contract: this.taskContract,
-      evidence: this.evidence,
-      changedFiles: [...this.changedFiles],
-      proposedFiles: [...this.proposedFiles],
-    })
-    this.traceCollector.modelCalled(this.options.session.id, this.options.turn.id, result.usage)
-    if (result.usage) this.traceCollector.costUpdated(this.options.session.id, this.options.turn.id, result.usage)
-    return result.review
+      status: 'running',
+      reviewerSubagent: { role: 'reviewer', permissionScope: 'read_only' },
+      configSnapshot: { codeChanged, changedFileCount: this.changedFiles.length, proposedFileCount: this.proposedFiles.size },
+      createdAt: now(),
+    }
+    this.options.emit({ type: 'evaluator.started', sessionId: this.options.session.id, turnId: this.options.turn.id, run: runBase })
+    try {
+      const result = await new EvaluatorRunner().run({
+        sessionId: this.options.session.id,
+        turnId: this.options.turn.id,
+        workspace: this.options.context.workspace,
+        codeChanged,
+        contract: this.taskContract,
+        evidence: this.evidence,
+        changedFiles: [...this.changedFiles],
+        proposedFiles: [...this.proposedFiles],
+      })
+      this.traceCollector.modelCalled(this.options.session.id, this.options.turn.id, result.usage)
+      if (result.usage) this.traceCollector.costUpdated(this.options.session.id, this.options.turn.id, result.usage)
+      const completed: EvaluatorRun = { ...runBase, status: 'completed', reviewResult: result.review, usage: result.usage, completedAt: now() }
+      this.options.emit({ type: 'evaluator.completed', sessionId: this.options.session.id, turnId: this.options.turn.id, run: completed })
+      return result.review
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const failed: EvaluatorRun = { ...runBase, status: 'failed', error: message, completedAt: now() }
+      this.options.emit({ type: 'evaluator.failed', sessionId: this.options.session.id, turnId: this.options.turn.id, run: failed })
+      return {
+        id: `review_${randomUUID()}`,
+        sessionId: this.options.session.id,
+        turnId: this.options.turn.id,
+        status: 'blocked',
+        findingIds: [`finding_${failed.id}`],
+        findings: [{
+          id: `finding_${failed.id}`,
+          sessionId: this.options.session.id,
+          turnId: this.options.turn.id,
+          category: 'correctness',
+          severity: 'high',
+          blocking: true,
+          title: 'Evaluator failed in blocking mode',
+          body: message,
+          evidenceRefs: this.evidence.map(item => item.id),
+          recommendation: 'Fix evaluator configuration or explicitly accept the risk.',
+          status: 'open',
+          source: 'llm',
+          createdAt: now(),
+        }],
+        summary: `Evaluator failed: ${message}`,
+        createdAt: now(),
+      }
+    }
   }
 
   private async finishFinalGate(gate: VerificationGateResult): Promise<VerificationGateResult> {
     const codeChanged = this.hasAppliedOrWorkspaceDiffEvidence()
     this.emitCoverage(gate)
-    const ruleReview = runRuleBasedReview({
+    const ruleReviewPromise = Promise.resolve(runRuleBasedReview({
       sessionId: this.options.session.id,
       turnId: this.options.turn.id,
       contract: this.taskContract,
@@ -696,8 +739,9 @@ export class AgentLoop {
       proposedFiles: [...this.proposedFiles],
       pendingProposalFiles: [...this.proposedFiles],
       planItems: this.planItems,
-    })
-    const llmReview = await this.runLlmEvaluator(codeChanged)
+    }))
+    const llmReviewPromise = this.runLlmEvaluator(codeChanged)
+    const [ruleReview, llmReview] = await Promise.all([ruleReviewPromise, llmReviewPromise])
     const review = mergeReviews(ruleReview, llmReview)
     this.emitReview(review)
     this.traceCollector.reviewCompleted(this.options.session.id, this.options.turn.id, review)

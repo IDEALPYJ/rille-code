@@ -1,5 +1,5 @@
 import type { WebContents } from 'electron'
-import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, EditProposal, ExecutionSandbox, PlanConfirmation, RuntimeProcessSummary, RuntimeStateArtifact } from '../../shared/agent/protocol'
+import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, CompactionResult, EditProposal, ExecutionSandbox, PlanConfirmation, RuntimeProcessSummary, RuntimeStateArtifact } from '../../shared/agent/protocol'
 import { deleteAgentModelProfile, listAgentModelProfiles, readAgentConfigSnapshot, saveAgentConfig, saveAgentModelProfile, selectAgentModelProfile } from './config'
 import { testAgentProvider } from './provider'
 import { AgentThread } from './thread'
@@ -142,6 +142,7 @@ type AgentDispatchValue =
   | CheckpointRef
   | ExecutionSandbox
   | RuntimeStateArtifact
+  | CompactionResult
   | { traceEvents: unknown[] }
 
 export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<AgentDispatchValue>> {
@@ -188,6 +189,9 @@ export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<Agent
     if (op.type === 'runtime.state.capture') {
       const { state } = await captureRuntimeState({ sessionId: op.sessionId, turnId: op.turnId, workspace: op.workspace })
       return ok(state)
+    }
+    if (op.type === 'context.compact') {
+      return ok(await requireThread(op.sessionId).compactContext(op.turnId, op.reason))
     }
     if (op.type === 'edit.apply') {
       return ok(await requireThread(op.sessionId).applyEdit(op.proposalId, op.context))

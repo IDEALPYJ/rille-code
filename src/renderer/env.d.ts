@@ -16,11 +16,13 @@ import type {
   ArtifactRef,
   ApprovalDecision,
   CheckpointRef,
+  CompactionResult,
   EditProposal,
   ExecutionSandbox,
   PlanConfirmation,
   RuntimeProcessSummary,
   RuntimeStateArtifact,
+  VerificationStatus,
 } from '../shared/agent/protocol'
 
 export {}
@@ -401,6 +403,12 @@ declare global {
     agentInterruptTurn(sessionId: string, turnId: string): Promise<AgentSession | null>
     agentConfirmPlan(sessionId: string, confirmationId: string): Promise<PlanConfirmation | AgentSession | null>
     agentRejectPlan(sessionId: string, confirmationId: string, reason?: string): Promise<PlanConfirmation | AgentSession | null>
+    agentAddUserEvidence(sessionId: string, input: { turnId?: string; criterionId?: string; status?: VerificationStatus; summary: string; output?: string; artifactId?: string }): Promise<AgentSession | null>
+    agentAddBrowserEvidence(sessionId: string, input: { turnId?: string; criterionId?: string; url: string; title?: string; status?: VerificationStatus; summary: string; screenshotArtifactId?: string; domExcerptArtifactId?: string }): Promise<AgentSession | null>
+    agentWaiveEvidence(sessionId: string, input: { turnId?: string; criterionId?: string; evidenceIds?: string[]; reason: string; scope?: 'criterion' | 'evidence' | 'turn'; expiresAt?: number }): Promise<AgentSession | null>
+    agentAcceptReviewRisk(sessionId: string, findingId: string, reason: string, turnId?: string): Promise<AgentSession | null>
+    agentDismissReviewFinding(sessionId: string, findingId: string, reason?: string, turnId?: string): Promise<AgentSession | null>
+    agentCompactContext(sessionId: string, turnId?: string, reason?: string): Promise<CompactionResult>
     agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>
     agentUpdatePermission(sessionId: string, permissionMode: AgentPermissionMode): Promise<AgentSession | null>
     agentApplyEdit(sessionId: string, proposalId: string, context?: AgentContextSnapshot): Promise<EditProposal>

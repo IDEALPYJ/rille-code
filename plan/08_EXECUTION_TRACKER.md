@@ -24,9 +24,9 @@
 | G | Task Contract + Plan Mode | 已完成 | 已实现 | explicit Plan Mode、PlanConfirmation、跨 turn plan continuity、PlanItem evidence gate 已落地 | J7 |
 | H | Context Engine + Prompt Cache | 已完成 | 已实现 | cache trace metrics、symbols/selections collector、untrusted boundary 已落地 | J7 |
 | I | Reviewable Editing + Rollback | 已完成 | 已实现 | 多文件 checkpoint restore、proposal set、sandbox diff proposals 已落地 | J7 |
-| J | Verification + Evidence Gate | 部分完成 | 部分实现 | Evidence、Coverage、VerifierRunner、before-stop gate、coverage UI 已落地 | J7 |
-| K | Review + Evaluator | 部分完成 | 部分实现 | rule review、LLM evaluator MVP、source badge、blocking gate 已落地 | K6 |
-| L | Long-running Memory + Compaction | 部分完成 | 部分实现 | Progress/Handoff、resume injection、ProjectMemory MVP、memory_ref 已落地 | L6 |
+| J | Verification + Evidence Gate | 已完成 | 已实现 | browser/user evidence、waiver UI、artifact-backed evidence、coverage recompute 已落地 | M7 |
+| K | Review + Evaluator | 已完成 | 已实现 | accepted risk、EvaluatorRun 事件、并行 rule/evaluator review、reviewer subagent 占位协议已落地 | M7 |
+| L | Long-running Memory + Compaction | 已完成 | 已实现 | `.rille/features.json`、explicit compaction、cache-safe compact fork、stale checks、local async compact task 已落地 | M7 |
 | M | Observability + Hooks + Eval Harness | 部分完成 | 部分实现 | TraceEvent、usage、redacted export、metrics、eval skeleton 已落地 | M7 |
 | N | Product UX Workbench | 部分完成 | 部分实现 | timeline、Task/Plan、approval、diff、evidence、review、handoff 已落地 | N7 |
 | O | Skills + Plugins + MCP | 未开始 | 未实现 | 无 runtime 能力 | O1 |
@@ -143,10 +143,10 @@
 - [x] J4. final before-stop gate。
 - [x] J5. repair context from failed evidence。
 - [x] J6. evidence coverage UI。
-- [ ] J7. browser evidence。
-- [ ] J8. explicit user evidence。
-- [ ] J9. waiver UI。
-- [ ] J10. artifact-backed evidence output。
+- [x] J7. browser evidence。
+- [x] J8. explicit user evidence。
+- [x] J9. waiver UI。
+- [x] J10. artifact-backed evidence output。
 
 ## Phase K Checklist
 
@@ -155,10 +155,10 @@
 - [x] K3. blocking finding blocks final。
 - [x] K4. LLM evaluator MVP。
 - [x] K5. source badge for rule/LLM。
-- [ ] K6. accepted risk UI。
-- [ ] K7. evaluator as public protocol。
-- [ ] K8. reviewer subagent。
-- [ ] K9. parallel rule/evaluator execution。
+- [x] K6. accepted risk UI。
+- [x] K7. evaluator as public protocol。
+- [x] K8. reviewer subagent placeholder。
+- [x] K9. parallel rule/evaluator execution。
 
 ## Phase L Checklist
 
@@ -167,11 +167,11 @@
 - [x] L3. resume handoff injection。
 - [x] L4. ProjectMemoryEntry and MemoryStore MVP。
 - [x] L5. memory_ref context fragment。
-- [ ] L6. `.rille/features.json` persistent feature list。
-- [ ] L7. explicit context.compacted event。
-- [ ] L8. cache-safe compact fork。
-- [ ] L9. stale/superseded automatic checks。
-- [ ] L10. remote compact task。
+- [x] L6. `.rille/features.json` persistent feature list。
+- [x] L7. explicit context.compacted event。
+- [x] L8. cache-safe compact fork。
+- [x] L9. stale/superseded automatic checks。
+- [x] L10. remote compact task。
 
 ## Phase M Checklist
 
@@ -249,6 +249,19 @@
 ```
 
 ## 当前基线记录
+
+步骤: Phase J/K/L closure
+状态: 已完成
+完成日期: 2026-05-25
+涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/thread.ts`, `src/main/agent/runtime.ts`, `src/main/agent/verificationGate.ts`, `src/main/agent/featureStore.ts`, `src/main/agent/compaction.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/trace.ts`, `src/preload/index.ts`, `src/renderer/components/agent/AgentPanel.tsx`, `src/renderer/App.css`
+实现摘要: Phase J 完成 browser/user evidence、waiver、artifact-backed evidence display/read path；Phase K 完成 accepted risk/dismiss、EvaluatorRun public events、并行 rule/evaluator review、reviewer subagent placeholder；Phase L 完成 `.rille/features.json`、feature context、explicit compaction task/event/result、cache-safe compact artifact、stale evidence/memory checks。
+测试文件: `tests/agent/verificationGate.test.ts`, `tests/agent/memory.test.ts`, `tests/agent/compaction.test.ts`
+验证命令: `npm test`; `npm run typecheck`; `npm run build`; `rg -n "TO""DO|TB""D|待""补" plan`; `rg -n "Phase J|Phase K|Phase L|已实现|部分实现|未实现" plan/08_EXECUTION_TRACKER.md`
+验证结果: `npm test` 19 files / 164 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查和过期 Phase K 指针检查无输出；Phase J/K/L 状态检查可列出已完成记录。
+剩余风险: reviewer subagent 是 Phase K 的只读协议占位，完整 SubagentRunner 仍归 Phase P；remote compact task 为当前进程内 job registry，不引入外部调度服务。
+下一步: Phase M
+
+## 历史记录
 
 步骤: V2 initial baseline sync
 状态: 已记录
