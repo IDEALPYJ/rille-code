@@ -97,7 +97,7 @@ describe('governance audit', () => {
     const report = runGovernanceAudit({ repoRoot: root, workspacePath: root, tools: [] })
     expect(report.configFindings.some(item => item.id === 'missing_eval_script')).toBe(true)
     expect(report.modelUpgrade.missingGates).toContain('npm run eval:agent')
-    expect(report.scaffoldCandidates[0]).toMatchObject({ filePath: 'src/stub.ts' })
+    expect(report.scaffoldCandidates[0]).toMatchObject({ filePath: expect.stringMatching(/^src[/\\]stub\.ts$/) })
     expect(report.findings.some(item => item.category === 'prompt_tool_policy')).toBe(true)
   })
 

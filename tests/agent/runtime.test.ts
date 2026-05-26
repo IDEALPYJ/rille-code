@@ -111,7 +111,7 @@ describe('AgentLoop context integration', () => {
   })
 
   afterEach(async () => {
-    if (root) await rm(root, { recursive: true, force: true })
+    if (root) await rm(root, { recursive: true, force: true }).catch(() => {})
     root = ''
   })
 
@@ -489,7 +489,7 @@ describe('AgentLoop context integration', () => {
       requestApproval: async () => ({ action: 'allow_once' }),
     }).run()
 
-    await rm(rootDir, { recursive: true, force: true })
+    await rm(rootDir, { recursive: true, force: true }).catch(() => {})
 
     const handoffEvent = events.find(e => e.type === 'handoff.created')
     expect(handoffEvent).toBeDefined()

@@ -8,6 +8,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "test": "vitest run",
+    "test:windows": "git config core.autocrlf false && vitest run tests/agent/",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "eval:agent": "node --experimental-strip-types eval/runner.ts",
     "governance:agent": "node --experimental-strip-types eval/governance.ts"

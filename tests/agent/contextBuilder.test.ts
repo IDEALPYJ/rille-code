@@ -108,7 +108,7 @@ function snapshotWithWorkspace(root: string): AgentContextSnapshot {
 }
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
+  await Promise.all(tempDirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }).catch(() => {})))
 })
 
 describe('buildAgentContext', () => {

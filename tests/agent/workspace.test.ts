@@ -10,7 +10,7 @@ describe('withinWorkspace', () => {
   it('resolves paths inside local workspace', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'rille-workspace-')))
     const workspace: AgentWorkspaceLocation = { kind: 'local', path: root, label: 'tmp' }
-    expect(withinWorkspace(workspace, 'src/index.ts')).toContain(root)
+    expect(withinWorkspace(workspace, 'src/index.ts').replace(/\\/g, '/')).toContain(root.replace(/\\/g, '/'))
   })
 
   it('rejects paths outside local workspace', () => {

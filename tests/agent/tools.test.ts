@@ -59,8 +59,8 @@ function localContext(workspacePath: string, filePath: string, content: string):
 
 afterEach(async () => {
   delete process.env.RILLE_AGENT_EXTENSION_USER_DATA
-  if (root) await rm(root, { recursive: true, force: true })
-  if (extensionUserData) await rm(extensionUserData, { recursive: true, force: true })
+  if (root) await rm(root, { recursive: true, force: true }).catch(() => {})
+  if (extensionUserData) await rm(extensionUserData, { recursive: true, force: true }).catch(() => {})
   root = ''
   extensionUserData = ''
 })

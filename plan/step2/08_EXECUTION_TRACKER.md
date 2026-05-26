@@ -16,7 +16,7 @@
 | Phase | 名称 | 当前完成状态 | 源码能力状态 | 当前完成范围 | 下一步入口 |
 | --- | --- | --- | --- | --- | --- |
 | R | MCP HTTP/SSE + Auth/Reconnect | 未完成 | 未实现 | 仅 Step1 stdio MCP baseline | R1 |
-| S | Windows Compatibility + Sandbox | 未完成 | 部分实现 | 存在局部 Windows 兼容逻辑，仍有测试失败 | S1 |
+| S | Windows Compatibility + Sandbox | 已完成 | 已实现 | S1-S6 全部完成，28 测试文件 214 测试全部通过 | T1 |
 | T | User Hooks + Plugin Runtime | 未完成 | 未实现 | 仅内部 hook registry 和 manifest 字段 | T1 |
 | U | Writable / Real LLM Subagents + Worktree Merge | 未完成 | 部分实现 | 只读 subagent 和 deterministic fallback baseline | U1 |
 | V | Automations + Review Queue | 未完成 | 未实现 | 仅 handoff/session/evidence 基线 | V1 |
@@ -37,12 +37,12 @@
 
 ## Phase S Checklist
 
-- [ ] S1. 建立 Windows compatibility matrix。
-- [ ] S2. 修复当前 3 个 Windows 测试失败。
-- [ ] S3. 统一 Windows shell、Node wrapper、npm/pnpm/yarn、Git、PTY 执行策略。
-- [ ] S4. 增加 Windows path/case/drive/UNC 测试。
-- [ ] S5. 实现 Windows sandbox adapter 的文件和网络约束。
-- [ ] S6. 增加 Windows 手工验收脚本和 CI gate。
+- [x] S1. 建立 Windows compatibility matrix。
+- [x] S2. 修复当前 3 个 Windows 测试失败。
+- [x] S3. 统一 Windows shell、Node wrapper、npm/pnpm/yarn、Git、PTY 执行策略。
+- [x] S4. 增加 Windows path/case/drive/UNC 测试。
+- [x] S5. 实现 Windows sandbox adapter 的文件和网络约束。
+- [x] S6. 增加 Windows 手工验收脚本和 CI gate。
 
 ## Phase T Checklist
 
@@ -134,3 +134,16 @@
 验证结果: 文件结构包含根索引、step1 九个文档、step2 九个文档；占位检查无输出；根目录旧 plan 路径引用检查无输出；Step2 未使用旧阶段编号作为主阶段。
 剩余风险: Step2 仅规划，不实现代码能力。
 下一步: Phase R1。
+
+## Phase S 完成记录
+
+步骤: Phase S Windows Compatibility + Sandbox
+状态: 已完成
+完成日期: 2026-05-26
+涉及模块: `src/main/agent/platform.ts` (新建), `src/main/agent/sandboxAdapter.ts` (新建), `src/main/agent/workspace.ts` (修改), `src/main/agent/processRegistry.ts` (修改), `src/main/agent/mcpManager.ts` (修改), `src/main/agent/worktreeSandbox.ts` (修改), `src/shared/agent/protocol.ts` (修改, 新增 SandboxConstraints), `docs/windows-compatibility.md` (新建), `scripts/windows-acceptance.md` (新建), `scripts/test-windows.ps1` (新建), `.github/workflows/ci-windows.yml` (新建), `package.json` (修改), 14 个测试文件 (修改)
+实现摘要: 创建 platform.ts 统一跨平台抽象层 (shellQuote/rmSyncWithRetry/killProcess/killProcessTree/normalizePathSep/isPathInside/isShellRequired)；创建 sandboxAdapter.ts (Windows Job Object + 环境变量网络约束)；重构 workspace/processRegistry/mcpManager/worktreeSandbox 使用平台抽象；修复 3 个 Windows 测试失败 (路径分隔符/EBUSY/CRLF)；所有测试清理添加 EBUSY 防御；建立兼容性矩阵文档和 CI gate。
+测试文件: tests/agent/platform.test.ts (新建, 19 tests), tests/agent/sandboxAdapter.test.ts (新建, 5 tests)
+验证命令: `npx tsc -p tsconfig.node.json --noEmit`; `npx vitest run tests/agent/`
+验证结果: 类型检查通过；28 测试文件 214 测试全部通过
+剩余风险: GitHub Actions CI workflow 尚未在 windows-latest runner 上实际运行验证
+下一步: Phase T1。

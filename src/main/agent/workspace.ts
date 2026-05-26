@@ -1,6 +1,8 @@
 import { execFile, spawn } from 'child_process'
 import { readdir, readFile } from 'fs/promises'
 import { basename, isAbsolute, relative, resolve } from 'path'
+import { isShellRequired as platformIsShellRequired, killProcess } from './platform'
+import { createSandboxAdapter } from './sandboxAdapter'
 import type { AgentWorkspaceLocation, ToolResultView } from '../../shared/agent/protocol'
 
 export interface CommandRunInput {
@@ -122,9 +124,7 @@ function shellTokens(commandLine: string): string[] {
 }
 
 export function needsShell(commandLine: string): boolean {
-  if (/[|&;<>()`]|>>?|\\n|\$\(/.test(commandLine)) return true
-  // npm/npx/yarn/pnpm are .cmd wrappers on Windows and need a shell
-  return /^(npm|npx|yarn|pnpm)(\s|$)/.test(commandLine.trim())
+  return platformIsShellRequired(commandLine)
 }
 
 function execFileText(command: string, args: string[], cwd: string): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
@@ -174,19 +174,18 @@ async function localRunCommand(workspace: AgentWorkspaceLocation, input: Command
   const tokens = shellMode ? [] : shellTokens(commandLine)
   if (!shellMode && tokens.length === 0) throw new Error('命令为空。')
 
+  const sandboxAdapter = createSandboxAdapter()
   return new Promise(resolvePromise => {
+    const sandboxOpts = sandboxAdapter.constrainProcess({ network: false, filesystem: true })
     const child = shellMode
-      ? spawn(commandLine, { cwd, shell: true, windowsHide: true })
-      : spawn(tokens[0], tokens.slice(1), { cwd, shell: false, windowsHide: true })
+      ? spawn(commandLine, { cwd, shell: true, windowsHide: true, ...sandboxOpts })
+      : spawn(tokens[0], tokens.slice(1), { cwd, shell: false, windowsHide: true, ...sandboxOpts })
     let stdout = ''
     let stderr = ''
     let timedOut = false
     const timer = setTimeout(() => {
       timedOut = true
-      child.kill('SIGTERM')
-      setTimeout(() => {
-        if (!child.killed) child.kill('SIGKILL')
-      }, 5000)
+      killProcess(child)
     }, timeoutMs)
     child.stdout?.on('data', chunk => {
       stdout += chunk.toString()

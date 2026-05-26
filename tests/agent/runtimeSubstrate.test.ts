@@ -21,6 +21,7 @@ function workspace(root: string): AgentWorkspaceLocation {
 function initGitRepo(): string {
   const root = mkdtempSync(join(tmpdir(), 'rille-runtime-workspace-'))
   execFileSync('git', ['init'], { cwd: root })
+  execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: root })
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root })
   execFileSync('git', ['config', 'user.name', 'Test'], { cwd: root })
   writeFileSync(join(root, 'README.md'), 'initial\n', 'utf8')
@@ -30,7 +31,7 @@ function initGitRepo(): string {
 }
 
 afterEach(async () => {
-  if (userData) await rm(userData, { recursive: true, force: true })
+  if (userData) await rm(userData, { recursive: true, force: true }).catch(() => {})
   userData = ''
   vi.resetModules()
 })
@@ -116,9 +117,9 @@ describe('runtime substrate', () => {
 
     expect(proposals).toHaveLength(1)
     expect(proposals[0].sandboxId).toBe(sandbox.id)
-    expect(proposals[0].originalContent).toBe('initial\n')
-    expect(proposals[0].modifiedContent).toBe('sandbox change\n')
-    expect(await readFile(join(root, 'README.md'), 'utf8')).toBe('initial\n')
+    expect(proposals[0].originalContent.replace(/\r\n/g, '\n')).toBe('initial\n')
+    expect(proposals[0].modifiedContent.replace(/\r\n/g, '\n')).toBe('sandbox change\n')
+    expect((await readFile(join(root, 'README.md'), 'utf8')).replace(/\r\n/g, '\n')).toBe('initial\n')
     await disposeSandbox('session_sandbox', sandbox.id)
   }, 30_000)
 

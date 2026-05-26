@@ -21,8 +21,8 @@ beforeEach(() => {
 
 afterEach(async () => {
   delete process.env.RILLE_AGENT_EXTENSION_USER_DATA
-  await rm(root, { recursive: true, force: true })
-  await rm(userData, { recursive: true, force: true })
+  await rm(root, { recursive: true, force: true }).catch(() => {})
+  await rm(userData, { recursive: true, force: true }).catch(() => {})
 })
 
 describe('skill/plugin discovery', () => {

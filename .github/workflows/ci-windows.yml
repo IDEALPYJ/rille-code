@@ -1,0 +1,25 @@
+name: CI Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: git config --global core.autocrlf false
+
+      - run: npm ci
+
+      - run: npx vitest run tests/agent/
+
+      - run: npx tsc -p tsconfig.node.json --noEmit

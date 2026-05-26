@@ -43,7 +43,7 @@ function sender() {
 }
 
 afterEach(async () => {
-  if (userData) await rm(userData, { recursive: true, force: true })
+  if (userData) await rm(userData, { recursive: true, force: true }).catch(() => {})
   userData = ''
   vi.resetModules()
 })

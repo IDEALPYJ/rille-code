@@ -25,7 +25,7 @@ function fixtures() {
 }
 
 afterEach(async () => {
-  if (root) await rm(root, { recursive: true, force: true })
+  if (root) await rm(root, { recursive: true, force: true }).catch(() => {})
 })
 
 describe('editStore', () => {

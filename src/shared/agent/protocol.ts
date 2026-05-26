@@ -200,6 +200,13 @@ export interface CheckpointRef {
   createdAt: number
 }
 
+export interface SandboxConstraints {
+  filesystem: 'worktree_only' | 'readonly'
+  network: 'none' | 'allow'
+  platform: 'windows_job_object' | 'none'
+  active: boolean
+}
+
 export interface ExecutionSandbox {
   id: string
   sessionId: string
@@ -208,6 +215,7 @@ export interface ExecutionSandbox {
   status: 'creating' | 'ready' | 'failed' | 'disposed'
   reason?: string
   checkpoint?: CheckpointRef
+  constraints?: SandboxConstraints
   createdAt: number
   updatedAt: number
 }

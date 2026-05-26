@@ -1,17 +1,16 @@
 import { randomUUID } from 'crypto'
 import { app } from 'electron'
-import { existsSync, mkdirSync, rmSync } from 'fs'
+import { existsSync, mkdirSync } from 'fs'
 import { dirname, join, posix, resolve } from 'path'
 import type { AgentSession, AgentTurn, AgentWorkspaceLocation, EditProposal, ExecutionSandbox } from '../../shared/agent/protocol'
 import { createCheckpoint } from './checkpointStore'
 import { createEditProposal, createEditProposalSet, getEditProposal } from './editStore'
 import { workspaceGitDiff, workspaceReadFile, workspaceRunCommand } from './workspace'
 
-const sandboxes = new Map<string, ExecutionSandbox>()
+import { rmSyncWithRetry, shellQuote as quote } from './platform'
+import { createSandboxAdapter } from './sandboxAdapter'
 
-function quote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`
-}
+const sandboxes = new Map<string, ExecutionSandbox>()
 
 function localSandboxPath(sessionId: string, sandboxId: string): string {
   return join(app.getPath('userData'), 'agent', 'worktrees', sessionId, sandboxId)
@@ -75,7 +74,8 @@ export async function createWorktreeSandbox(input: {
       shellMode: true,
     })
     if (result.status !== 'ok') throw new Error(result.output || result.error || '创建 worktree sandbox 失败。')
-    sandbox = { ...sandbox, status: 'ready', updatedAt: Date.now() }
+    const adapter = createSandboxAdapter()
+    sandbox = { ...sandbox, status: 'ready', constraints: adapter.describe(), updatedAt: Date.now() }
     sandboxes.set(sandboxId, sandbox)
     return sandbox
   } catch (error) {
@@ -141,7 +141,7 @@ export async function disposeSandbox(sessionId: string, sandboxId: string): Prom
         reason: `Dispose sandbox ${sandboxId}`,
       })
       if (sandbox.workspace.kind === 'local' || sandbox.workspace.kind === 'worktree') {
-        if (existsSync(sandbox.sandboxWorkspace.path)) rmSync(sandbox.sandboxWorkspace.path, { recursive: true, force: true })
+        if (existsSync(sandbox.sandboxWorkspace.path)) rmSyncWithRetry(sandbox.sandboxWorkspace.path)
       } else {
         await workspaceRunCommand(sandbox.workspace, {
           commandLine: `git worktree remove --force ${quote(sandbox.sandboxWorkspace.path)} || rm -rf ${quote(sandbox.sandboxWorkspace.path)}`,

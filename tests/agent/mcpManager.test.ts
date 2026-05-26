@@ -62,8 +62,10 @@ afterEach(async () => {
   delete process.env.RILLE_AGENT_EXTENSION_USER_DATA
   stopMcpServer('fixture', 'stdio')
   stopMcpServer('broken', 'stdio')
-  await rm(root, { recursive: true, force: true })
-  await rm(userData, { recursive: true, force: true })
+  // Allow child processes time to release file handles before cleanup
+  await new Promise(resolve => setTimeout(resolve, 200))
+  await rm(root, { recursive: true, force: true }).catch(() => {})
+  await rm(userData, { recursive: true, force: true }).catch(() => {})
 })
 
 describe('MCP stdio lifecycle', () => {

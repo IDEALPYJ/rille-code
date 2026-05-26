@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import type { AgentWorkspaceLocation, McpServerConfig, McpServerState, McpToolDescriptor, PluginManifest, ToolResultView } from '../../shared/agent/protocol'
 import { createArtifact } from './artifactStore'
 import { discoverExtensions, resolvePluginCommandCwd } from './skillStore'
+import { killProcess } from './platform'
 import { needsShell } from './workspace'
 
 interface PendingRequest {
@@ -186,7 +187,7 @@ export function stopMcpServer(pluginId: string, serverId: string): McpServerStat
   const record = records.get(key(pluginId, serverId))
   if (!record) return null
   record.state = { ...record.state, status: 'stopped', updatedAt: now() }
-  record.child?.kill('SIGTERM')
+  if (record.child) killProcess(record.child)
   return record.state
 }
 

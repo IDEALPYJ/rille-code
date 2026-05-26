@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { randomUUID } from 'crypto'
 import type { AgentWorkspaceLocation, RuntimeProcessSummary } from '../../shared/agent/protocol'
 import { createArtifact } from './artifactStore'
+import { killProcess } from './platform'
 import { needsShell, withinWorkspace } from './workspace'
 
 interface RuntimeProcessRecord {
@@ -105,10 +106,7 @@ export function stopRuntimeProcess(processId: string): RuntimeProcessSummary | n
   if (!record) return null
   if (record.child && record.summary.status === 'running') {
     record.summary = { ...record.summary, status: 'stopped', updatedAt: now() }
-    record.child.kill('SIGTERM')
-    setTimeout(() => {
-      if (record.child && !record.child.killed) record.child.kill('SIGKILL')
-    }, 5000)
+    killProcess(record.child)
   }
   return record.summary
 }
