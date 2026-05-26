@@ -20,6 +20,9 @@ import type {
   PolicyDecision,
   ProgressState,
   ReviewResult,
+  SubagentResult,
+  SubagentRole,
+  SubagentRun,
   TaskContract,
   ToolCallView,
   ToolResultView,
@@ -47,6 +50,7 @@ import {
 } from './verificationGate'
 import { EvaluatorRunner } from './evaluatorRunner'
 import { invokeAgentHook } from './hooks'
+import { createSubagentMerge, mergeSubagentReview, SubagentRunner, SubagentScheduler } from './subagentRunner'
 
 interface RuntimeOptions {
   session: AgentSession
@@ -172,6 +176,19 @@ function observationFromPolicy(
   }
 }
 
+function observationFromSubagent(sessionId: string, turnId: string, run: SubagentRun): Observation {
+  return {
+    id: `observation_${randomUUID()}`,
+    sessionId,
+    turnId,
+    source: 'subagent',
+    status: run.status === 'failed' ? 'error' : run.result?.status === 'blocked' ? 'blocked' : 'ok',
+    summary: `${run.role}: ${run.result?.summary || run.status}`,
+    data: { runId: run.id, role: run.role, childSessionId: run.childSessionId, result: run.result },
+    createdAt: now(),
+  }
+}
+
 export class AgentLoop {
   private readonly adapter = new TextJsonToolAdapter()
   private readonly grants: PermissionGrantStore
@@ -180,6 +197,9 @@ export class AgentLoop {
   private evidence: Evidence[] = []
   private verificationCoverage: VerificationCoverage | null = null
   private reviewResult: ReviewResult | null = null
+  private subagentResults: SubagentResult[] = []
+  private subagentRuns: SubagentRun[] = []
+  private readonly subagentScheduler = new SubagentScheduler(3)
   private proposedFiles = new Set<string>()
   private changedFiles: string[] = []
   private failedAttempts: string[] = []
@@ -191,6 +211,44 @@ export class AgentLoop {
     this.grants = options.grants ?? new PermissionGrantStore()
     this.taskContract = options.taskContract
     this.planItems = [...(options.planItems ?? [])]
+  }
+
+  private async runSubagent(input: { role: SubagentRole; goal: string; reason: string; focusFiles?: string[]; codeChanged?: boolean }): Promise<SubagentRun> {
+    const key = `${this.options.turn.id}:${input.role}:${input.goal}`
+    const run = await this.subagentScheduler.runDeduped(key, () => new SubagentRunner().run({
+      parentSession: this.options.session,
+      parentTurnId: this.options.turn.id,
+      role: input.role,
+      goal: input.goal,
+      reason: input.reason,
+      focusFiles: input.focusFiles,
+      context: this.options.context,
+      taskContract: this.taskContract,
+      evidence: this.evidence,
+      coverage: this.verificationCoverage,
+      reviewResult: this.reviewResult,
+      codeChanged: input.codeChanged,
+      signal: this.options.signal,
+      emit: event => this.options.emit(event),
+    }))
+    this.subagentRuns = [...this.subagentRuns.filter(item => item.id !== run.id), run]
+    if (run.result) this.subagentResults = [...this.subagentResults.filter(item => item.id !== run.result?.id), run.result]
+    this.emitPart({
+      id: createPartId(),
+      messageId: createMessageId('assistant'),
+      type: 'subagent',
+      run,
+      result: run.result,
+      createdAt: now(),
+    })
+    this.emitObservation(observationFromSubagent(this.options.session.id, this.options.turn.id, run))
+    return run
+  }
+
+  private shouldAutoExplore(): boolean {
+    const hasFocus = Boolean(this.options.context.activeFile) || (this.taskContract?.scope.length ?? 0) > 0
+    const hasSearchEvidence = this.evidence.some(item => item.source === 'command' || item.source === 'diagnostics' || item.source === 'diff')
+    return !hasFocus || (!hasSearchEvidence && this.options.context.openFiles.length === 0)
   }
 
   async run(): Promise<TurnStopReason> {
@@ -244,6 +302,15 @@ export class AgentLoop {
       context: this.options.context,
     }))
 
+    if (this.shouldAutoExplore()) {
+      await this.runSubagent({
+        role: 'explorer',
+        goal: `Explore read-only context for: ${this.options.text}`,
+        reason: 'scope or file context is not yet clear',
+        focusFiles: this.options.context.activeFile ? [this.options.context.activeFile.path] : undefined,
+      })
+    }
+
     const contextResult = await buildAgentContext({
       phase: this.options.handoff ? 'resume' : 'planning',
       session: this.options.session,
@@ -254,6 +321,7 @@ export class AgentLoop {
       evidence: this.evidence,
       verificationCoverage: this.verificationCoverage,
       reviewResult: this.reviewResult,
+      subagentResults: this.subagentResults,
       handoff: this.options.handoff,
       budgetTokens: DEFAULT_CONTEXT_BUDGET_TOKENS,
     })
@@ -572,6 +640,7 @@ export class AgentLoop {
       },
       updatePlan: (items, reason) => this.updatePlan(items, reason),
       updateTaskContract: (contract, reason) => this.updateTaskContract(contract, reason),
+      emitEvent: event => this.options.emit(event),
     })
     const evidence = evidenceFromToolResult({ sessionId: this.options.session.id, turnId: this.options.turn.id, call, result })
     if (evidence) this.recordEvidence(evidence)
@@ -668,6 +737,14 @@ export class AgentLoop {
   private async runFinalGate(): Promise<VerificationGateResult> {
     const codeChanged = this.hasAppliedOrWorkspaceDiffEvidence()
     const gate = evaluateVerificationGate({ contract: this.taskContract, evidence: this.evidence, codeChanged })
+    if (gate.nextAction !== 'allow_final') {
+      await this.runSubagent({
+        role: 'verifier',
+        goal: `Analyze missing evidence before finalizing: ${gate.summary}`,
+        reason: 'parent final gate needs evidence guidance',
+        codeChanged,
+      })
+    }
     if (gate.nextAction === 'run_more_checks' && !this.finalVerificationAttempted) {
       this.finalVerificationAttempted = true
       await this.runAutomaticVerification()
@@ -749,13 +826,36 @@ export class AgentLoop {
       planItems: this.planItems,
     }))
     const llmReviewPromise = this.runLlmEvaluator(codeChanged)
-    const [ruleReview, llmReview] = await Promise.all([ruleReviewPromise, llmReviewPromise])
-    const review = mergeReviews(ruleReview, llmReview)
+    const reviewerPromise = codeChanged || this.proposedFiles.size > 0 || this.evidence.some(item => item.source === 'diff')
+      ? this.runSubagent({
+          role: 'reviewer',
+          goal: 'Fresh read-only review of current changes and evidence.',
+          reason: 'code changed or diff evidence exists',
+          focusFiles: [...new Set([...this.changedFiles, ...this.proposedFiles])],
+          codeChanged,
+        })
+      : Promise.resolve(null)
+    const [ruleReview, llmReview, reviewerRun] = await Promise.all([ruleReviewPromise, llmReviewPromise, reviewerPromise])
+    let review = mergeReviews(ruleReview, llmReview)
+    if (reviewerRun?.result) review = mergeSubagentReview({ sessionId: this.options.session.id, turnId: this.options.turn.id }, review, reviewerRun.result)
     this.emitReview(review)
     this.traceCollector.reviewCompleted(this.options.session.id, this.options.turn.id, review)
     await this.invokeHook('review.after', { status: review.status, findingCount: review.findings.length })
+    const merge = createSubagentMerge({
+      sessionId: this.options.session.id,
+      turnId: this.options.turn.id,
+      runs: this.subagentRuns,
+      findingIds: review.findings.filter(item => item.source === 'subagent').map(item => item.id),
+    })
+    this.options.emit({ type: 'subagent.merged', sessionId: this.options.session.id, turnId: this.options.turn.id, merge })
     if (review.status !== 'approved') {
       this.emitObservation(observationFromReview(review))
+      await this.runSubagent({
+        role: 'advisor',
+        goal: `Advise parent repair for review status ${review.status}: ${review.summary}`,
+        reason: 'review blocked or requested repair',
+        codeChanged,
+      })
     }
     if (gate.nextAction !== 'allow_final') {
       this.emitObservation(observationFromVerification(this.options.session.id, this.options.turn.id, gate))

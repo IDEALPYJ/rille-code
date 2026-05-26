@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import {
   AlertCircle,
   ArrowUp,
+  Bot,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -639,6 +640,14 @@ function MessagePartView({
     return (
       <div className="agent-message assistant">
         <MarkdownMessage text={`## Handoff\n\n${part.handoff.summary}\n\n**下一步**: ${part.handoff.nextSteps.join(', ') || '无'}`} />
+      </div>
+    )
+  }
+  if (part.type === 'subagent') {
+    return (
+      <div className="agent-file-part">
+        <Bot size={13} />
+        <span>{part.run.role} subagent · {part.run.status}{part.result?.summary ? ` · ${part.result.summary}` : ''}</span>
       </div>
     )
   }

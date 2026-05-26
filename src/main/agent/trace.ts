@@ -14,6 +14,9 @@ import type {
   PluginActivation,
   ProviderFallbackTrace,
   ReviewResult,
+  SubagentMergeResult,
+  SubagentResult,
+  SubagentRun,
   TraceEvent,
   AgentHookInvocation,
   SkillActivation,
@@ -284,6 +287,49 @@ function deriveTraceEvents(event: { type: string; [key: string]: unknown }): Tra
         type: 'mcp.tool.discovered',
         sessionId: event.sessionId as string,
         tool: event.tool as McpToolDescriptor,
+        createdAt: Date.now(),
+      }]
+    case 'subagent.started':
+      return [{
+        type: 'subagent.started',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string,
+        run: event.run as SubagentRun,
+        createdAt: Date.now(),
+      }]
+    case 'subagent.progress':
+      return [{
+        type: 'subagent.progress',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string,
+        runId: event.runId as string,
+        message: event.message as string,
+        createdAt: Date.now(),
+      }]
+    case 'subagent.completed':
+      return [{
+        type: 'subagent.completed',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string,
+        run: event.run as SubagentRun,
+        result: event.result as SubagentResult,
+        createdAt: Date.now(),
+      }]
+    case 'subagent.failed':
+      return [{
+        type: 'subagent.failed',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string,
+        run: event.run as SubagentRun,
+        error: event.error as string,
+        createdAt: Date.now(),
+      }]
+    case 'subagent.merged':
+      return [{
+        type: 'subagent.merged',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string,
+        merge: event.merge as SubagentMergeResult,
         createdAt: Date.now(),
       }]
     case 'artifact.created':

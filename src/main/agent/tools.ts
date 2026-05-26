@@ -6,6 +6,7 @@ import type {
   AgentToolDefinition,
   AgentToolResult,
   AgentTurn,
+  AgentEvent,
   ToolFailureType,
   EditProposal,
   ProjectMemoryKind,
@@ -20,6 +21,7 @@ import { applyEditProposal, createEditProposal } from './editStore'
 import { normalizePlanUpdate, normalizeTaskContractUpdate } from './taskContract'
 import { activateSkill, findMatchingSkills } from './skillStore'
 import { callMcpTool, listMcpTools, registerMcpToolDescriptors } from './mcpManager'
+import { SubagentRunner } from './subagentRunner'
 import {
   canonicalWorkspacePath,
   isProtectedPath,
@@ -53,6 +55,7 @@ export interface ToolExecutionContext {
   emitProposal: (proposal: EditProposal) => void
   updatePlan?: (items: AgentPlanItem[], reason?: string) => AgentPlanItem[]
   updateTaskContract?: (contract: TaskContract, reason: string) => TaskContract
+  emitEvent?: (event: AgentEvent) => void
 }
 
 export interface RegisteredTool {
@@ -150,6 +153,22 @@ function validateToolSearchInput(input: Record<string, unknown>): ToolValidation
 
 function validateActivateSkillInput(input: Record<string, unknown>): ToolValidationResult {
   return validateStringFields(input, ['skillId', 'reason'])
+}
+
+function validateLaunchSubagentInput(input: Record<string, unknown>): ToolValidationResult {
+  const base = validateStringFields(input, ['role', 'goal'], ['reason'])
+  if (!base.ok) return base
+  const role = input.role
+  if (!['explorer', 'verifier', 'reviewer', 'advisor'].includes(String(role))) return invalid(`无效 subagent role: ${String(role)}`)
+  if (input.focusFiles !== undefined && (!Array.isArray(input.focusFiles) || input.focusFiles.some(item => typeof item !== 'string'))) {
+    return invalid('字段 focusFiles 必须是字符串数组。')
+  }
+  return ok({
+    role,
+    goal: input.goal,
+    reason: input.reason,
+    focusFiles: Array.isArray(input.focusFiles) ? input.focusFiles : undefined,
+  })
 }
 
 function classifyToolError(error: unknown): ToolFailureType {
@@ -771,6 +790,56 @@ export const toolRegistry: RegisteredTool[] = [
         output: `已激活技能 ${skill.name}。`,
         structured: { activation, skill: { id: skill.id, name: skill.name, source: skill.source, trust: skill.trust, pluginId: skill.pluginId } },
         status: 'ok',
+      }
+    },
+  },
+  {
+    definition: {
+      name: 'launch_subagent',
+      title: '启动子代理',
+      description: 'Launch a controlled read-only subagent. Input: { "role": "explorer"|"verifier"|"reviewer"|"advisor", "goal": string, "reason"?: string, "focusFiles"?: string[] }.',
+      inputSchema: {
+        type: 'object',
+        required: ['role', 'goal'],
+        properties: {
+          role: { type: 'string', enum: ['explorer', 'verifier', 'reviewer', 'advisor'] },
+          goal: { type: 'string' },
+          reason: { type: 'string' },
+          focusFiles: { type: 'array', items: { type: 'string' } },
+        },
+        additionalProperties: false,
+      },
+      isReadOnly: true,
+      risk: 'low',
+      deferred: true,
+      category: 'subagent',
+      keywords: ['subagent', 'advisor', 'reviewer', 'verifier', 'explorer'],
+      activationHint: 'Use when a task benefits from isolated read-only exploration, review, verification planning, or advice.',
+    },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: validateLaunchSubagentInput,
+    summarize: input => `${str(input, 'role')}: ${str(input, 'goal')}`,
+    execute: async (input, { session, turn, context, taskContract, emitEvent }) => {
+      const run = await new SubagentRunner().run({
+        parentSession: session,
+        parentTurnId: turn.id,
+        role: str(input, 'role') as 'explorer' | 'verifier' | 'reviewer' | 'advisor',
+        goal: str(input, 'goal'),
+        reason: str(input, 'reason') || undefined,
+        focusFiles: Array.isArray(input.focusFiles) ? input.focusFiles as string[] : undefined,
+        context,
+        taskContract,
+        emit: event => {
+          if (emitEvent) emitEvent(event)
+          else void appendSessionEvent(event)
+        },
+      })
+      return {
+        output: run.result?.summary || `${run.role} subagent ${run.status}`,
+        structured: { run: run as unknown as Record<string, unknown> },
+        status: run.status === 'failed' ? 'error' : 'ok',
+        error: run.status === 'failed' ? 'subagent_failed' : undefined,
       }
     },
   },

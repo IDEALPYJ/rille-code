@@ -83,16 +83,42 @@ export function traceDebugSummary(traceEvents: TraceEvent[]): string {
 }
 
 export function subagentNodes(events: AgentEvent[]): Array<{ id: string; label: string; status: string }> {
-  const nodes: Array<{ id: string; label: string; status: string }> = []
+  const nodesById = new Map<string, { id: string; label: string; status: string }>()
   for (const event of events) {
+    if (event.type === 'subagent.started') {
+      nodesById.set(event.run.id, {
+        id: event.run.id,
+        label: `${event.run.role} subagent`,
+        status: `running · ${event.run.childSessionId}`,
+      })
+    }
+    if (event.type === 'subagent.progress') {
+      const current = nodesById.get(event.runId)
+      if (current) nodesById.set(event.runId, { ...current, status: event.message })
+    }
+    if (event.type === 'subagent.completed') {
+      nodesById.set(event.run.id, {
+        id: event.run.id,
+        label: `${event.run.role} subagent`,
+        status: `completed · ${event.result.summary}`,
+      })
+    }
+    if (event.type === 'subagent.failed') {
+      nodesById.set(event.run.id, {
+        id: event.run.id,
+        label: `${event.run.role} subagent`,
+        status: `failed · ${event.error}`,
+      })
+    }
     if (event.type === 'evaluator.started' || event.type === 'evaluator.completed' || event.type === 'evaluator.failed') {
-      nodes.push({
+      nodesById.set(event.run.id, {
         id: event.run.id,
         label: 'Reviewer evaluator',
         status: event.run.status,
       })
     }
   }
+  const nodes = [...nodesById.values()]
   if (nodes.length === 0) nodes.push({ id: 'reviewer_placeholder', label: 'Reviewer subagent', status: 'read_only placeholder' })
   return nodes
 }

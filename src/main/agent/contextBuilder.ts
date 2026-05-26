@@ -456,6 +456,28 @@ function collectMcpToolFragment(input: ContextBuildInput): ContextFragment | nul
   })
 }
 
+function collectSubagentResultFragment(input: ContextBuildInput): ContextFragment | null {
+  const results = input.subagentResults ?? []
+  if (results.length === 0) return null
+  return fragment({
+    id: `context_subagent_results_${input.turn.id}`,
+    type: 'subagent_result',
+    section: 'dynamic_suffix',
+    priority: 76,
+    source: 'subagent_results',
+    trust: 'tool_output',
+    text: [
+      'Subagent results:',
+      ...results.slice(-8).map(result => [
+        `- ${result.role} ${result.status}: ${result.summary}`,
+        result.recommendedActions?.length ? `  actions: ${result.recommendedActions.join('; ')}` : '',
+        result.findings?.length ? `  findings: ${result.findings.map(item => `${item.severity}:${item.title}`).join('; ')}` : '',
+      ].filter(Boolean).join('\n')),
+    ].join('\n'),
+    cacheEligible: false,
+  })
+}
+
 async function collectGitFragment(context: AgentContextSnapshot): Promise<ContextFragment | null> {
   if (!context.workspace) return null
   const text = ['Git status:', await readGitStatus(context.workspace)].join('\n')
@@ -506,6 +528,7 @@ async function collectContextFragments(input: ContextBuildInput): Promise<Contex
     collectSymbolsFragment(context),
     collectVerificationFragment(input),
     collectReviewFragment(input),
+    collectSubagentResultFragment(input),
     ...collectSkillFragments(input),
     collectMcpToolFragment(input),
     await collectGitFragment(context),

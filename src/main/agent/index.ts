@@ -1,5 +1,5 @@
 import type { WebContents } from 'electron'
-import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, CompactionResult, EditProposal, ExecutionSandbox, ExtensionDiscoverySnapshot, McpServerState, PlanConfirmation, PluginManifest, RuntimeProcessSummary, RuntimeStateArtifact, SkillContract } from '../../shared/agent/protocol'
+import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, CompactionResult, EditProposal, ExecutionSandbox, ExtensionDiscoverySnapshot, McpServerState, PlanConfirmation, PluginManifest, RuntimeProcessSummary, RuntimeStateArtifact, SkillContract, SubagentRun } from '../../shared/agent/protocol'
 import { deleteAgentModelProfile, listAgentModelProfiles, readAgentConfigSnapshot, saveAgentConfig, saveAgentModelProfile, selectAgentModelProfile } from './config'
 import { testAgentProvider } from './provider'
 import { AgentThread } from './thread'
@@ -12,6 +12,7 @@ import { captureRuntimeState } from './runtimeState'
 import { createWorktreeSandbox, disposeSandbox, sandboxDiffAsProposals } from './worktreeSandbox'
 import { discoverExtensions } from './skillStore'
 import { listMcpServerStates, startMcpServer, stopMcpServer } from './mcpManager'
+import { cancelSubagentRun, listSubagentRuns, readSubagentRun, subagentRunsFromEvents, SubagentRunner } from './subagentRunner'
 
 const threads = new Map<string, AgentThread>()
 
@@ -150,6 +151,8 @@ type AgentDispatchValue =
   | PluginManifest[]
   | McpServerState[]
   | McpServerState
+  | SubagentRun[]
+  | SubagentRun
   | { traceEvents: unknown[] }
 
 export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<AgentDispatchValue>> {
@@ -240,6 +243,37 @@ export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<Agent
       if (!state) throw new Error('MCP server does not exist.')
       void appendSessionEvent({ type: 'mcp.server.stopped', sessionId: op.sessionId, state })
       return ok(state)
+    }
+    if (op.type === 'subagent.list') {
+      const live = listSubagentRuns(op.sessionId)
+      const replayed = await subagentRunsFromEvents(op.sessionId)
+      const merged = [...live, ...replayed].filter((run, index, all) => all.findIndex(item => item.id === run.id) === index)
+      return ok(merged)
+    }
+    if (op.type === 'subagent.read') {
+      const run = readSubagentRun(op.sessionId, op.runId) ?? (await subagentRunsFromEvents(op.sessionId)).find(item => item.id === op.runId) ?? null
+      if (!run) throw new Error('Subagent run does not exist.')
+      return ok(run)
+    }
+    if (op.type === 'subagent.cancel') {
+      const run = cancelSubagentRun(op.sessionId, op.runId)
+      if (!run) throw new Error('Subagent run does not exist.')
+      return ok(run)
+    }
+    if (op.type === 'subagent.launch') {
+      const session = readSessionMeta(op.sessionId)
+      if (!session) throw new Error('Agent session does not exist.')
+      const run = await new SubagentRunner().run({
+        parentSession: session,
+        parentTurnId: op.turnId || `turn_subagent_${Date.now()}`,
+        role: op.role,
+        goal: op.goal,
+        reason: op.reason,
+        focusFiles: op.focusFiles,
+        context: op.context || { workspace: session.workspace, activeFile: null, openFiles: [], diagnostics: [] },
+        emit: event => void appendSessionEvent(event),
+      })
+      return ok(run)
     }
     if ('sessionId' in op) {
       return ok(requireThread(op.sessionId).handle(op))

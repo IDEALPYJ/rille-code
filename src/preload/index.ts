@@ -27,6 +27,8 @@ import type {
   McpServerState,
   PluginManifest,
   SkillContract,
+  SubagentRole,
+  SubagentRun,
   TraceEvent,
   VerificationStatus,
 } from '../shared/agent/protocol'
@@ -136,6 +138,10 @@ export interface RilleAPI {
   agentListMcpServers(sessionId: string): Promise<McpServerState[]>
   agentStartMcpServer(sessionId: string, pluginId: string, serverId: string, workspace?: AgentWorkspaceLocation | null): Promise<McpServerState>
   agentStopMcpServer(sessionId: string, pluginId: string, serverId: string): Promise<McpServerState>
+  agentLaunchSubagent(sessionId: string, input: { turnId?: string; role: SubagentRole; goal: string; reason?: string; focusFiles?: string[]; context?: AgentContextSnapshot }): Promise<SubagentRun>
+  agentListSubagents(sessionId: string): Promise<SubagentRun[]>
+  agentReadSubagent(sessionId: string, runId: string): Promise<SubagentRun>
+  agentCancelSubagent(sessionId: string, runId: string): Promise<SubagentRun>
   agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>
   agentUpdatePermission(sessionId: string, permissionMode: AgentPermissionMode): Promise<AgentSession | null>
   agentApplyEdit(sessionId: string, proposalId: string, context?: AgentContextSnapshot): Promise<EditProposal>
@@ -587,6 +593,10 @@ const api: RilleAPI = {
   agentListMcpServers: (sessionId) => invokeAgent<McpServerState[]>('agent:dispatch', { type: 'mcp.server.list', sessionId }),
   agentStartMcpServer: (sessionId, pluginId, serverId, workspace) => invokeAgent<McpServerState>('agent:dispatch', { type: 'mcp.server.start', sessionId, pluginId, serverId, workspace }),
   agentStopMcpServer: (sessionId, pluginId, serverId) => invokeAgent<McpServerState>('agent:dispatch', { type: 'mcp.server.stop', sessionId, pluginId, serverId }),
+  agentLaunchSubagent: (sessionId, input) => invokeAgent<SubagentRun>('agent:dispatch', { type: 'subagent.launch', sessionId, ...input }),
+  agentListSubagents: (sessionId) => invokeAgent<SubagentRun[]>('agent:dispatch', { type: 'subagent.list', sessionId }),
+  agentReadSubagent: (sessionId, runId) => invokeAgent<SubagentRun>('agent:dispatch', { type: 'subagent.read', sessionId, runId }),
+  agentCancelSubagent: (sessionId, runId) => invokeAgent<SubagentRun>('agent:dispatch', { type: 'subagent.cancel', sessionId, runId }),
   agentRespondApproval: (requestId, decision) => invokeAgent<boolean>('agent:dispatch', { type: 'approval.respond', requestId, decision }),
   agentUpdatePermission: (sessionId, permissionMode) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'permission.update', sessionId, permissionMode }),
   agentApplyEdit: (sessionId, proposalId, context) => invokeAgent<EditProposal>('agent:dispatch', { type: 'edit.apply', sessionId, proposalId, context }),

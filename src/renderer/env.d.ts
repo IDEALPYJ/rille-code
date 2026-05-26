@@ -26,6 +26,8 @@ import type {
   McpServerState,
   PluginManifest,
   SkillContract,
+  SubagentRole,
+  SubagentRun,
   TraceEvent,
   VerificationStatus,
 } from '../shared/agent/protocol'
@@ -421,6 +423,10 @@ declare global {
     agentListMcpServers(sessionId: string): Promise<McpServerState[]>
     agentStartMcpServer(sessionId: string, pluginId: string, serverId: string, workspace?: AgentWorkspaceLocation | null): Promise<McpServerState>
     agentStopMcpServer(sessionId: string, pluginId: string, serverId: string): Promise<McpServerState>
+    agentLaunchSubagent(sessionId: string, input: { turnId?: string; role: SubagentRole; goal: string; reason?: string; focusFiles?: string[]; context?: AgentContextSnapshot }): Promise<SubagentRun>
+    agentListSubagents(sessionId: string): Promise<SubagentRun[]>
+    agentReadSubagent(sessionId: string, runId: string): Promise<SubagentRun>
+    agentCancelSubagent(sessionId: string, runId: string): Promise<SubagentRun>
     agentRespondApproval(requestId: string, decision: ApprovalDecision): Promise<boolean>
     agentUpdatePermission(sessionId: string, permissionMode: AgentPermissionMode): Promise<AgentSession | null>
     agentApplyEdit(sessionId: string, proposalId: string, context?: AgentContextSnapshot): Promise<EditProposal>

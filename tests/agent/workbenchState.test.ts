@@ -48,4 +48,34 @@ describe('agent workbench state helpers', () => {
     expect(traceDebugSummary(trace)).toContain('1 cache')
     expect(subagentNodes([])[0].status).toContain('placeholder')
   })
+
+  it('summarizes real subagent tree events', () => {
+    const events: AgentEvent[] = [
+      { type: 'subagent.started', sessionId: 's1', turnId: 't1', run: {
+        id: 'run_1',
+        parentSessionId: 's1',
+        parentTurnId: 't1',
+        childSessionId: 'child_1',
+        role: 'explorer',
+        status: 'running',
+        contract: { id: 'c1', parentSessionId: 's1', parentTurnId: 't1', role: 'explorer', goal: 'explore', permissionScope: 'read_only', allowedTools: [], outputSchema: 'summary', createdAt: 1 },
+        createdAt: 1,
+      } },
+      { type: 'subagent.completed', sessionId: 's1', turnId: 't1', run: {
+        id: 'run_1',
+        parentSessionId: 's1',
+        parentTurnId: 't1',
+        childSessionId: 'child_1',
+        role: 'explorer',
+        status: 'completed',
+        contract: { id: 'c1', parentSessionId: 's1', parentTurnId: 't1', role: 'explorer', goal: 'explore', permissionScope: 'read_only', allowedTools: [], outputSchema: 'summary', createdAt: 1 },
+        createdAt: 1,
+        completedAt: 2,
+      }, result: { id: 'r1', contractId: 'c1', role: 'explorer', status: 'completed', summary: 'found files', createdAt: 1, completedAt: 2 } },
+    ]
+
+    const nodes = subagentNodes(events)
+    expect(nodes[0]).toMatchObject({ label: 'explorer subagent' })
+    expect(nodes[0].status).toContain('found files')
+  })
 })

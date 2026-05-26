@@ -19,7 +19,7 @@
 | M | Observability + Hooks + Eval Harness | 已实现 |
 | N | Product UX Workbench | 已实现 |
 | O | Skills + Plugins + MCP | 已实现 |
-| P | Subagents + Advisor + Parallel Work | 未实现 |
+| P | Subagents + Advisor + Parallel Work | 已实现 |
 | Q | Release Governance + Entropy Cleanup | 未实现 |
 
 ## Phase A: Product Contract + System Boundaries
@@ -444,17 +444,17 @@ Checklist：
 
 Checklist：
 
-- [ ] P1. SubagentContract protocol。
-- [ ] P2. parent-child session relation。
-- [ ] P3. SubagentRunner。
-- [ ] P4. explorer subagent。
-- [ ] P5. verifier subagent。
-- [ ] P6. reviewer subagent。
-- [ ] P7. advisor agent。
-- [ ] P8. parallel scheduling。
-- [ ] P9. main-agent merge and verification gate。
+- [x] P1. SubagentContract protocol。
+- [x] P2. parent-child session relation。
+- [x] P3. SubagentRunner。
+- [x] P4. explorer subagent。
+- [x] P5. verifier subagent。
+- [x] P6. reviewer subagent。
+- [x] P7. advisor agent。
+- [x] P8. parallel scheduling。
+- [x] P9. main-agent merge and verification gate。
 
-当前状态：未实现。
+当前状态：已实现。已新增 SubagentContract/SubagentRun/SubagentResult/SubagentMergeResult、parent-child session metadata、subagent event/trace/message part、只读 SubagentRunner、bounded scheduler、`launch_subagent` deferred tool、自动 explorer/verifier/reviewer/advisor 触发、reviewer finding merge、advisor-only repair guidance、subagent tree replay 和 deterministic eval cases。所有 subagent 默认只读 child session，不直接写 workspace，也不绕过 parent verification/review final gate。
 
 ## Phase Q: Release Governance + Entropy Cleanup
 

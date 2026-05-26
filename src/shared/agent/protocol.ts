@@ -272,6 +272,7 @@ export type ContextFragmentType =
   | 'skill'
   | 'plugin'
   | 'mcp_tool'
+  | 'subagent_result'
 export type ContextFragmentSection = 'stable_prefix' | 'dynamic_suffix'
 export type ContextTrustLevel = 'system' | 'workspace' | 'tool_output' | 'user' | 'external'
 export type ToolVisibility = 'model' | 'runtime' | 'ui'
@@ -360,7 +361,7 @@ export interface Observation {
   id: string
   sessionId: string
   turnId: string
-  source: 'tool' | 'policy' | 'edit' | 'verification' | 'review' | 'user' | 'runtime'
+  source: 'tool' | 'policy' | 'edit' | 'verification' | 'review' | 'user' | 'runtime' | 'subagent'
   status: 'ok' | 'error' | 'denied' | 'blocked' | 'stale'
   summary: string
   data?: Record<string, unknown>
@@ -449,8 +450,8 @@ export interface ReviewFinding {
   recommendation?: string
   status: 'open' | 'fixed' | 'accepted_risk' | 'dismissed'
   createdAt: number
-  /** Origin of this finding: 'rule' (static rules) or 'llm' (evaluator model). */
-  source?: 'rule' | 'llm'
+  /** Origin of this finding: 'rule' (static rules), 'llm' (evaluator model), or 'subagent'. */
+  source?: 'rule' | 'llm' | 'subagent'
 }
 
 export interface ReviewResult {
@@ -482,6 +483,65 @@ export interface EvaluatorRun {
   error?: string
   createdAt: number
   completedAt?: number
+}
+
+export type SubagentRole = 'explorer' | 'verifier' | 'reviewer' | 'advisor'
+export type SubagentPermissionScope = 'read_only' | 'verify_only' | 'review_only' | 'advisory_only'
+export type SubagentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface SubagentContract {
+  id: string
+  parentSessionId: string
+  parentTurnId: string
+  role: SubagentRole
+  goal: string
+  permissionScope: SubagentPermissionScope
+  allowedTools: string[]
+  focusFiles?: string[]
+  outputSchema: string
+  createdAt: number
+}
+
+export interface SubagentResult {
+  id: string
+  contractId: string
+  role: SubagentRole
+  status: 'completed' | 'failed' | 'blocked'
+  summary: string
+  findings?: ReviewFinding[]
+  evidenceRefs?: string[]
+  artifactRefs?: string[]
+  recommendedActions?: string[]
+  childSessionId?: string
+  usage?: AgentUsage
+  error?: string
+  createdAt: number
+  completedAt?: number
+}
+
+export interface SubagentRun {
+  id: string
+  contract: SubagentContract
+  parentSessionId: string
+  parentTurnId: string
+  childSessionId: string
+  role: SubagentRole
+  status: SubagentRunStatus
+  result?: SubagentResult
+  error?: string
+  createdAt: number
+  completedAt?: number
+}
+
+export interface SubagentMergeResult {
+  id: string
+  parentSessionId: string
+  parentTurnId: string
+  runIds: string[]
+  mergedObservationIds: string[]
+  mergedFindingIds: string[]
+  advisorySummary?: string
+  createdAt: number
 }
 
 export interface ContractScopeItem {
@@ -611,6 +671,7 @@ export interface ContextBuildInput {
   evidence?: Evidence[]
   verificationCoverage?: VerificationCoverage | null
   reviewResult?: ReviewResult | null
+  subagentResults?: SubagentResult[]
   handoff?: Handoff
   budgetTokens: number
 }
@@ -903,6 +964,11 @@ export type TraceEvent =
   | { type: 'plugin.loaded'; sessionId: string; activation: PluginActivation; createdAt: number }
   | { type: 'mcp.server.started' | 'mcp.server.completed' | 'mcp.server.failed' | 'mcp.server.stopped'; sessionId: string; state: McpServerState; createdAt: number }
   | { type: 'mcp.tool.discovered'; sessionId: string; tool: McpToolDescriptor; createdAt: number }
+  | { type: 'subagent.started'; sessionId: string; turnId: string; run: SubagentRun; createdAt: number }
+  | { type: 'subagent.progress'; sessionId: string; turnId: string; runId: string; message: string; createdAt: number }
+  | { type: 'subagent.completed'; sessionId: string; turnId: string; run: SubagentRun; result: SubagentResult; createdAt: number }
+  | { type: 'subagent.failed'; sessionId: string; turnId: string; run: SubagentRun; error: string; createdAt: number }
+  | { type: 'subagent.merged'; sessionId: string; turnId: string; merge: SubagentMergeResult; createdAt: number }
 
 export type EvalMode = 'trace_replay' | 'single_step' | 'full_turn'
 
@@ -941,6 +1007,9 @@ export interface AgentSession {
   updatedAt: number
   status: 'idle' | 'running' | 'waiting_approval' | 'interrupted' | 'error' | 'archived'
   permissionMode: AgentPermissionMode
+  parentSessionId?: string
+  rootSessionId?: string
+  subagent?: { role: SubagentRole; contractId: string }
 }
 
 export interface AgentTurn {
@@ -1052,6 +1121,7 @@ export type MessagePart =
   | { id: string; messageId: string; type: 'edit_result'; proposalId: string; state: EditProposal['state']; filePath: string; message: string; createdAt: number }
   | { id: string; messageId: string; type: 'handoff'; handoff: Handoff; createdAt: number }
   | { id: string; messageId: string; type: 'artifact'; artifact: ArtifactRef; label: string; createdAt: number }
+  | { id: string; messageId: string; type: 'subagent'; run: SubagentRun; result?: SubagentResult; createdAt: number }
 
 export interface ApprovalRequest {
   id: string
@@ -1079,6 +1149,9 @@ export interface AgentSessionSummary {
   permissionMode: AgentPermissionMode
   lastMessage?: string
   latestVerificationStatus?: VerificationStatus
+  parentSessionId?: string
+  rootSessionId?: string
+  subagent?: AgentSession['subagent']
 }
 
 export type ApprovalDecision =
@@ -1141,6 +1214,10 @@ export type AgentOp =
   | { type: 'mcp.server.list'; sessionId: string }
   | { type: 'mcp.server.start'; sessionId: string; pluginId: string; serverId: string; workspace?: AgentWorkspaceLocation | null }
   | { type: 'mcp.server.stop'; sessionId: string; pluginId: string; serverId: string }
+  | { type: 'subagent.launch'; sessionId: string; turnId?: string; role: SubagentRole; goal: string; reason?: string; focusFiles?: string[]; context?: AgentContextSnapshot }
+  | { type: 'subagent.cancel'; sessionId: string; runId: string }
+  | { type: 'subagent.list'; sessionId: string }
+  | { type: 'subagent.read'; sessionId: string; runId: string }
   | { type: 'memory.create'; workspacePath: string; kind: ProjectMemoryKind; text: string; sourceRefs: string[] }
   | { type: 'memory.update'; workspacePath: string; entryId: string; changes: Partial<Pick<ProjectMemoryEntry, 'text' | 'status' | 'sourceRefs'>> }
   | { type: 'memory.delete'; workspacePath: string; entryId: string }
@@ -1191,6 +1268,11 @@ export type AgentEvent =
   | { type: 'mcp.server.failed'; sessionId: string; state: McpServerState }
   | { type: 'mcp.server.stopped'; sessionId: string; state: McpServerState }
   | { type: 'mcp.tool.discovered'; sessionId: string; tool: McpToolDescriptor }
+  | { type: 'subagent.started'; sessionId: string; turnId: string; run: SubagentRun }
+  | { type: 'subagent.progress'; sessionId: string; turnId: string; runId: string; message: string; createdAt: number }
+  | { type: 'subagent.completed'; sessionId: string; turnId: string; run: SubagentRun; result: SubagentResult }
+  | { type: 'subagent.failed'; sessionId: string; turnId: string; run: SubagentRun; error: string }
+  | { type: 'subagent.merged'; sessionId: string; turnId: string; merge: SubagentMergeResult }
   | { type: 'context.compaction.started'; sessionId: string; turnId?: string; task: CompactionTask }
   | { type: 'context.compacted'; sessionId: string; turnId?: string; task: CompactionTask; result: CompactionResult }
   | { type: 'context.compaction.failed'; sessionId: string; turnId?: string; task: CompactionTask; error: string }

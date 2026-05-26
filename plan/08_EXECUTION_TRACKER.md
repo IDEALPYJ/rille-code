@@ -27,10 +27,10 @@
 | J | Verification + Evidence Gate | 已完成 | 已实现 | browser/user evidence、waiver UI、artifact-backed evidence、coverage recompute 已落地 | M7 |
 | K | Review + Evaluator | 已完成 | 已实现 | accepted risk、EvaluatorRun 事件、并行 rule/evaluator review、reviewer subagent 占位协议已落地 | M7 |
 | L | Long-running Memory + Compaction | 已完成 | 已实现 | `.rille/features.json`、explicit compaction、cache-safe compact fork、stale checks、local async compact task 已落地 | M7 |
-| M | Observability + Hooks + Eval Harness | 已完成 | 已实现 | hook lifecycle、hook trace、deterministic eval、single-step/full-turn runner、CI eval 入口已落地 | P1 |
-| N | Product UX Workbench | 已完成 | 已实现 | session risk card、streaming status、slash/@file/#selection composer、trace/debug view、subagent 占位树已落地 | P1 |
-| O | Skills + Plugins + MCP | 已完成 | 已实现 | SkillContract、project/user/plugin discovery、activation trace、plugin manifest、真实 stdio MCP lifecycle、namespace/policy、Phase O eval 已落地 | P1 |
-| P | Subagents + Advisor + Parallel Work | 未开始 | 未实现 | 无 runtime 能力 | P1 |
+| M | Observability + Hooks + Eval Harness | 已完成 | 已实现 | hook lifecycle、hook trace、deterministic eval、single-step/full-turn runner、CI eval 入口已落地 | Q1 |
+| N | Product UX Workbench | 已完成 | 已实现 | session risk card、streaming status、slash/@file/#selection composer、trace/debug view、subagent 占位树已落地 | Q1 |
+| O | Skills + Plugins + MCP | 已完成 | 已实现 | SkillContract、project/user/plugin discovery、activation trace、plugin manifest、真实 stdio MCP lifecycle、namespace/policy、Phase O eval 已落地 | Q1 |
+| P | Subagents + Advisor + Parallel Work | 已完成 | 已实现 | SubagentContract、parent-child session、只读 runner、explorer/verifier/reviewer/advisor、bounded parallel scheduler、merge gate 已落地 | Q1 |
 | Q | Release Governance + Entropy Cleanup | 未开始 | 未实现 | 无 runtime 能力 | Q1 |
 
 ## Phase A Checklist
@@ -213,15 +213,15 @@
 
 ## Phase P Checklist
 
-- [ ] P1. SubagentContract protocol。
-- [ ] P2. parent-child session relation。
-- [ ] P3. SubagentRunner。
-- [ ] P4. explorer subagent。
-- [ ] P5. verifier subagent。
-- [ ] P6. reviewer subagent。
-- [ ] P7. advisor agent。
-- [ ] P8. parallel scheduling。
-- [ ] P9. main-agent merge and verification gate。
+- [x] P1. SubagentContract protocol。
+- [x] P2. parent-child session relation。
+- [x] P3. SubagentRunner。
+- [x] P4. explorer subagent。
+- [x] P5. verifier subagent。
+- [x] P6. reviewer subagent。
+- [x] P7. advisor agent。
+- [x] P8. parallel scheduling。
+- [x] P9. main-agent merge and verification gate。
 
 ## Phase Q Checklist
 
@@ -259,7 +259,18 @@
 验证命令: `npm test`; `npm run typecheck`; `npm run build`; `npm run eval:agent`; M/N checklist 状态检索。
 验证结果: `npm test` 22 files / 173 tests passed；`npm run typecheck` passed；`npm run build` passed（保留既有 memory dynamic/static import warning）；`npm run eval:agent` 3/3 cases passed；M/N 未完成 checklist 检索无输出。
 剩余风险: subagent tree 仍是 Phase N 的协议/UX 占位，真实 SubagentRunner、parallel scheduling 和 parent-child execution 仍归 Phase P；hooks 本阶段为内部 extension point，不加载用户脚本或插件。
-下一步: Phase P1
+下一步: Phase Q1
+
+步骤: Phase P closure
+状态: 已完成
+完成日期: 2026-05-26
+涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/subagentRunner.ts`, `src/main/agent/runtime.ts`, `src/main/agent/tools.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/index.ts`, `src/main/agent/sessionStore.ts`, `src/main/agent/trace.ts`, `src/preload/index.ts`, `src/renderer/env.d.ts`, `src/renderer/components/agent/workbenchState.ts`, `src/renderer/components/agent/AgentPanel.tsx`, `eval/cases/subagent_*.json`
+实现摘要: Phase P 完成 SubagentContract/SubagentRun/SubagentResult/SubagentMergeResult、parent-child session metadata、subagent event/trace/message part、只读 SubagentRunner、bounded scheduler、`launch_subagent` deferred tool、自动 explorer/verifier/reviewer/advisor 触发、reviewer finding merge、advisor-only guidance、subagent_result context fragment、subagent IPC 和真实事件驱动 subagent tree。
+测试文件: `tests/agent/subagentRunner.test.ts`, `tests/agent/workbenchState.test.ts`, `tests/agent/evalRunner.test.ts`, `eval/cases/subagent_explorer_files.json`, `eval/cases/subagent_verifier_blocks_missing_evidence.json`, `eval/cases/subagent_reviewer_blocks_diff.json`, `eval/cases/subagent_advisor_advisory_only.json`, `eval/cases/subagent_parallel_merge_gate.json`
+验证命令: `npm test`; `npm run typecheck`; `npm run build`; `npm run eval:agent`; Phase P checklist 状态检索。
+验证结果: `npm test` 25 files / 186 tests passed；`npm run typecheck` passed；`npm run build` passed（保留既有 memory dynamic/static import warning）；`npm run eval:agent` 12/12 cases passed；Phase P checklist/status 检索无输出。
+剩余风险: Phase P 子代理默认只读并使用 deterministic fallback 保证离线/CI；不实现写权限 subagent、远程长期 worker、分布式调度或 advisor 多模型策略。parent verification/review final gate 仍是唯一完成裁决。
+下一步: Phase Q1
 
 步骤: Phase O closure
 状态: 已完成

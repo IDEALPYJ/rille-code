@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { appendFile, readFile } from 'fs/promises'
+import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import type { AgentEvent, AgentSession, AgentSessionSummary, MessagePart } from '../../shared/agent/protocol'
 import { hydrateEditProposal } from './editStore'
@@ -16,7 +17,8 @@ const SESSION_EVENT_SCHEMA_VERSION = 1
 const sessionSequences = new Map<string, number>()
 
 function rootDir(): string {
-  return join(app.getPath('userData'), 'agent', 'sessions')
+  const userData = typeof app?.getPath === 'function' ? app.getPath('userData') : join(tmpdir(), 'rillecode-test-user-data')
+  return join(userData, 'agent', 'sessions')
 }
 
 function sessionDir(sessionId: string): string {
@@ -144,7 +146,14 @@ export function listSessionSummaries(): AgentSessionSummary[] {
       }
       lastMessage = lastMessageFromEvents(events)
     }
-    summaries.push({ ...meta, lastMessage, latestVerificationStatus: latestVerificationFromEvents(events) })
+    summaries.push({
+      ...meta,
+      lastMessage,
+      latestVerificationStatus: latestVerificationFromEvents(events),
+      parentSessionId: meta.parentSessionId,
+      rootSessionId: meta.rootSessionId,
+      subagent: meta.subagent,
+    })
   }
   return summaries.sort((a, b) => b.updatedAt - a.updatedAt)
 }

@@ -423,19 +423,19 @@ Vitest 覆盖 skill/plugin discovery、冲突优先级、activation、context fr
 Target:
 通过 explorer/reviewer/verifier/advisor 实现上下文隔离、独立审查、并行探索和高智指导。
 
-Current status: 未实现
+Current status: 已实现
 
 Evidence files:
-无当前 runtime 证据。
+`src/shared/agent/protocol.ts`, `src/main/agent/subagentRunner.ts`, `src/main/agent/runtime.ts`, `src/main/agent/tools.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/index.ts`, `src/main/agent/sessionStore.ts`, `src/main/agent/trace.ts`, `src/preload/index.ts`, `src/renderer/env.d.ts`, `src/renderer/components/agent/workbenchState.ts`, `src/renderer/components/agent/AgentPanel.tsx`, `tests/agent/subagentRunner.test.ts`, `tests/agent/workbenchState.test.ts`, `eval/cases/subagent_*.json`
 
 Implemented details:
-无。
+已有 SubagentContract、SubagentRun、SubagentResult、SubagentMergeResult、parent-child AgentSession metadata、subagent event/trace/message part、只读 SubagentRunner、bounded scheduler、`launch_subagent` deferred tool、runtime 自动 explorer/verifier/reviewer/advisor 触发、reviewer subagent findings merge、advisor-only guidance、subagent_result context fragment 和真实事件驱动 subagent tree。子代理默认独立 child session/context，只读隔离，不直接写 workspace，不直接完成 parent task。
 
 Missing pieces:
-SubagentContract、SubagentRunner、parent-child session tree、permission-scoped tools、advisor purpose、merge gate。
+分布式远程调度、写权限 subagent、跨进程长期 subagent worker、advisor 多模型策略和更丰富 subagent drilldown UI 留到后续治理/UX 阶段。
 
 Next phase:
-Phase P
+Phase Q
 
 Verification:
-后续以 isolation tests、permission tests、parallel merge tests、reviewer/verifier eval cases 验收。
+Vitest 覆盖 contract normalization、permission scope、child session/run、scheduler dedupe/parallel、review merge 和 UI tree；eval 覆盖 explorer/verifier/reviewer/advisor/parallel merge gate。
