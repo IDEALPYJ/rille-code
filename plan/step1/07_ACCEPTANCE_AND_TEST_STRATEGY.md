@@ -13,9 +13,9 @@
 只新增或修改 `plan` 文档时运行：
 
 ```bash
-rg -n "TO""DO|TB""D|待""补" plan
-rg -n "下一步.*Phase ""K|Phase ""K.*下一步" plan
-rg -n "已实现|部分实现|未实现" plan/06_IMPLEMENTED_STATUS_MATRIX.md
+rg -n "TO""DO|TB""D|待""补" plan/step1 plan/step2
+rg -n "下一步.*Phase ""K|Phase ""K.*下一步" plan/step1
+rg -n "已实现|部分实现|未实现" plan/step1/06_IMPLEMENTED_STATUS_MATRIX.md
 ```
 
 预期：

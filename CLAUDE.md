@@ -31,7 +31,7 @@ src/
   shared/
     agent/protocol.ts  #   All agent types, events, IPC contracts (~600 lines)
 tests/agent/           # Unit tests for each agent module
-plan/                  # Design docs (15 docs, module-by-module)
+plan/                  # Agent planning docs: root index plus step1 baseline and step2 roadmap
 ```
 
 ## Agent Subsystem (`src/main/agent/`)

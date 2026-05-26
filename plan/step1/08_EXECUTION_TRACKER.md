@@ -1,15 +1,15 @@
-# V2 执行总控与完成标记表
+# Step1 / V2 执行总控与完成标记表
 
 ## 文档定位
 
-本文件是 `plan` 的执行总控表。后续实现 V2 规划时，完成状态、验证结果、完成记录和下一步指针都在这里维护。
+本文件是 `plan/step1` 的执行总控表，记录 RilleCode Agent V2 从 Phase A 到 Phase Q 的基线完成状态。Step2 的新增产品化路线不在本文件维护，见 `../step2/08_EXECUTION_TRACKER.md`。
 
 更新规则：
 
 - 每完成一个 checklist item，先更新本文件对应勾选状态。
 - 每完成一个 Phase，更新 Phase 总览表、追加完成记录、写明验证命令和剩余风险。
-- 若实现后当前源码能力状态变化，同步更新 `06_IMPLEMENTED_STATUS_MATRIX.md`。
-- 若 Phase 范围变化，同步更新 `04_PHASE_A_TO_Q_MASTER_PLAN.md`。
+- 若 Step1 源码能力状态需要追溯修正，同步更新 `./06_IMPLEMENTED_STATUS_MATRIX.md`。
+- 若 Step1 Phase 范围需要追溯修正，同步更新 `./04_PHASE_A_TO_Q_MASTER_PLAN.md`。
 
 ## Phase 总览
 
@@ -297,7 +297,7 @@
 步骤: Phase A-L plan consistency audit
 状态: 已完成
 完成日期: 2026-05-25
-涉及模块: `plan/02_TARGET_ARCHITECTURE.md`, `plan/03_PROTOCOL_AND_EVENTS.md`, `plan/05_IMPLEMENTATION_ROADMAP.md`
+涉及模块: `plan/step1/02_TARGET_ARCHITECTURE.md`, `plan/step1/03_PROTOCOL_AND_EVENTS.md`, `plan/step1/05_IMPLEMENTATION_ROADMAP.md`
 实现摘要: 已按当前源码能力重新核对 Phase A-L。主计划、状态矩阵和执行总控已显示 A-L 完成；本次同步修正目标架构、协议事件和路线图中的旧状态，移除早期状态漂移表述，明确剩余工作从 Phase M/N/P/O/Q 继续。
 测试文件: 无新增测试；本次为 plan consistency 修正。
 验证命令: 文档漂移关键词检索；A-L checklist 未完成项检索；`npm test`
@@ -311,7 +311,7 @@
 涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/thread.ts`, `src/main/agent/runtime.ts`, `src/main/agent/verificationGate.ts`, `src/main/agent/featureStore.ts`, `src/main/agent/compaction.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/trace.ts`, `src/preload/index.ts`, `src/renderer/components/agent/AgentPanel.tsx`, `src/renderer/App.css`
 实现摘要: Phase J 完成 browser/user evidence、waiver、artifact-backed evidence display/read path；Phase K 完成 accepted risk/dismiss、EvaluatorRun public events、并行 rule/evaluator review、reviewer subagent placeholder；Phase L 完成 `.rille/features.json`、feature context、explicit compaction task/event/result、cache-safe compact artifact、stale evidence/memory checks。
 测试文件: `tests/agent/verificationGate.test.ts`, `tests/agent/memory.test.ts`, `tests/agent/compaction.test.ts`
-验证命令: `npm test`; `npm run typecheck`; `npm run build`; `rg -n "TO""DO|TB""D|待""补" plan`; `rg -n "Phase J|Phase K|Phase L|已实现|部分实现|未""实现" plan/08_EXECUTION_TRACKER.md`
+验证命令: `npm test`; `npm run typecheck`; `npm run build`; `rg -n "TO""DO|TB""D|待""补" plan`; `rg -n "Phase J|Phase K|Phase L|已实现|部分实现|未""实现" plan/step1/08_EXECUTION_TRACKER.md`
 验证结果: `npm test` 19 files / 164 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查和过期 Phase K 指针检查无输出；Phase J/K/L 状态检查可列出已完成记录。
 剩余风险: reviewer subagent 是 Phase K 的只读协议占位，完整 SubagentRunner 仍归 Phase P；remote compact task 为当前进程内 job registry，不引入外部调度服务。
 下一步: Phase M
@@ -324,7 +324,7 @@
 涉及模块: protocol、thread、runtime、contextBuilder、tools、permissions、editStore、verifier、verificationGate、evaluator、memory、trace、AgentPanel、tests
 实现摘要: 已根据当时源码把 Phase A-Q 的完成状态初始化到本执行总控。该记录是早期基线快照，后续记录已逐步收口到当前全阶段完成状态。
 测试文件: `tests/agent/*`
-验证命令: `rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "下一步.*Phase ""K|Phase ""K.*下一步" plan`、`rg -n "已实现|部分实现|未""实现" plan/06_IMPLEMENTED_STATUS_MATRIX.md`
+验证命令: `rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "下一步.*Phase ""K|Phase ""K.*下一步" plan`、`rg -n "已实现|部分实现|未""实现" plan/step1/06_IMPLEMENTED_STATUS_MATRIX.md`
 验证结果: 文档占位检查无输出；过期入口检查无输出；状态矩阵可列出当前状态。
 
 步骤: Phase D/E/F acceptance closure
