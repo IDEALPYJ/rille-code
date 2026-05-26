@@ -710,6 +710,20 @@ export interface FeatureItem {
   updatedAt: number
 }
 
+export type FeatureLifecycleStatus = 'planned' | 'active' | 'verified' | 'deprecated' | 'removed'
+
+export interface FeatureLifecycleEntry {
+  featureId: string
+  status: FeatureLifecycleStatus
+  source?: string
+  owner?: string
+  lastVerifiedAt?: number
+  evidenceRefs: string[]
+  deprecationNote?: string
+  removalNote?: string
+  updatedAt: number
+}
+
 export interface ProgressState {
   taskContractId: string
   activeFeatureId?: string
@@ -723,6 +737,7 @@ export interface ProgressState {
 export interface FeatureStoreSnapshot {
   taskContractId?: string
   featureList: FeatureItem[]
+  lifecycle?: FeatureLifecycleEntry[]
   updatedAt: number
 }
 
@@ -919,6 +934,77 @@ export interface McpServerState {
   tools: McpToolDescriptor[]
 }
 
+export type GovernanceFindingSeverity = 'info' | 'warning' | 'error' | 'blocking'
+export type GovernanceFindingCategory = 'feature_lifecycle' | 'model_upgrade' | 'prompt_tool_policy' | 'eval_regression' | 'stale_config' | 'scaffold_cleanup' | 'migration_compatibility'
+
+export interface GovernanceAuditFinding {
+  id: string
+  category: GovernanceFindingCategory
+  severity: GovernanceFindingSeverity
+  title: string
+  detail: string
+  evidenceRefs: string[]
+  recommendation?: string
+}
+
+export interface ModelUpgradeReview {
+  status: 'pass' | 'warn' | 'fail'
+  activeProfileId?: string
+  profileCount: number
+  evaluatorConfigured: boolean
+  evalCaseCount: number
+  requiredGates: string[]
+  missingGates: string[]
+  findings: GovernanceAuditFinding[]
+}
+
+export interface EvalRegressionReport {
+  status: 'pass' | 'fail'
+  caseCount: number
+  passed: number
+  failed: number
+  caseSummaries: Array<{ id: string; title: string; mode: EvalMode; passed: boolean; failures: string[] }>
+  previousReportAt?: number
+}
+
+export interface ConfigAuditFinding {
+  id: string
+  source: string
+  severity: GovernanceFindingSeverity
+  message: string
+  evidenceRefs: string[]
+}
+
+export interface ScaffoldCleanupCandidate {
+  id: string
+  filePath: string
+  reason: string
+  risk: 'low' | 'medium' | 'high'
+  evidence: string
+  recommendation: string
+}
+
+export interface MigrationCompatibilityResult {
+  status: 'pass' | 'fail'
+  checkedFixtures: string[]
+  failures: string[]
+}
+
+export interface GovernanceAuditReport {
+  id: string
+  workspacePath?: string
+  createdAt: number
+  status: 'pass' | 'warn' | 'fail'
+  summary: string
+  featureLifecycle: FeatureLifecycleEntry[]
+  modelUpgrade: ModelUpgradeReview
+  evalRegression: EvalRegressionReport
+  configFindings: ConfigAuditFinding[]
+  scaffoldCandidates: ScaffoldCleanupCandidate[]
+  migrationCompatibility: MigrationCompatibilityResult
+  findings: GovernanceAuditFinding[]
+}
+
 export type AgentHookName =
   | 'turn.start'
   | 'context.built'
@@ -969,6 +1055,12 @@ export type TraceEvent =
   | { type: 'subagent.completed'; sessionId: string; turnId: string; run: SubagentRun; result: SubagentResult; createdAt: number }
   | { type: 'subagent.failed'; sessionId: string; turnId: string; run: SubagentRun; error: string; createdAt: number }
   | { type: 'subagent.merged'; sessionId: string; turnId: string; merge: SubagentMergeResult; createdAt: number }
+  | { type: 'governance.audit.started'; sessionId: string; turnId?: string; reportId: string; createdAt: number }
+  | { type: 'governance.audit.completed'; sessionId: string; turnId?: string; report: GovernanceAuditReport; createdAt: number }
+  | { type: 'governance.audit.failed'; sessionId: string; turnId?: string; reportId: string; error: string; createdAt: number }
+  | { type: 'eval.regression.reported'; sessionId: string; turnId?: string; report: EvalRegressionReport; createdAt: number }
+  | { type: 'config.audit.completed'; sessionId: string; turnId?: string; findings: ConfigAuditFinding[]; createdAt: number }
+  | { type: 'scaffold.cleanup.reported'; sessionId: string; turnId?: string; candidates: ScaffoldCleanupCandidate[]; createdAt: number }
 
 export type EvalMode = 'trace_replay' | 'single_step' | 'full_turn'
 
@@ -1218,6 +1310,9 @@ export type AgentOp =
   | { type: 'subagent.cancel'; sessionId: string; runId: string }
   | { type: 'subagent.list'; sessionId: string }
   | { type: 'subagent.read'; sessionId: string; runId: string }
+  | { type: 'governance.audit'; sessionId: string; workspace?: AgentWorkspaceLocation | null; turnId?: string }
+  | { type: 'governance.report.read'; sessionId: string }
+  | { type: 'model.upgrade.review'; sessionId: string; workspace?: AgentWorkspaceLocation | null }
   | { type: 'memory.create'; workspacePath: string; kind: ProjectMemoryKind; text: string; sourceRefs: string[] }
   | { type: 'memory.update'; workspacePath: string; entryId: string; changes: Partial<Pick<ProjectMemoryEntry, 'text' | 'status' | 'sourceRefs'>> }
   | { type: 'memory.delete'; workspacePath: string; entryId: string }
@@ -1273,6 +1368,12 @@ export type AgentEvent =
   | { type: 'subagent.completed'; sessionId: string; turnId: string; run: SubagentRun; result: SubagentResult }
   | { type: 'subagent.failed'; sessionId: string; turnId: string; run: SubagentRun; error: string }
   | { type: 'subagent.merged'; sessionId: string; turnId: string; merge: SubagentMergeResult }
+  | { type: 'governance.audit.started'; sessionId: string; turnId?: string; reportId: string; createdAt: number }
+  | { type: 'governance.audit.completed'; sessionId: string; turnId?: string; report: GovernanceAuditReport; createdAt: number }
+  | { type: 'governance.audit.failed'; sessionId: string; turnId?: string; reportId: string; error: string; createdAt: number }
+  | { type: 'eval.regression.reported'; sessionId: string; turnId?: string; report: EvalRegressionReport; createdAt: number }
+  | { type: 'config.audit.completed'; sessionId: string; turnId?: string; findings: ConfigAuditFinding[]; createdAt: number }
+  | { type: 'scaffold.cleanup.reported'; sessionId: string; turnId?: string; candidates: ScaffoldCleanupCandidate[]; createdAt: number }
   | { type: 'context.compaction.started'; sessionId: string; turnId?: string; task: CompactionTask }
   | { type: 'context.compacted'; sessionId: string; turnId?: string; task: CompactionTask; result: CompactionResult }
   | { type: 'context.compaction.failed'; sessionId: string; turnId?: string; task: CompactionTask; error: string }

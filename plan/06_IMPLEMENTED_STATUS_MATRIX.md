@@ -322,10 +322,10 @@ Implemented details:
 已有 FeatureItem、ProgressState、Handoff、turn-end finalize、resume handoff injection、workspace freshness 基础检查；turn end 写入 `.rille/features.json`，resume/context build 注入 feature list；context.compact 生成 compact artifact 和 context.compacted event，不重写 JSONL。
 
 Missing pieces:
-更强的 git hash/diff freshness 和后台自动调度留到 Phase Q。
+更强的 git hash/diff freshness 和后台自动调度可作为后续 release hardening 扩展；Phase Q 已完成本地治理审计入口。
 
 Next phase:
-Phase Q
+Release hardening
 
 Verification:
 Runtime/session tests 覆盖 progress/handoff 持久化和恢复；FeatureStore/compaction tests 覆盖 feature persistence、stale evidence downgrade 和 compact artifact。
@@ -344,10 +344,10 @@ Implemented details:
 已有 ProjectMemoryEntry、MemoryStore、create_memory tool、memory_ref fragment、基础 CRUD；turn start 对缺失 evidence sourceRefs 进行 stale 标记并注入 stale observation。
 
 Missing pieces:
-更细粒度 conflict/superseded 推断和 memory policy review 留到 Phase Q。
+更细粒度 conflict/superseded 推断和 memory policy review 可作为后续治理扩展；Phase Q 已完成 stale config/lifecycle audit。
 
 Next phase:
-Phase Q
+Release hardening
 
 Verification:
 Memory tests 覆盖 add/list/update/delete/filter/persist；thread freshness 路径由 runtime flow 覆盖。
@@ -388,10 +388,10 @@ Implemented details:
 已有 timeline、Task/Plan cards、tool group、approval、diff modal、verification/evidence/review cards、handoff、rule/LLM badge、session risk/latest verification/latest review/last action/handoff 摘要、streaming status、slash/@file/#selection composer、redacted trace/debug view、reviewer subagent 协议占位树。
 
 Missing pieces:
-真实 SubagentRunner、parallel scheduling 和 parent-child execution 留到 Phase P；更完整 trace analytics 可在 Phase Q 做 regression report。
+更丰富 trace analytics UI 可作为后续 UX 扩展；Phase P 已完成真实 SubagentRunner，Phase Q 已完成 eval regression report。
 
 Next phase:
-Phase P/Q
+Release hardening / UX refinement
 
 Verification:
 Workbench helper tests 覆盖 risk/latest status、composer 展开、trace summary 和 subagent placeholder；runtime replay 继续覆盖 timeline 基础事件。
@@ -439,3 +439,25 @@ Phase Q
 
 Verification:
 Vitest 覆盖 contract normalization、permission scope、child session/run、scheduler dedupe/parallel、review merge 和 UI tree；eval 覆盖 explorer/verifier/reviewer/advisor/parallel merge gate。
+
+## Capability: Release Governance / Entropy Cleanup
+
+Target:
+让 agent harness 随模型、配置、工具、eval 和 feature lifecycle 演进时保持可审计、可回归、可清理。
+
+Current status: 已实现
+
+Evidence files:
+`src/shared/agent/protocol.ts`, `src/main/agent/governance.ts`, `src/main/agent/featureStore.ts`, `src/main/agent/tools.ts`, `src/main/agent/index.ts`, `src/main/agent/trace.ts`, `src/preload/index.ts`, `src/renderer/env.d.ts`, `eval/governance.ts`, `tests/agent/governance.test.ts`
+
+Implemented details:
+已实现 `FeatureLifecycleStatus`/`FeatureLifecycleEntry`、`GovernanceAuditReport`、model upgrade review、eval regression report、config finding、scaffold cleanup candidate、migration compatibility result；`FeatureStoreSnapshot.lifecycle` 可从旧 feature snapshot 兼容生成；`run_governance_audit` deferred tool、`governance.audit`/`governance.report.read`/`model.upgrade.review` runtime op 和 `npm run governance:agent` CLI 均为只读入口。治理报告覆盖 prompt/tool/policy metadata、required release gates、deterministic eval fixtures、stale config、scaffold candidate 和 legacy migration。
+
+Missing pieces:
+在线模型目录、真实模型 A/B、自动升级模型、自动删除 scaffold、远程发布服务和专门治理 UI 不在 Phase Q 范围；scaffold cleanup 只报告候选项。
+
+Next phase:
+Release hardening / 按新需求扩展
+
+Verification:
+Vitest 覆盖 lifecycle migration、audit findings、model/eval/config/scaffold/migration 报告和 deferred tool artifact；`npm run governance:agent` 输出本地 deterministic JSON report。

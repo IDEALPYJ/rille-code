@@ -19,6 +19,10 @@ import type {
   SubagentRun,
   TraceEvent,
   AgentHookInvocation,
+  ConfigAuditFinding,
+  EvalRegressionReport,
+  GovernanceAuditReport,
+  ScaffoldCleanupCandidate,
   SkillActivation,
   VerificationResult,
 } from '../../shared/agent/protocol'
@@ -112,6 +116,10 @@ export function redactTraceEvent(event: TraceEvent): TraceEvent {
     case 'verification.ran': {
       const result = { ...event.result, output: redactSecrets(event.result.output) }
       return { ...event, result }
+    }
+    case 'governance.audit.completed': {
+      const report = { ...event.report, workspacePath: event.report.workspacePath ? '[redacted-workspace]' : undefined }
+      return { ...event, report }
     }
     default:
       return event
@@ -330,6 +338,55 @@ function deriveTraceEvents(event: { type: string; [key: string]: unknown }): Tra
         sessionId: event.sessionId as string,
         turnId: event.turnId as string,
         merge: event.merge as SubagentMergeResult,
+        createdAt: Date.now(),
+      }]
+    case 'governance.audit.started':
+      return [{
+        type: 'governance.audit.started',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string | undefined,
+        reportId: event.reportId as string,
+        createdAt: Date.now(),
+      }]
+    case 'governance.audit.completed':
+      return [{
+        type: 'governance.audit.completed',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string | undefined,
+        report: event.report as GovernanceAuditReport,
+        createdAt: Date.now(),
+      }]
+    case 'governance.audit.failed':
+      return [{
+        type: 'governance.audit.failed',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string | undefined,
+        reportId: event.reportId as string,
+        error: event.error as string,
+        createdAt: Date.now(),
+      }]
+    case 'eval.regression.reported':
+      return [{
+        type: 'eval.regression.reported',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string | undefined,
+        report: event.report as EvalRegressionReport,
+        createdAt: Date.now(),
+      }]
+    case 'config.audit.completed':
+      return [{
+        type: 'config.audit.completed',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string | undefined,
+        findings: event.findings as ConfigAuditFinding[],
+        createdAt: Date.now(),
+      }]
+    case 'scaffold.cleanup.reported':
+      return [{
+        type: 'scaffold.cleanup.reported',
+        sessionId: event.sessionId as string,
+        turnId: event.turnId as string | undefined,
+        candidates: event.candidates as ScaffoldCleanupCandidate[],
         createdAt: Date.now(),
       }]
     case 'artifact.created':

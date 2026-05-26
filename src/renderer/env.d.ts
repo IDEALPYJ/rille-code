@@ -20,6 +20,8 @@ import type {
   EditProposal,
   ExecutionSandbox,
   PlanConfirmation,
+  GovernanceAuditReport,
+  ModelUpgradeReview,
   RuntimeProcessSummary,
   RuntimeStateArtifact,
   ExtensionDiscoverySnapshot,
@@ -417,6 +419,9 @@ declare global {
     agentDismissReviewFinding(sessionId: string, findingId: string, reason?: string, turnId?: string): Promise<AgentSession | null>
     agentCompactContext(sessionId: string, turnId?: string, reason?: string): Promise<CompactionResult>
     agentExportTrace(sessionId: string, redacted?: boolean): Promise<TraceEvent[]>
+    agentRunGovernanceAudit(sessionId: string, workspace?: AgentWorkspaceLocation | null, turnId?: string): Promise<GovernanceAuditReport>
+    agentReadGovernanceReport(sessionId: string): Promise<GovernanceAuditReport>
+    agentReviewModelUpgrade(sessionId: string, workspace?: AgentWorkspaceLocation | null): Promise<ModelUpgradeReview>
     agentRefreshExtensions(sessionId: string, workspace?: AgentWorkspaceLocation | null): Promise<ExtensionDiscoverySnapshot>
     agentListSkills(sessionId: string, workspace?: AgentWorkspaceLocation | null): Promise<SkillContract[]>
     agentListPlugins(sessionId: string, workspace?: AgentWorkspaceLocation | null): Promise<PluginManifest[]>

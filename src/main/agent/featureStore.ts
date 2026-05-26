@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import type { FeatureItem, FeatureStoreSnapshot, ProgressState } from '../../shared/agent/protocol'
+import type { FeatureItem, FeatureLifecycleEntry, FeatureLifecycleStatus, FeatureStoreSnapshot, ProgressState } from '../../shared/agent/protocol'
 
 function featurePath(workspacePath: string): string {
   return join(workspacePath, '.rille', 'features.json')
@@ -16,6 +16,40 @@ function validFeature(item: unknown): item is FeatureItem {
   return typeof value.id === 'string' && typeof value.title === 'string' && typeof value.status === 'string'
 }
 
+function lifecycleStatusForFeature(status: FeatureItem['status']): FeatureLifecycleStatus {
+  if (status === 'verified') return 'verified'
+  if (status === 'dropped') return 'removed'
+  if (status === 'blocked') return 'active'
+  if (status === 'not_started') return 'planned'
+  return 'active'
+}
+
+function validLifecycle(item: unknown): item is FeatureLifecycleEntry {
+  if (!item || typeof item !== 'object') return false
+  const value = item as Partial<FeatureLifecycleEntry>
+  return typeof value.featureId === 'string'
+    && ['planned', 'active', 'verified', 'deprecated', 'removed'].includes(String(value.status))
+    && Array.isArray(value.evidenceRefs)
+}
+
+export function lifecycleFromFeatures(features: FeatureItem[], existing: FeatureLifecycleEntry[] = []): FeatureLifecycleEntry[] {
+  const existingById = new Map(existing.filter(validLifecycle).map(entry => [entry.featureId, entry]))
+  return features.map(feature => {
+    const current = existingById.get(feature.id)
+    return {
+      featureId: feature.id,
+      status: current?.status || lifecycleStatusForFeature(feature.status),
+      source: current?.source || 'feature_store',
+      owner: current?.owner,
+      lastVerifiedAt: current?.lastVerifiedAt || (feature.status === 'verified' ? feature.updatedAt : undefined),
+      evidenceRefs: current?.evidenceRefs?.length ? current.evidenceRefs : feature.evidenceRefs,
+      deprecationNote: current?.deprecationNote,
+      removalNote: current?.removalNote,
+      updatedAt: current?.updatedAt || feature.updatedAt,
+    }
+  })
+}
+
 export class FeatureStore {
   constructor(private readonly workspacePath: string) {}
 
@@ -27,6 +61,10 @@ export class FeatureStore {
       return {
         taskContractId: raw.taskContractId,
         featureList: Array.isArray(raw.featureList) ? raw.featureList.filter(validFeature) : [],
+        lifecycle: lifecycleFromFeatures(
+          Array.isArray(raw.featureList) ? raw.featureList.filter(validFeature) : [],
+          Array.isArray(raw.lifecycle) ? raw.lifecycle.filter(validLifecycle) : [],
+        ),
         updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : Date.now(),
       }
     } catch {
@@ -38,6 +76,7 @@ export class FeatureStore {
     const snapshot: FeatureStoreSnapshot = {
       taskContractId: progress.taskContractId,
       featureList: progress.featureList,
+      lifecycle: lifecycleFromFeatures(progress.featureList),
       updatedAt: Date.now(),
     }
     ensureRilleDir(this.workspacePath)

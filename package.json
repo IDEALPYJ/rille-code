@@ -9,7 +9,8 @@
     "preview": "electron-vite preview",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
-    "eval:agent": "node --experimental-strip-types eval/runner.ts"
+    "eval:agent": "node --experimental-strip-types eval/runner.ts",
+    "governance:agent": "node --experimental-strip-types eval/governance.ts"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

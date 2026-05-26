@@ -21,6 +21,8 @@ import type {
   EditProposal,
   ExecutionSandbox,
   PlanConfirmation,
+  GovernanceAuditReport,
+  ModelUpgradeReview,
   RuntimeProcessSummary,
   RuntimeStateArtifact,
   ExtensionDiscoverySnapshot,
@@ -132,6 +134,9 @@ export interface RilleAPI {
   agentDismissReviewFinding(sessionId: string, findingId: string, reason?: string, turnId?: string): Promise<AgentSession | null>
   agentCompactContext(sessionId: string, turnId?: string, reason?: string): Promise<CompactionResult>
   agentExportTrace(sessionId: string, redacted?: boolean): Promise<TraceEvent[]>
+  agentRunGovernanceAudit(sessionId: string, workspace?: AgentWorkspaceLocation | null, turnId?: string): Promise<GovernanceAuditReport>
+  agentReadGovernanceReport(sessionId: string): Promise<GovernanceAuditReport>
+  agentReviewModelUpgrade(sessionId: string, workspace?: AgentWorkspaceLocation | null): Promise<ModelUpgradeReview>
   agentRefreshExtensions(sessionId: string, workspace?: AgentWorkspaceLocation | null): Promise<ExtensionDiscoverySnapshot>
   agentListSkills(sessionId: string, workspace?: AgentWorkspaceLocation | null): Promise<SkillContract[]>
   agentListPlugins(sessionId: string, workspace?: AgentWorkspaceLocation | null): Promise<PluginManifest[]>
@@ -587,6 +592,9 @@ const api: RilleAPI = {
     const result = await invokeAgent<{ traceEvents: TraceEvent[] }>('agent:dispatch', { type: 'trace.export', sessionId, redacted })
     return result.traceEvents
   },
+  agentRunGovernanceAudit: (sessionId, workspace, turnId) => invokeAgent<GovernanceAuditReport>('agent:dispatch', { type: 'governance.audit', sessionId, workspace, turnId }),
+  agentReadGovernanceReport: (sessionId) => invokeAgent<GovernanceAuditReport>('agent:dispatch', { type: 'governance.report.read', sessionId }),
+  agentReviewModelUpgrade: (sessionId, workspace) => invokeAgent<ModelUpgradeReview>('agent:dispatch', { type: 'model.upgrade.review', sessionId, workspace }),
   agentRefreshExtensions: (sessionId, workspace) => invokeAgent<ExtensionDiscoverySnapshot>('agent:dispatch', { type: 'extension.refresh', sessionId, workspace }),
   agentListSkills: (sessionId, workspace) => invokeAgent<SkillContract[]>('agent:dispatch', { type: 'skill.list', sessionId, workspace }),
   agentListPlugins: (sessionId, workspace) => invokeAgent<PluginManifest[]>('agent:dispatch', { type: 'plugin.list', sessionId, workspace }),

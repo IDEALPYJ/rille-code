@@ -20,7 +20,7 @@
 | N | Product UX Workbench | 已实现 |
 | O | Skills + Plugins + MCP | 已实现 |
 | P | Subagents + Advisor + Parallel Work | 已实现 |
-| Q | Release Governance + Entropy Cleanup | 未实现 |
+| Q | Release Governance + Entropy Cleanup | 已实现 |
 
 ## Phase A: Product Contract + System Boundaries
 
@@ -472,12 +472,12 @@ Checklist：
 
 Checklist：
 
-- [ ] Q1. feature lifecycle registry。
-- [ ] Q2. model upgrade checklist。
-- [ ] Q3. prompt/tool/policy audit command。
-- [ ] Q4. eval regression report。
-- [ ] Q5. stale config detection。
-- [ ] Q6. scaffold removal process。
-- [ ] Q7. migration compatibility tests。
+- [x] Q1. feature lifecycle registry。
+- [x] Q2. model upgrade checklist。
+- [x] Q3. prompt/tool/policy audit command。
+- [x] Q4. eval regression report。
+- [x] Q5. stale config detection。
+- [x] Q6. scaffold removal process。
+- [x] Q7. migration compatibility tests。
 
-当前状态：未实现。
+当前状态：已实现。Phase Q 已落地 deterministic governance audit：`FeatureStoreSnapshot.lifecycle` 兼容旧 feature snapshot；`run_governance_audit` deferred tool、runtime IPC op 与 `npm run governance:agent` 提供只读入口；治理报告覆盖 model upgrade checklist、prompt/tool/policy audit、eval regression、stale config、scaffold cleanup candidate 和 migration compatibility，且 scaffold 只报告不自动删除。

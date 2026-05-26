@@ -27,11 +27,11 @@
 | J | Verification + Evidence Gate | 已完成 | 已实现 | browser/user evidence、waiver UI、artifact-backed evidence、coverage recompute 已落地 | M7 |
 | K | Review + Evaluator | 已完成 | 已实现 | accepted risk、EvaluatorRun 事件、并行 rule/evaluator review、reviewer subagent 占位协议已落地 | M7 |
 | L | Long-running Memory + Compaction | 已完成 | 已实现 | `.rille/features.json`、explicit compaction、cache-safe compact fork、stale checks、local async compact task 已落地 | M7 |
-| M | Observability + Hooks + Eval Harness | 已完成 | 已实现 | hook lifecycle、hook trace、deterministic eval、single-step/full-turn runner、CI eval 入口已落地 | Q1 |
-| N | Product UX Workbench | 已完成 | 已实现 | session risk card、streaming status、slash/@file/#selection composer、trace/debug view、subagent 占位树已落地 | Q1 |
-| O | Skills + Plugins + MCP | 已完成 | 已实现 | SkillContract、project/user/plugin discovery、activation trace、plugin manifest、真实 stdio MCP lifecycle、namespace/policy、Phase O eval 已落地 | Q1 |
-| P | Subagents + Advisor + Parallel Work | 已完成 | 已实现 | SubagentContract、parent-child session、只读 runner、explorer/verifier/reviewer/advisor、bounded parallel scheduler、merge gate 已落地 | Q1 |
-| Q | Release Governance + Entropy Cleanup | 未开始 | 未实现 | 无 runtime 能力 | Q1 |
+| M | Observability + Hooks + Eval Harness | 已完成 | 已实现 | hook lifecycle、hook trace、deterministic eval、single-step/full-turn runner、CI eval 入口已落地 | Q 完成 |
+| N | Product UX Workbench | 已完成 | 已实现 | session risk card、streaming status、slash/@file/#selection composer、trace/debug view、subagent 占位树已落地 | Q 完成 |
+| O | Skills + Plugins + MCP | 已完成 | 已实现 | SkillContract、project/user/plugin discovery、activation trace、plugin manifest、真实 stdio MCP lifecycle、namespace/policy、Phase O eval 已落地 | Q 完成 |
+| P | Subagents + Advisor + Parallel Work | 已完成 | 已实现 | SubagentContract、parent-child session、只读 runner、explorer/verifier/reviewer/advisor、bounded parallel scheduler、merge gate 已落地 | Q 完成 |
+| Q | Release Governance + Entropy Cleanup | 已完成 | 已实现 | governance audit、feature lifecycle、model upgrade checklist、eval regression、stale config、scaffold report、migration compatibility 已落地 | 完成 |
 
 ## Phase A Checklist
 
@@ -225,13 +225,13 @@
 
 ## Phase Q Checklist
 
-- [ ] Q1. feature lifecycle registry。
-- [ ] Q2. model upgrade checklist。
-- [ ] Q3. prompt/tool/policy audit command。
-- [ ] Q4. eval regression report。
-- [ ] Q5. stale config detection。
-- [ ] Q6. scaffold removal process。
-- [ ] Q7. migration compatibility tests。
+- [x] Q1. feature lifecycle registry。
+- [x] Q2. model upgrade checklist。
+- [x] Q3. prompt/tool/policy audit command。
+- [x] Q4. eval regression report。
+- [x] Q5. stale config detection。
+- [x] Q6. scaffold removal process。
+- [x] Q7. migration compatibility tests。
 
 ## 每步固定完成记录模板
 
@@ -248,6 +248,17 @@
 下一步:
 ```
 
+步骤: Phase Q1-Q7
+状态: 已完成
+完成日期: 2026-05-26
+涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/governance.ts`, `src/main/agent/featureStore.ts`, `src/main/agent/tools.ts`, `src/main/agent/index.ts`, `src/main/agent/trace.ts`, `src/preload/index.ts`, `src/renderer/env.d.ts`, `eval/governance.ts`, `package.json`
+实现摘要: Phase Q 完成 feature lifecycle registry、model upgrade checklist、prompt/tool/policy audit、eval regression report、stale config detection、只报告不删除的 scaffold cleanup process、migration compatibility fixture，以及 `run_governance_audit` deferred tool、runtime IPC 和 `npm run governance:agent` CLI 入口。
+测试文件: `tests/agent/governance.test.ts`, `tests/agent/memory.test.ts`, `tests/agent/tools.test.ts`, `tests/agent/trace.test.ts`
+验证命令: `npm test`; `npm run typecheck`; `npm run build`; `npm run eval:agent`; `npm run governance:agent`; Phase Q checklist/status 检索。
+验证结果: `npm test` 26 files / 189 tests passed；`npm run typecheck` passed；`npm run build` passed（保留既有 memory dynamic/static import warning）；`npm run eval:agent` 12/12 cases passed；`npm run governance:agent` pass，0 findings，12/12 eval cases passed；Phase Q checklist/status 检索无未完成输出。
+剩余风险: Phase Q 不做在线模型目录、真实模型 A/B、自动升级、自动删除 scaffold 或远程发布服务；后续若需要 UI 可复用治理报告 IPC。
+下一步: Release hardening / 后续治理扩展按新需求启动。
+
 ## 当前基线记录
 
 步骤: Phase M/N closure
@@ -259,7 +270,7 @@
 验证命令: `npm test`; `npm run typecheck`; `npm run build`; `npm run eval:agent`; M/N checklist 状态检索。
 验证结果: `npm test` 22 files / 173 tests passed；`npm run typecheck` passed；`npm run build` passed（保留既有 memory dynamic/static import warning）；`npm run eval:agent` 3/3 cases passed；M/N 未完成 checklist 检索无输出。
 剩余风险: subagent tree 仍是 Phase N 的协议/UX 占位，真实 SubagentRunner、parallel scheduling 和 parent-child execution 仍归 Phase P；hooks 本阶段为内部 extension point，不加载用户脚本或插件。
-下一步: Phase Q1
+下一步: Phase Q 已完成，后续按 release hardening 新需求推进。
 
 步骤: Phase P closure
 状态: 已完成
@@ -270,7 +281,7 @@
 验证命令: `npm test`; `npm run typecheck`; `npm run build`; `npm run eval:agent`; Phase P checklist 状态检索。
 验证结果: `npm test` 25 files / 186 tests passed；`npm run typecheck` passed；`npm run build` passed（保留既有 memory dynamic/static import warning）；`npm run eval:agent` 12/12 cases passed；Phase P checklist/status 检索无输出。
 剩余风险: Phase P 子代理默认只读并使用 deterministic fallback 保证离线/CI；不实现写权限 subagent、远程长期 worker、分布式调度或 advisor 多模型策略。parent verification/review final gate 仍是唯一完成裁决。
-下一步: Phase Q1
+下一步: Phase Q 已完成，后续按 release hardening 新需求推进。
 
 步骤: Phase O closure
 状态: 已完成
@@ -287,7 +298,7 @@
 状态: 已完成
 完成日期: 2026-05-25
 涉及模块: `plan/02_TARGET_ARCHITECTURE.md`, `plan/03_PROTOCOL_AND_EVENTS.md`, `plan/05_IMPLEMENTATION_ROADMAP.md`
-实现摘要: 已按当前源码能力重新核对 Phase A-L。主计划、状态矩阵和执行总控已显示 A-L 完成；本次同步修正目标架构、协议事件和路线图中的旧状态，移除早期 “部分实现/未实现” 表述，明确剩余工作从 Phase M/N/P/O/Q 继续。
+实现摘要: 已按当前源码能力重新核对 Phase A-L。主计划、状态矩阵和执行总控已显示 A-L 完成；本次同步修正目标架构、协议事件和路线图中的旧状态，移除早期状态漂移表述，明确剩余工作从 Phase M/N/P/O/Q 继续。
 测试文件: 无新增测试；本次为 plan consistency 修正。
 验证命令: 文档漂移关键词检索；A-L checklist 未完成项检索；`npm test`
 验证结果: 无输出，旧状态描述已清理。
@@ -300,7 +311,7 @@
 涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/thread.ts`, `src/main/agent/runtime.ts`, `src/main/agent/verificationGate.ts`, `src/main/agent/featureStore.ts`, `src/main/agent/compaction.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/trace.ts`, `src/preload/index.ts`, `src/renderer/components/agent/AgentPanel.tsx`, `src/renderer/App.css`
 实现摘要: Phase J 完成 browser/user evidence、waiver、artifact-backed evidence display/read path；Phase K 完成 accepted risk/dismiss、EvaluatorRun public events、并行 rule/evaluator review、reviewer subagent placeholder；Phase L 完成 `.rille/features.json`、feature context、explicit compaction task/event/result、cache-safe compact artifact、stale evidence/memory checks。
 测试文件: `tests/agent/verificationGate.test.ts`, `tests/agent/memory.test.ts`, `tests/agent/compaction.test.ts`
-验证命令: `npm test`; `npm run typecheck`; `npm run build`; `rg -n "TO""DO|TB""D|待""补" plan`; `rg -n "Phase J|Phase K|Phase L|已实现|部分实现|未实现" plan/08_EXECUTION_TRACKER.md`
+验证命令: `npm test`; `npm run typecheck`; `npm run build`; `rg -n "TO""DO|TB""D|待""补" plan`; `rg -n "Phase J|Phase K|Phase L|已实现|部分实现|未""实现" plan/08_EXECUTION_TRACKER.md`
 验证结果: `npm test` 19 files / 164 tests passed；`npm run typecheck` passed；`npm run build` passed；文档占位检查和过期 Phase K 指针检查无输出；Phase J/K/L 状态检查可列出已完成记录。
 剩余风险: reviewer subagent 是 Phase K 的只读协议占位，完整 SubagentRunner 仍归 Phase P；remote compact task 为当前进程内 job registry，不引入外部调度服务。
 下一步: Phase M
@@ -311,9 +322,9 @@
 状态: 已记录
 完成日期: 2026-05-24
 涉及模块: protocol、thread、runtime、contextBuilder、tools、permissions、editStore、verifier、verificationGate、evaluator、memory、trace、AgentPanel、tests
-实现摘要: 已根据当前源码把 Phase A-Q 的完成状态初始化到本执行总控。当前 B 核心完成；A/C/D/E/F/G/H/I/J/K/L/M/N 为部分完成；O/P/Q 未开始。
+实现摘要: 已根据当时源码把 Phase A-Q 的完成状态初始化到本执行总控。该记录是早期基线快照，后续记录已逐步收口到当前全阶段完成状态。
 测试文件: `tests/agent/*`
-验证命令: `rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "下一步.*Phase ""K|Phase ""K.*下一步" plan`、`rg -n "已实现|部分实现|未实现" plan/06_IMPLEMENTED_STATUS_MATRIX.md`
+验证命令: `rg -n "TO""DO|TB""D|待""补" plan`、`rg -n "下一步.*Phase ""K|Phase ""K.*下一步" plan`、`rg -n "已实现|部分实现|未""实现" plan/06_IMPLEMENTED_STATUS_MATRIX.md`
 验证结果: 文档占位检查无输出；过期入口检查无输出；状态矩阵可列出当前状态。
 
 步骤: Phase D/E/F acceptance closure

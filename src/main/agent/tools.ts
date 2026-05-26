@@ -39,6 +39,7 @@ import {
 import { createArtifact } from './artifactStore'
 import { captureRuntimeState } from './runtimeState'
 import { VerifierRunner } from './verifier'
+import { runGovernanceAudit } from './governance'
 
 export interface RuntimeToolCall {
   id: string
@@ -901,6 +902,50 @@ export const toolRegistry: RegisteredTool[] = [
         structured: { result, evidence },
         status: result.status === 'passed' || result.status === 'skipped' ? 'ok' : 'error',
         error: result.status === 'failed' || result.status === 'blocked' ? 'verification_failed' : undefined,
+      }
+    },
+  },
+  {
+    definition: {
+      name: 'run_governance_audit',
+      title: '运行治理审计',
+      description: 'Run deterministic release-governance checks without API keys or workspace mutation. Input: {}.',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      isReadOnly: true,
+      risk: 'low',
+      deferred: true,
+      category: 'governance',
+      keywords: ['governance', 'audit', 'release', 'config', 'eval', 'scaffold'],
+      activationHint: 'Use when release readiness, config drift, eval regression, or scaffold cleanup status needs to be checked.',
+    },
+    visibility: 'model',
+    sideEffect: 'none',
+    validate: validateNoInput,
+    summarize: () => 'governance audit',
+    execute: async (_input, { session, turn, context }) => {
+      const report = runGovernanceAudit({
+        workspacePath: context.workspace?.path,
+        tools: getToolDefinitions(),
+      })
+      const artifact = createArtifact({
+        sessionId: session.id,
+        turnId: turn.id,
+        kind: 'runtime_state',
+        content: JSON.stringify(report, null, 2),
+        mimeType: 'application/json',
+      })
+      void appendSessionEvent({ type: 'governance.audit.started', sessionId: session.id, turnId: turn.id, reportId: report.id, createdAt: Date.now() })
+      void appendSessionEvent({ type: 'eval.regression.reported', sessionId: session.id, turnId: turn.id, report: report.evalRegression, createdAt: Date.now() })
+      void appendSessionEvent({ type: 'config.audit.completed', sessionId: session.id, turnId: turn.id, findings: report.configFindings, createdAt: Date.now() })
+      void appendSessionEvent({ type: 'scaffold.cleanup.reported', sessionId: session.id, turnId: turn.id, candidates: report.scaffoldCandidates, createdAt: Date.now() })
+      void appendSessionEvent({ type: 'governance.audit.completed', sessionId: session.id, turnId: turn.id, report, createdAt: Date.now() })
+      return {
+        output: `${report.summary}\nStatus: ${report.status}\nArtifact: ${artifact.id}`,
+        artifact,
+        artifactRef: artifact.id,
+        structured: { report: report as unknown as Record<string, unknown> },
+        status: report.status === 'fail' ? 'error' : 'ok',
+        error: report.status === 'fail' ? 'governance_audit_failed' : undefined,
       }
     },
   },

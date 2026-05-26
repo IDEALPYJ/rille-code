@@ -1,5 +1,5 @@
 import type { WebContents } from 'electron'
-import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, CompactionResult, EditProposal, ExecutionSandbox, ExtensionDiscoverySnapshot, McpServerState, PlanConfirmation, PluginManifest, RuntimeProcessSummary, RuntimeStateArtifact, SkillContract, SubagentRun } from '../../shared/agent/protocol'
+import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, CompactionResult, EditProposal, ExecutionSandbox, ExtensionDiscoverySnapshot, GovernanceAuditReport, McpServerState, ModelUpgradeReview, PlanConfirmation, PluginManifest, RuntimeProcessSummary, RuntimeStateArtifact, SkillContract, SubagentRun } from '../../shared/agent/protocol'
 import { deleteAgentModelProfile, listAgentModelProfiles, readAgentConfigSnapshot, saveAgentConfig, saveAgentModelProfile, selectAgentModelProfile } from './config'
 import { testAgentProvider } from './provider'
 import { AgentThread } from './thread'
@@ -13,8 +13,11 @@ import { createWorktreeSandbox, disposeSandbox, sandboxDiffAsProposals } from '.
 import { discoverExtensions } from './skillStore'
 import { listMcpServerStates, startMcpServer, stopMcpServer } from './mcpManager'
 import { cancelSubagentRun, listSubagentRuns, readSubagentRun, subagentRunsFromEvents, SubagentRunner } from './subagentRunner'
+import { runGovernanceAudit } from './governance'
+import { getToolDefinitions } from './tools'
 
 const threads = new Map<string, AgentThread>()
+const governanceReports = new Map<string, GovernanceAuditReport>()
 
 function ok<T>(value: T): AgentIpcResult<T> {
   return { ok: true, value }
@@ -153,6 +156,8 @@ type AgentDispatchValue =
   | McpServerState
   | SubagentRun[]
   | SubagentRun
+  | GovernanceAuditReport
+  | ModelUpgradeReview
   | { traceEvents: unknown[] }
 
 export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<AgentDispatchValue>> {
@@ -274,6 +279,36 @@ export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<Agent
         emit: event => void appendSessionEvent(event),
       })
       return ok(run)
+    }
+    if (op.type === 'governance.audit') {
+      const report = runGovernanceAudit({
+        workspacePath: op.workspace?.path ?? readSessionMeta(op.sessionId)?.workspace?.path ?? undefined,
+        tools: getToolDefinitions(),
+        modelProfiles: listAgentModelProfiles(),
+      })
+      governanceReports.set(op.sessionId, report)
+      void appendSessionEvent({ type: 'governance.audit.started', sessionId: op.sessionId, turnId: op.turnId, reportId: report.id, createdAt: Date.now() })
+      void appendSessionEvent({ type: 'eval.regression.reported', sessionId: op.sessionId, turnId: op.turnId, report: report.evalRegression, createdAt: Date.now() })
+      void appendSessionEvent({ type: 'config.audit.completed', sessionId: op.sessionId, turnId: op.turnId, findings: report.configFindings, createdAt: Date.now() })
+      void appendSessionEvent({ type: 'scaffold.cleanup.reported', sessionId: op.sessionId, turnId: op.turnId, candidates: report.scaffoldCandidates, createdAt: Date.now() })
+      void appendSessionEvent({ type: 'governance.audit.completed', sessionId: op.sessionId, turnId: op.turnId, report, createdAt: Date.now() })
+      return ok(report)
+    }
+    if (op.type === 'governance.report.read') {
+      return ok(governanceReports.get(op.sessionId) ?? runGovernanceAudit({
+        workspacePath: readSessionMeta(op.sessionId)?.workspace?.path ?? undefined,
+        tools: getToolDefinitions(),
+        modelProfiles: listAgentModelProfiles(),
+      }))
+    }
+    if (op.type === 'model.upgrade.review') {
+      const report = runGovernanceAudit({
+        workspacePath: op.workspace?.path ?? readSessionMeta(op.sessionId)?.workspace?.path ?? undefined,
+        tools: getToolDefinitions(),
+        modelProfiles: listAgentModelProfiles(),
+      })
+      governanceReports.set(op.sessionId, report)
+      return ok(report.modelUpgrade)
     }
     if ('sessionId' in op) {
       return ok(requireThread(op.sessionId).handle(op))
