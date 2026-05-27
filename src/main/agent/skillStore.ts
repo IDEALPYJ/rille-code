@@ -1,8 +1,11 @@
 import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'fs'
 import { tmpdir } from 'os'
-import { basename, extname, join, resolve } from 'path'
-import type { AgentWorkspaceLocation, ExtensionDiscoverySnapshot, McpServerConfig, PluginManifest, SkillContract, SkillSource, SkillTrust } from '../../shared/agent/protocol'
+import { basename, dirname, extname, join, resolve } from 'path'
+import type { AgentWorkspaceLocation, ExtensionDiscoverySnapshot, McpServerConfig, PluginHookManifest, PluginManifest, PluginSignature, SkillContract, SkillSource, SkillTrust } from '../../shared/agent/protocol'
+import type { AgentHookRegistry } from './hooks'
+import { PluginHookRunner } from './hookRunner'
+import { shouldLoadPluginHooks, verifyPluginSignature } from './pluginSignature'
 
 function now(): number {
   return Date.now()
@@ -124,11 +127,41 @@ function normalizePlugin(raw: unknown, filePath: string): PluginManifest | null 
     version: typeof data.version === 'string' ? data.version : '0.0.0',
     description: typeof data.description === 'string' ? data.description : id,
     skills,
-    hooks: Array.isArray(data.hooks) ? data.hooks.filter((item): item is string => typeof item === 'string') : [],
+    hooks: Array.isArray(data.hooks)
+      ? data.hooks.map((item): string | PluginHookManifest => {
+          if (typeof item === 'string') return item
+          if (typeof item === 'object' && item !== null) {
+            const h = item as Partial<PluginHookManifest>
+            return {
+              name: typeof h.name === 'string' ? h.name as PluginHookManifest['name'] : 'turn.start',
+              entrypoint: typeof h.entrypoint === 'string' ? h.entrypoint : '',
+              permissions: Array.isArray(h.permissions) ? h.permissions : [],
+              timeoutMs: typeof h.timeoutMs === 'number' && h.timeoutMs > 0 ? h.timeoutMs : 30000,
+              sandbox: h.sandbox === 'process' || h.sandbox === 'none' ? h.sandbox : 'process',
+              envAllowlist: Array.isArray(h.envAllowlist) ? h.envAllowlist : [],
+            } as PluginHookManifest
+          }
+          return typeof item === 'string' ? item : ''
+        }).filter((item): item is string | PluginHookManifest => typeof item === 'object' || (typeof item === 'string' && item.length > 0))
+      : [],
     mcpServers,
     toolNamespaces: Array.isArray(data.toolNamespaces) ? data.toolNamespaces.filter((item): item is string => typeof item === 'string') : [id],
     enabled: data.enabled !== false,
     filePath,
+    signature: data.signature && typeof data.signature === 'object'
+      ? (() => {
+          const s = data.signature as unknown as Record<string, unknown>
+          return {
+            algorithm: s.algorithm === 'sha256' || s.algorithm === 'minisign' || s.algorithm === 'gpg'
+              ? s.algorithm as PluginSignature['algorithm']
+              : 'sha256' as const,
+            signature: typeof s.signature === 'string' ? s.signature : '',
+            signerKeyId: typeof s.signerKeyId === 'string' ? s.signerKeyId : undefined,
+            signedAt: typeof s.signedAt === 'number' ? s.signedAt : 0,
+          }
+        })()
+      : undefined,
+    trust: data.trust === 'trusted' || data.trust === 'untrusted' || data.trust === 'unknown_signer' ? data.trust : undefined,
   }
 }
 
@@ -206,6 +239,48 @@ export function activateSkill(input: { skillId: string; reason: string; sessionI
       createdAt: Date.now(),
     },
   }
+}
+
+export function loadPluginHooks(plugins: PluginManifest[], registry: AgentHookRegistry): Map<string, Array<() => void>> {
+  const unregisters = new Map<string, Array<() => void>>()
+  for (const plugin of plugins) {
+    if (!plugin.enabled) continue
+
+    // Verify trust before loading hooks
+    const verification = verifyPluginSignature(plugin)
+    plugin.trust = verification.trust
+    if (!shouldLoadPluginHooks(plugin)) continue
+
+    const pluginDir = plugin.filePath ? dirname(plugin.filePath) : ''
+
+    for (const hookEntry of plugin.hooks) {
+      if (typeof hookEntry === 'string') continue // legacy: bare name, no entrypoint
+
+      const manifest = hookEntry as PluginHookManifest
+      if (!manifest.entrypoint) continue
+
+      const runner = new PluginHookRunner(plugin.id, manifest, pluginDir)
+      const wrapped: import('./hooks').AgentHook = async (context) => {
+        context.pluginId = plugin.id
+        const result = await runner.execute(context)
+        if (result.status === 'failed') {
+          throw new Error(result.error ?? 'Hook execution failed')
+        }
+      }
+
+      const unregister = registry.register(manifest.name, wrapped)
+      if (!unregisters.has(plugin.id)) unregisters.set(plugin.id, [])
+      unregisters.get(plugin.id)!.push(unregister)
+    }
+  }
+  return unregisters
+}
+
+export function unloadPluginHooks(pluginId: string, unregisters: Map<string, Array<() => void>>): void {
+  const fns = unregisters.get(pluginId)
+  if (!fns) return
+  for (const unregister of fns) unregister()
+  unregisters.delete(pluginId)
 }
 
 export function resolvePluginCommandCwd(plugin: PluginManifest, server: McpServerConfig, workspace?: AgentWorkspaceLocation | null): string | undefined {

@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | R | MCP HTTP/SSE + Auth/Reconnect | 已实现 |
 | S | Windows Compatibility + Sandbox | 部分实现 |
-| T | User Hooks + Plugin Runtime | 未实现 |
+| T | User Hooks + Plugin Runtime | 已实现 |
 | U | Writable / Real LLM Subagents + Worktree Merge | 部分实现 |
 | V | Automations + Review Queue | 未实现 |
 | W | Remote / Cloud Worker | 部分实现 |
@@ -47,12 +47,12 @@ Checklist：
 
 Checklist：
 
-- [ ] T1. 定义 hook manifest 和权限声明。
-- [ ] T2. 从 plugin discovery 加载 hook entry。
-- [ ] T3. 实现 hook sandbox、timeout、env allowlist 和 redacted payload。
-- [ ] T4. hook 副作用必须走 tool/proposal，不允许直接写 workspace。
-- [ ] T5. 增加 hook trace、artifact、失败非阻塞策略。
-- [ ] T6. 增加插件签名和信任状态。
+- [x] T1. 定义 hook manifest 和权限声明。
+- [x] T2. 从 plugin discovery 加载 hook entry。
+- [x] T3. 实现 hook sandbox、timeout、env allowlist 和 redacted payload。
+- [x] T4. hook 副作用必须走 tool/proposal，不允许直接写 workspace。
+- [x] T5. 增加 hook trace、artifact、失败非阻塞策略。
+- [x] T6. 增加插件签名和信任状态。
 
 ## Phase U: Writable / Real LLM Subagents + Worktree Merge
 

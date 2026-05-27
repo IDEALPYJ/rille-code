@@ -229,6 +229,11 @@ export class AgentLoop {
       reviewResult: this.reviewResult,
       codeChanged: input.codeChanged,
       signal: this.options.signal,
+      emitProposal: proposal => {
+        this.proposedFiles.add(proposal.filePath)
+        if (!this.changedFiles.includes(proposal.filePath)) this.changedFiles.push(proposal.filePath)
+        this.options.emit({ type: 'edit.proposed', sessionId: this.options.session.id, turnId: this.options.turn.id, proposal })
+      },
       emit: event => this.options.emit(event),
     }))
     this.subagentRuns = [...this.subagentRuns.filter(item => item.id !== run.id), run]
@@ -848,6 +853,14 @@ export class AgentLoop {
       findingIds: review.findings.filter(item => item.source === 'subagent').map(item => item.id),
     })
     this.options.emit({ type: 'subagent.merged', sessionId: this.options.session.id, turnId: this.options.turn.id, merge })
+    if (merge.mergeStatus === 'blocked') {
+      review = {
+        ...review,
+        status: 'blocked',
+        summary: `${review.summary}\nSubagent merge gate blocked: writable subagent proposals are missing or blocked.`,
+      }
+      this.emitReview(review)
+    }
     if (review.status !== 'approved') {
       this.emitObservation(observationFromReview(review))
       await this.runSubagent({

@@ -59,6 +59,35 @@ describe('permission decisions', () => {
     expect(decision.action).toBe('deny')
   })
 
+  it('allows read-only subagent launches but asks for isolated writable subagents', async () => {
+    const readOnly = await decidePermission({
+      call: { id: 'tool_1', name: 'launch_subagent', input: { role: 'explorer', goal: 'inspect files' } },
+      mode: 'ask',
+      sessionId: 'session_1',
+      turnId: 'turn_1',
+    })
+    expect(readOnly.action).toBe('allow')
+
+    const writable = await decidePermission({
+      call: { id: 'tool_2', name: 'launch_subagent', input: { role: 'explorer', goal: 'edit safely', permissionScope: 'isolated_write', commands: ['npm test'] } },
+      mode: 'ask',
+      sessionId: 'session_1',
+      turnId: 'turn_1',
+    })
+    expect(writable.action).toBe('ask')
+    expect(writable.policyDecision.sandboxRequired).toBe(true)
+  })
+
+  it('denies isolated writable subagents in plan mode', async () => {
+    const decision = await decidePermission({
+      call: { id: 'tool_1', name: 'launch_subagent', input: { role: 'explorer', goal: 'edit safely', permissionScope: 'isolated_write', commands: ['npm test'] } },
+      mode: 'plan',
+      sessionId: 'session_1',
+      turnId: 'turn_1',
+    })
+    expect(decision.action).toBe('deny')
+  })
+
   it('asks for test commands and includes command details', async () => {
     const decision = await decidePermission({
       call: { id: 'tool_1', name: 'run_command', input: { commandLine: 'npm run typecheck', cwd: '.', timeoutMs: 1000 } },

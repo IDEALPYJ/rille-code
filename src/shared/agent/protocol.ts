@@ -495,7 +495,10 @@ export interface EvaluatorRun {
 }
 
 export type SubagentRole = 'explorer' | 'verifier' | 'reviewer' | 'advisor'
-export type SubagentPermissionScope = 'read_only' | 'verify_only' | 'review_only' | 'advisory_only'
+export type SubagentPermissionScope = 'read_only' | 'verify_only' | 'review_only' | 'advisory_only' | 'isolated_write'
+export type SubagentExecutionMode = 'read_only' | 'local_worktree' | 'remote_worker'
+export type SubagentFallbackMode = 'strict' | 'visible_deterministic'
+export type SubagentMergeStatus = 'not_applicable' | 'ready' | 'blocked' | 'failed'
 export type SubagentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 
 export interface SubagentContract {
@@ -505,9 +508,12 @@ export interface SubagentContract {
   role: SubagentRole
   goal: string
   permissionScope: SubagentPermissionScope
+  executionMode?: SubagentExecutionMode
   allowedTools: string[]
   focusFiles?: string[]
   outputSchema: string
+  modelProfileId?: string
+  fallbackMode?: SubagentFallbackMode
   createdAt: number
 }
 
@@ -522,6 +528,11 @@ export interface SubagentResult {
   artifactRefs?: string[]
   recommendedActions?: string[]
   childSessionId?: string
+  proposalIds?: string[]
+  verificationRefs?: string[]
+  fallbackMode?: SubagentFallbackMode
+  fallbackReason?: string
+  mergeStatus?: SubagentMergeStatus
   usage?: AgentUsage
   error?: string
   createdAt: number
@@ -537,6 +548,14 @@ export interface SubagentRun {
   role: SubagentRole
   status: SubagentRunStatus
   result?: SubagentResult
+  executionMode?: SubagentExecutionMode
+  sandboxId?: string
+  sandboxWorkspace?: AgentWorkspaceLocation
+  modelProfileId?: string
+  fallbackMode?: SubagentFallbackMode
+  proposalIds?: string[]
+  verificationRefs?: string[]
+  mergeStatus?: SubagentMergeStatus
   error?: string
   createdAt: number
   completedAt?: number
@@ -549,6 +568,8 @@ export interface SubagentMergeResult {
   runIds: string[]
   mergedObservationIds: string[]
   mergedFindingIds: string[]
+  proposalIds?: string[]
+  mergeStatus?: SubagentMergeStatus
   advisorySummary?: string
   createdAt: number
 }
@@ -959,17 +980,55 @@ export interface McpToolDescriptor {
   readOnly: boolean
 }
 
+// === Plugin Hooks (Phase T) ===
+
+export type HookPermission = 'workspace.read' | 'workspace.write' | 'process.run' | 'network.access' | 'file.read' | 'file.write'
+
+export type PluginHookSandbox = 'process' | 'none'
+
+export interface PluginHookManifest {
+  name: AgentHookName
+  entrypoint: string
+  permissions: HookPermission[]
+  timeoutMs: number
+  sandbox: PluginHookSandbox
+  envAllowlist: string[]
+}
+
+export interface PluginSignature {
+  algorithm: 'sha256' | 'minisign' | 'gpg'
+  signature: string
+  signerKeyId?: string
+  signedAt: number
+}
+
+export type PluginTrust = 'trusted' | 'untrusted' | 'unknown_signer'
+
+export interface HookRun {
+  id: string
+  pluginId: string
+  hookName: AgentHookName
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'denied'
+  durationMs: number
+  artifactRefs: string[]
+  redactedInput?: Record<string, unknown>
+  error?: string
+  createdAt: number
+}
+
 export interface PluginManifest {
   id: string
   name: string
   version: string
   description: string
   skills: SkillContract[]
-  hooks: string[]
+  hooks: Array<string | PluginHookManifest>
   mcpServers: McpServerConfig[]
   toolNamespaces: string[]
   enabled: boolean
   filePath?: string
+  signature?: PluginSignature
+  trust?: PluginTrust
 }
 
 export interface ExtensionDiscoverySnapshot {
@@ -1101,6 +1160,9 @@ export interface AgentHookInvocation {
   status: AgentHookStatus
   durationMs: number
   error?: string
+  pluginId?: string
+  artifactRefs?: string[]
+  redactedInput?: Record<string, unknown>
   createdAt: number
 }
 
@@ -1121,12 +1183,18 @@ export type TraceEvent =
   | { type: 'checkpoint.created'; sessionId: string; turnId?: string; checkpoint: CheckpointRef; createdAt: number }
   | { type: 'context.compacted'; sessionId: string; turnId?: string; result: CompactionResult; createdAt: number }
   | { type: 'hook.invoked'; sessionId: string; turnId: string; hook: AgentHookInvocation; createdAt: number }
+  | { type: 'hook.run.started' | 'hook.run.completed'; sessionId: string; turnId: string; run: HookRun; createdAt: number }
+  | { type: 'hook.run.failed'; sessionId: string; turnId: string; run: HookRun; error: string; createdAt: number }
+  | { type: 'hook.run.denied'; sessionId: string; turnId: string; pluginId: string; hookName: AgentHookName; reason: string; createdAt: number }
   | { type: 'skill.activated'; sessionId: string; turnId: string; activation: SkillActivation; createdAt: number }
   | { type: 'plugin.loaded'; sessionId: string; activation: PluginActivation; createdAt: number }
   | { type: 'mcp.server.started' | 'mcp.server.completed' | 'mcp.server.failed' | 'mcp.server.stopped'; sessionId: string; state: McpServerState; createdAt: number }
   | { type: 'mcp.tool.discovered'; sessionId: string; tool: McpToolDescriptor; createdAt: number }
   | { type: 'subagent.started'; sessionId: string; turnId: string; run: SubagentRun; createdAt: number }
   | { type: 'subagent.progress'; sessionId: string; turnId: string; runId: string; message: string; createdAt: number }
+  | { type: 'subagent.sandbox.created'; sessionId: string; turnId: string; runId: string; sandbox: ExecutionSandbox; createdAt: number }
+  | { type: 'subagent.proposals.created'; sessionId: string; turnId: string; runId: string; proposalIds: string[]; mergeStatus: SubagentMergeStatus; createdAt: number }
+  | { type: 'subagent.merge.blocked'; sessionId: string; turnId: string; runId: string; reason: string; proposalIds?: string[]; createdAt: number }
   | { type: 'subagent.completed'; sessionId: string; turnId: string; run: SubagentRun; result: SubagentResult; createdAt: number }
   | { type: 'subagent.failed'; sessionId: string; turnId: string; run: SubagentRun; error: string; createdAt: number }
   | { type: 'subagent.merged'; sessionId: string; turnId: string; merge: SubagentMergeResult; createdAt: number }
@@ -1381,7 +1449,7 @@ export type AgentOp =
   | { type: 'mcp.server.list'; sessionId: string }
   | { type: 'mcp.server.start'; sessionId: string; pluginId: string; serverId: string; workspace?: AgentWorkspaceLocation | null }
   | { type: 'mcp.server.stop'; sessionId: string; pluginId: string; serverId: string }
-  | { type: 'subagent.launch'; sessionId: string; turnId?: string; role: SubagentRole; goal: string; reason?: string; focusFiles?: string[]; context?: AgentContextSnapshot }
+  | { type: 'subagent.launch'; sessionId: string; turnId?: string; role: SubagentRole; goal: string; reason?: string; focusFiles?: string[]; context?: AgentContextSnapshot; permissionScope?: SubagentPermissionScope; commands?: string[] }
   | { type: 'subagent.cancel'; sessionId: string; runId: string }
   | { type: 'subagent.list'; sessionId: string }
   | { type: 'subagent.read'; sessionId: string; runId: string }
@@ -1394,6 +1462,8 @@ export type AgentOp =
   | { type: 'memory.list'; workspacePath: string }
   | { type: 'context_source.list'; sessionId: string }
   | { type: 'context_source.toggle'; sessionId: string; entryId: string; enabled: boolean }
+  | { type: 'hook.list'; sessionId: string }
+  | { type: 'hook.test'; sessionId: string; pluginId: string; hookName: AgentHookName }
 
 export type AgentEvent =
   | { type: 'session.created'; session: AgentSession }
@@ -1433,6 +1503,10 @@ export type AgentEvent =
   | { type: 'trace.exported'; sessionId: string; format: 'json'; redacted: boolean; traceEvents: TraceEvent[] }
   | { type: 'trace.batch'; sessionId: string; turnId: string; traceEvents: TraceEvent[] }
   | { type: 'hook.invoked'; sessionId: string; turnId: string; hook: AgentHookInvocation }
+  | { type: 'hook.run.started'; sessionId: string; turnId: string; run: HookRun; createdAt: number }
+  | { type: 'hook.run.completed'; sessionId: string; turnId: string; run: HookRun; createdAt: number }
+  | { type: 'hook.run.failed'; sessionId: string; turnId: string; run: HookRun; error: string; createdAt: number }
+  | { type: 'hook.run.denied'; sessionId: string; turnId: string; pluginId: string; hookName: AgentHookName; reason: string; createdAt: number }
   | { type: 'skill.activated'; sessionId: string; turnId: string; activation: SkillActivation }
   | { type: 'plugin.loaded'; sessionId: string; activation: PluginActivation }
   | { type: 'mcp.server.started'; sessionId: string; state: McpServerState }
@@ -1442,6 +1516,9 @@ export type AgentEvent =
   | { type: 'mcp.tool.discovered'; sessionId: string; tool: McpToolDescriptor }
   | { type: 'subagent.started'; sessionId: string; turnId: string; run: SubagentRun }
   | { type: 'subagent.progress'; sessionId: string; turnId: string; runId: string; message: string; createdAt: number }
+  | { type: 'subagent.sandbox.created'; sessionId: string; turnId: string; runId: string; sandbox: ExecutionSandbox }
+  | { type: 'subagent.proposals.created'; sessionId: string; turnId: string; runId: string; proposalIds: string[]; mergeStatus: SubagentMergeStatus }
+  | { type: 'subagent.merge.blocked'; sessionId: string; turnId: string; runId: string; reason: string; proposalIds?: string[] }
   | { type: 'subagent.completed'; sessionId: string; turnId: string; run: SubagentRun; result: SubagentResult }
   | { type: 'subagent.failed'; sessionId: string; turnId: string; run: SubagentRun; error: string }
   | { type: 'subagent.merged'; sessionId: string; turnId: string; merge: SubagentMergeResult }

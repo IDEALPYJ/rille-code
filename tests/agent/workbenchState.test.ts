@@ -58,9 +58,23 @@ describe('agent workbench state helpers', () => {
         childSessionId: 'child_1',
         role: 'explorer',
         status: 'running',
-        contract: { id: 'c1', parentSessionId: 's1', parentTurnId: 't1', role: 'explorer', goal: 'explore', permissionScope: 'read_only', allowedTools: [], outputSchema: 'summary', createdAt: 1 },
+        executionMode: 'local_worktree',
+        fallbackMode: 'visible_deterministic',
+        mergeStatus: 'blocked',
+        proposalIds: [],
+        contract: { id: 'c1', parentSessionId: 's1', parentTurnId: 't1', role: 'explorer', goal: 'explore', permissionScope: 'isolated_write', executionMode: 'local_worktree', allowedTools: [], outputSchema: 'summary', fallbackMode: 'visible_deterministic', createdAt: 1 },
         createdAt: 1,
       } },
+      { type: 'subagent.sandbox.created', sessionId: 's1', turnId: 't1', runId: 'run_1', sandbox: {
+        id: 'sandbox_1',
+        sessionId: 's1',
+        workspace: { kind: 'local', path: '/repo', label: 'repo' },
+        sandboxWorkspace: { kind: 'worktree', path: '/tmp/sandbox', label: 'sandbox', origin: { kind: 'local', path: '/repo', label: 'repo' }, sandboxId: 'sandbox_1' },
+        status: 'ready',
+        createdAt: 1,
+        updatedAt: 1,
+      } },
+      { type: 'subagent.proposals.created', sessionId: 's1', turnId: 't1', runId: 'run_1', proposalIds: ['proposal_1'], mergeStatus: 'ready' },
       { type: 'subagent.completed', sessionId: 's1', turnId: 't1', run: {
         id: 'run_1',
         parentSessionId: 's1',
@@ -68,14 +82,20 @@ describe('agent workbench state helpers', () => {
         childSessionId: 'child_1',
         role: 'explorer',
         status: 'completed',
-        contract: { id: 'c1', parentSessionId: 's1', parentTurnId: 't1', role: 'explorer', goal: 'explore', permissionScope: 'read_only', allowedTools: [], outputSchema: 'summary', createdAt: 1 },
+        executionMode: 'local_worktree',
+        sandboxId: 'sandbox_1',
+        fallbackMode: 'visible_deterministic',
+        proposalIds: ['proposal_1'],
+        mergeStatus: 'ready',
+        contract: { id: 'c1', parentSessionId: 's1', parentTurnId: 't1', role: 'explorer', goal: 'explore', permissionScope: 'isolated_write', executionMode: 'local_worktree', allowedTools: [], outputSchema: 'summary', fallbackMode: 'visible_deterministic', createdAt: 1 },
         createdAt: 1,
         completedAt: 2,
-      }, result: { id: 'r1', contractId: 'c1', role: 'explorer', status: 'completed', summary: 'found files', createdAt: 1, completedAt: 2 } },
+      }, result: { id: 'r1', contractId: 'c1', role: 'explorer', status: 'completed', summary: 'found files', proposalIds: ['proposal_1'], fallbackMode: 'visible_deterministic', mergeStatus: 'ready', createdAt: 1, completedAt: 2 } },
     ]
 
     const nodes = subagentNodes(events)
     expect(nodes[0]).toMatchObject({ label: 'explorer subagent' })
+    expect(nodes[0]).toMatchObject({ scope: 'isolated_write', sandboxId: 'sandbox_1', proposalCount: 1, mergeStatus: 'ready' })
     expect(nodes[0].status).toContain('found files')
   })
 })

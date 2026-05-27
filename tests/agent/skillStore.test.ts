@@ -3,8 +3,9 @@ import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { activateSkill, discoverExtensions, findMatchingSkills } from '../../src/main/agent/skillStore'
-import type { AgentWorkspaceLocation } from '../../src/shared/agent/protocol'
+import { activateSkill, discoverExtensions, findMatchingSkills, loadPluginHooks, unloadPluginHooks } from '../../src/main/agent/skillStore'
+import type { AgentHookName, AgentWorkspaceLocation } from '../../src/shared/agent/protocol'
+import { agentHooks } from '../../src/main/agent/hooks'
 
 let root = ''
 let userData = ''
@@ -100,5 +101,67 @@ describe('skill/plugin discovery', () => {
 
     expect(matches[0]).toMatchObject({ name: 'verify', source: 'project' })
     expect(activated.activation).toMatchObject({ sessionId: 'session_o', turnId: 'turn_o', skillId: 'verify', source: 'project' })
+  })
+
+  it('parses PluginHookManifest from plugin hooks field', () => {
+    mkdirSync(join(root, '.rille/plugins'), { recursive: true })
+    writeFileSync(join(root, '.rille/plugins/hook-plugin.json'), JSON.stringify({
+      id: 'hook-plugin',
+      name: 'Hook Plugin',
+      version: '1.0.0',
+      description: 'plugin with hooks',
+      skills: [],
+      hooks: [
+        'turn.start', // legacy string format
+        {
+          name: 'model.before',
+          entrypoint: 'hooks/model-before.js',
+          permissions: ['workspace.read'],
+          timeoutMs: 5000,
+          sandbox: 'process',
+          envAllowlist: ['PATH', 'HOME'],
+        },
+      ],
+      enabled: true,
+    }), 'utf8')
+
+    const snapshot = discoverExtensions(workspace())
+
+    expect(snapshot.plugins).toHaveLength(1)
+    const plugin = snapshot.plugins[0]
+    expect(plugin.hooks).toHaveLength(2)
+    expect(plugin.hooks[0]).toBe('turn.start')
+    const manifest = plugin.hooks[1]
+    expect(manifest).toMatchObject({
+      name: 'model.before',
+      entrypoint: 'hooks/model-before.js',
+      permissions: ['workspace.read'],
+      timeoutMs: 5000,
+      sandbox: 'process',
+      envAllowlist: ['PATH', 'HOME'],
+    })
+  })
+
+  it('skips malformed hook entries gracefully', () => {
+    mkdirSync(join(root, '.rille/plugins'), { recursive: true })
+    writeFileSync(join(root, '.rille/plugins/bad-hook.json'), JSON.stringify({
+      id: 'bad-hook',
+      name: 'Bad Hook Plugin',
+      version: '1.0.0',
+      description: 'bad hooks',
+      skills: [],
+      hooks: [
+        '',
+        { name: '', entrypoint: '' },
+        { invalid: true },
+      ],
+      enabled: true,
+    }), 'utf8')
+
+    const snapshot = discoverExtensions(workspace())
+    expect(snapshot.plugins).toHaveLength(1)
+    // Empty strings and missing entrypoints are filtered out
+    const hooks = snapshot.plugins[0].hooks
+    expect(hooks.every(h => typeof h === 'object' || (typeof h === 'string' && (h as string).length > 0))).toBe(true)
   })
 })

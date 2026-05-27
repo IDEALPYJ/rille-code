@@ -6,12 +6,14 @@ export interface AgentHookContext {
   turnId: string
   name: AgentHookName
   payload?: Record<string, unknown>
+  pluginId?: string
 }
 
 export type AgentHook = (context: AgentHookContext) => void | Promise<void>
 
 export class AgentHookRegistry {
   private hooks = new Map<AgentHookName, AgentHook[]>()
+  hookTimeoutMs = 30_000
 
   register(name: AgentHookName, hook: AgentHook): () => void {
     const next = [...(this.hooks.get(name) || []), hook]
@@ -37,7 +39,10 @@ export class AgentHookRegistry {
     for (const hook of registered) {
       const hookStarted = Date.now()
       try {
-        await hook(context)
+        await Promise.race([
+          (async () => { await hook(context) })(),
+          new Promise<void>((_, reject) => setTimeout(() => reject(new Error('Hook timeout')), this.hookTimeoutMs)),
+        ])
         invocations.push(this.invocation(context, 'completed', hookStarted))
       } catch (error) {
         invocations.push(this.invocation(context, 'failed', hookStarted, error instanceof Error ? error.message : String(error)))
@@ -55,6 +60,7 @@ export class AgentHookRegistry {
       status,
       durationMs: Math.max(0, Date.now() - startedAt),
       error,
+      pluginId: context.pluginId,
       createdAt: Date.now(),
     }
   }

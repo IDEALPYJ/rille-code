@@ -645,10 +645,19 @@ function MessagePartView({
     )
   }
   if (part.type === 'subagent') {
+    const bits = [
+      part.run.contract.permissionScope,
+      part.run.executionMode,
+      part.run.modelProfileId ? `model ${part.run.modelProfileId}` : undefined,
+      part.run.fallbackMode ? `fallback ${part.run.fallbackMode}` : undefined,
+      part.run.sandboxId ? `sandbox ${part.run.sandboxId}` : undefined,
+      part.run.proposalIds?.length ? `${part.run.proposalIds.length} proposal${part.run.proposalIds.length === 1 ? '' : 's'}` : undefined,
+      part.run.mergeStatus && part.run.mergeStatus !== 'not_applicable' ? `merge ${part.run.mergeStatus}` : undefined,
+    ].filter(Boolean).join(' · ')
     return (
       <div className="agent-file-part">
         <Bot size={13} />
-        <span>{part.run.role} subagent · {part.run.status}{part.result?.summary ? ` · ${part.result.summary}` : ''}</span>
+        <span>{part.run.role} subagent · {part.run.status}{bits ? ` · ${bits}` : ''}{part.result?.summary ? ` · ${part.result.summary}` : ''}</span>
       </div>
     )
   }

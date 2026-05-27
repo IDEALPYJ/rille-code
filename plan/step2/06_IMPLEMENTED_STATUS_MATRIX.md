@@ -31,29 +31,35 @@ Phase S
 
 ## Capability: User Hooks and Plugin Runtime
 
-Current status: 未实现
+Current status: 已实现
 
 Step1 baseline:
 已有内部 hook lifecycle、hook trace、plugin manifest discovery、hooks 字段解析。
 
+Implemented details:
+`PluginHookManifest` 定义钩子声明（name/entrypoint/permissions/timeoutMs/sandbox/envAllowlist）和 `HookPermission` DSL；`PluginHookRunner` 实现子进程 fork sandbox（超时 SIGTERM→SIGKILL、env allowlist 过滤、redacted payload 白名单）；`hookWorker.ts` 子进程入口（IPC 通信、用户脚本加载、stdout/stderr 捕获）；`AgentHookRegistry` 新增 `hookTimeoutMs` 属性 + `Promise.race` 超时保护；`loadPluginHooks`/`unloadPluginHooks` 从插件发现到钩子注册的完整集成；`pluginSignature.ts` SHA-256 hash 签名验证 + trust 分配（trusted/untrusted/unknown_signer）；`PluginManifest` 扩展 `signature`/`trust` 字段，`hooks` 支持 `string[]` 和 `PluginHookManifest[]` 双格式。
+
 Missing pieces:
-用户脚本加载、hook manifest、sandbox、timeout、env allowlist、插件签名、hook policy 和审计 UI。
+minisign/gpg 签名验证（留到 Phase Z）；钩子输出 artifact 在 runtime event pipeline 中自动发射（需 Phase Y hook diagnostics 面板）；VM2 sandbox（当前仅 process 隔离）。
 
 Next phase:
-Phase T
+Phase U (Writable Subagents) 或 Phase Y (hook diagnostics 面板)
 
 ## Capability: Writable / Real LLM Subagents
 
-Current status: 部分实现
+Current status: 已实现
 
 Step1 baseline:
 已有 SubagentContract、parent-child session、只读 SubagentRunner、scheduler、subagent events、review merge。
 
+Implemented details:
+新增 `isolated_write` permission scope、`local_worktree` execution mode、`strict` / `visible_deterministic` fallback mode、role-specific model profile routing；writable subagent 自动创建 local Git worktree sandbox，在 sandbox 内运行显式命令并将 diff 转为父会话 `EditProposal`；主 workspace 不被 subagent 直接写入，apply 仍走既有 diff review。Runtime 增加 subagent proposal merge metadata，UI 展示 scope/model/fallback/sandbox/proposal/merge status。
+
 Missing pieces:
-写权限 scope、隔离 worktree/remote worker、命令执行、diff proposal 输出、真实模型必选/失败可见、多模型策略、merge conflict UI。
+remote/cloud worker 执行目标留到 Phase W；完整 agent-in-sandbox 工具循环可作为后续增强；独立 merge conflict 面板未新增，当前复用既有 diff proposal conflict UI。
 
 Next phase:
-Phase U
+Phase V (Automations + Review Queue) 或 Phase W (Remote / Cloud Worker)
 
 ## Capability: Automations and Review Queue
 

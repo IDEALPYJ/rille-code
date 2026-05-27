@@ -82,25 +82,61 @@ export function traceDebugSummary(traceEvents: TraceEvent[]): string {
   return `${traceEvents.length} events · ${fallbackCount} fallback · ${cacheCount} cache · ${hookCount} hooks`
 }
 
-export function subagentNodes(events: AgentEvent[]): Array<{ id: string; label: string; status: string }> {
-  const nodesById = new Map<string, { id: string; label: string; status: string }>()
+export interface SubagentNode {
+  id: string
+  label: string
+  status: string
+  scope?: string
+  modelProfileId?: string
+  fallbackMode?: string
+  sandboxId?: string
+  proposalCount?: number
+  mergeStatus?: string
+}
+
+export function subagentNodes(events: AgentEvent[]): SubagentNode[] {
+  const nodesById = new Map<string, SubagentNode>()
   for (const event of events) {
     if (event.type === 'subagent.started') {
       nodesById.set(event.run.id, {
         id: event.run.id,
         label: `${event.run.role} subagent`,
         status: `running · ${event.run.childSessionId}`,
+        scope: event.run.contract.permissionScope,
+        modelProfileId: event.run.modelProfileId,
+        fallbackMode: event.run.fallbackMode,
+        sandboxId: event.run.sandboxId,
+        proposalCount: event.run.proposalIds?.length ?? 0,
+        mergeStatus: event.run.mergeStatus,
       })
     }
     if (event.type === 'subagent.progress') {
       const current = nodesById.get(event.runId)
       if (current) nodesById.set(event.runId, { ...current, status: event.message })
     }
+    if (event.type === 'subagent.sandbox.created') {
+      const current = nodesById.get(event.runId)
+      if (current) nodesById.set(event.runId, { ...current, sandboxId: event.sandbox.id, status: `sandbox ready · ${event.sandbox.id}` })
+    }
+    if (event.type === 'subagent.proposals.created') {
+      const current = nodesById.get(event.runId)
+      if (current) nodesById.set(event.runId, { ...current, proposalCount: event.proposalIds.length, mergeStatus: event.mergeStatus, status: `${event.mergeStatus} · ${event.proposalIds.length} proposal${event.proposalIds.length === 1 ? '' : 's'}` })
+    }
+    if (event.type === 'subagent.merge.blocked') {
+      const current = nodesById.get(event.runId)
+      if (current) nodesById.set(event.runId, { ...current, proposalCount: event.proposalIds?.length ?? current.proposalCount, mergeStatus: 'blocked', status: `blocked · ${event.reason}` })
+    }
     if (event.type === 'subagent.completed') {
       nodesById.set(event.run.id, {
         id: event.run.id,
         label: `${event.run.role} subagent`,
         status: `completed · ${event.result.summary}`,
+        scope: event.run.contract.permissionScope,
+        modelProfileId: event.run.modelProfileId,
+        fallbackMode: event.result.fallbackMode ?? event.run.fallbackMode,
+        sandboxId: event.run.sandboxId,
+        proposalCount: event.result.proposalIds?.length ?? event.run.proposalIds?.length ?? 0,
+        mergeStatus: event.result.mergeStatus ?? event.run.mergeStatus,
       })
     }
     if (event.type === 'subagent.failed') {
@@ -108,6 +144,12 @@ export function subagentNodes(events: AgentEvent[]): Array<{ id: string; label: 
         id: event.run.id,
         label: `${event.run.role} subagent`,
         status: `failed · ${event.error}`,
+        scope: event.run.contract.permissionScope,
+        modelProfileId: event.run.modelProfileId,
+        fallbackMode: event.run.fallbackMode,
+        sandboxId: event.run.sandboxId,
+        proposalCount: event.run.proposalIds?.length ?? 0,
+        mergeStatus: event.run.mergeStatus,
       })
     }
     if (event.type === 'evaluator.started' || event.type === 'evaluator.completed' || event.type === 'evaluator.failed') {

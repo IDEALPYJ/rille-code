@@ -3,12 +3,18 @@ import type {
   AgentContextSnapshot,
   AgentEvent,
   AgentSession,
+  AgentTurn,
   AgentUsage,
+  EditProposal,
   Evidence,
+  ExecutionSandbox,
   ReviewFinding,
   ReviewResult,
   SubagentContract,
+  SubagentExecutionMode,
+  SubagentFallbackMode,
   SubagentMergeResult,
+  SubagentMergeStatus,
   SubagentPermissionScope,
   SubagentResult,
   SubagentRole,
@@ -19,6 +25,8 @@ import type {
 import { getAgentConfigForProvider } from './config'
 import { callAgentModelWithConfig, type AgentChatMessage } from './provider'
 import { appendSessionEvent, readSessionEvents, saveSessionMeta } from './sessionStore'
+import { readSubagentPolicyConfig, type SubagentPolicyConfig } from './subagentConfig'
+import { workspaceRunCommand } from './workspace'
 
 export const SUBAGENT_ALLOWED_TOOLS = [
   'read_file',
@@ -30,6 +38,12 @@ export const SUBAGENT_ALLOWED_TOOLS = [
   'explore_codebase',
   'search_tools',
   'search_skills',
+] as const
+
+const SUBAGENT_ISOLATED_WRITE_TOOLS = [
+  ...SUBAGENT_ALLOWED_TOOLS,
+  'run_command',
+  'propose_file_edit',
 ] as const
 
 const DEFAULT_OUTPUT_SCHEMA: Record<SubagentRole, string> = {
@@ -61,9 +75,19 @@ function childSessionId(parentSessionId: string, role: SubagentRole): string {
   return `session_${role}_${randomUUID()}_${parentSessionId.slice(-8)}`
 }
 
-function sanitizeAllowedTools(tools?: string[]): string[] {
-  const allowed = new Set<string>(SUBAGENT_ALLOWED_TOOLS)
-  return (tools?.length ? tools : [...SUBAGENT_ALLOWED_TOOLS]).filter(tool => allowed.has(tool))
+function sanitizeAllowedTools(scope: SubagentPermissionScope, tools?: string[]): string[] {
+  const defaults = scope === 'isolated_write' ? [...SUBAGENT_ISOLATED_WRITE_TOOLS] : [...SUBAGENT_ALLOWED_TOOLS]
+  const allowed = new Set<string>(defaults)
+  return (tools?.length ? tools : defaults).filter(tool => allowed.has(tool))
+}
+
+function executionModeForScope(scope: SubagentPermissionScope): SubagentExecutionMode {
+  return scope === 'isolated_write' ? 'local_worktree' : 'read_only'
+}
+
+function normalizeScope(role: SubagentRole, requested?: SubagentPermissionScope): SubagentPermissionScope {
+  if (requested === 'isolated_write' && role !== 'advisor') return 'isolated_write'
+  return DEFAULT_SCOPE[role]
 }
 
 export function createSubagentContract(input: {
@@ -73,38 +97,48 @@ export function createSubagentContract(input: {
   goal: string
   focusFiles?: string[]
   allowedTools?: string[]
+  permissionScope?: SubagentPermissionScope
+  modelProfileId?: string
+  fallbackMode?: SubagentFallbackMode
 }): SubagentContract {
   const role = input.role
+  const permissionScope = normalizeScope(role, input.permissionScope)
   return {
     id: `subagent_contract_${randomUUID()}`,
     parentSessionId: input.parentSessionId,
     parentTurnId: input.parentTurnId,
     role,
     goal: input.goal.trim() || `${role} subagent task`,
-    permissionScope: DEFAULT_SCOPE[role],
-    allowedTools: sanitizeAllowedTools(input.allowedTools),
+    permissionScope,
+    executionMode: executionModeForScope(permissionScope),
+    allowedTools: sanitizeAllowedTools(permissionScope, input.allowedTools),
     focusFiles: input.focusFiles?.filter(Boolean).slice(0, 20),
     outputSchema: DEFAULT_OUTPUT_SCHEMA[role],
+    modelProfileId: input.modelProfileId,
+    fallbackMode: input.fallbackMode,
     createdAt: now(),
   }
 }
 
 export function assertSubagentToolAllowed(contract: SubagentContract, toolName: string): void {
   if (!contract.allowedTools.includes(toolName)) throw new Error(`Subagent ${contract.role} cannot use tool ${toolName}.`)
-  if (toolName === 'run_command' || toolName.includes('edit') || toolName.startsWith('mcp.')) {
+  if (toolName === 'apply_file_edit' || toolName.startsWith('mcp.')) {
+    throw new Error(`Subagent ${contract.role} cannot use side-effect tool ${toolName}.`)
+  }
+  if (contract.permissionScope !== 'isolated_write' && (toolName === 'run_command' || toolName.includes('edit'))) {
     throw new Error(`Subagent ${contract.role} cannot use side-effect tool ${toolName}.`)
   }
 }
 
-function childSession(parent: AgentSession, contract: SubagentContract, id: string): AgentSession {
+function childSession(parent: AgentSession, contract: SubagentContract, id: string, sandbox?: ExecutionSandbox): AgentSession {
   return {
     id,
-    workspace: parent.workspace,
+    workspace: sandbox?.sandboxWorkspace ?? parent.workspace,
     title: `${contract.role}: ${contract.goal.slice(0, 60)}`,
     createdAt: now(),
     updatedAt: now(),
     status: 'running',
-    permissionMode: 'plan',
+    permissionMode: contract.permissionScope === 'isolated_write' ? 'bypass' : 'plan',
     parentSessionId: parent.id,
     rootSessionId: parent.rootSessionId || parent.id,
     subagent: { role: contract.role, contractId: contract.id },
@@ -120,6 +154,8 @@ function userPrompt(input: SubagentRunnerInput, contract: SubagentContract): str
   return JSON.stringify({
     role: contract.role,
     goal: contract.goal,
+    permissionScope: contract.permissionScope,
+    executionMode: contract.executionMode,
     focusFiles: contract.focusFiles || [],
     taskContract: input.taskContract,
     evidence: input.evidence?.map(item => ({ id: item.id, source: item.source, status: item.status, summary: item.summary })),
@@ -141,6 +177,10 @@ function deterministicResult(input: SubagentRunnerInput, run: SubagentRun, error
     childSessionId: run.childSessionId,
     evidenceRefs: input.evidence?.map(item => item.id) || [],
     artifactRefs: [] as string[],
+    proposalIds: run.proposalIds || [],
+    verificationRefs: run.verificationRefs || [],
+    fallbackMode: run.fallbackMode,
+    mergeStatus: run.mergeStatus,
     createdAt: now(),
   }
   if (error) {
@@ -188,6 +228,8 @@ export interface SubagentRunnerInput {
   goal: string
   reason?: string
   focusFiles?: string[]
+  permissionScope?: SubagentPermissionScope
+  commands?: string[]
   context: AgentContextSnapshot
   taskContract?: TaskContract
   evidence?: Evidence[]
@@ -196,20 +238,28 @@ export interface SubagentRunnerInput {
   codeChanged?: boolean
   signal?: AbortSignal
   emit?: (event: AgentEvent) => void
+  emitProposal?: (proposal: EditProposal) => void
+  readConfig?: (workspace?: AgentContextSnapshot['workspace']) => Promise<SubagentPolicyConfig>
 }
 
 export class SubagentRunner {
   async run(input: SubagentRunnerInput): Promise<SubagentRun> {
+    const config = await (input.readConfig ?? readSubagentPolicyConfig)(input.parentSession.workspace ?? input.context.workspace)
+    const modelProfileId = config.roles[input.role]?.modelProfileId
     const contract = createSubagentContract({
       parentSessionId: input.parentSession.id,
       parentTurnId: input.parentTurnId,
       role: input.role,
       goal: input.goal,
       focusFiles: input.focusFiles,
+      permissionScope: input.permissionScope,
+      modelProfileId,
+      fallbackMode: config.fallbackMode,
     })
     const id = runId()
     const childId = childSessionId(input.parentSession.id, contract.role)
-    const session = childSession(input.parentSession, contract, childId)
+    let sandbox: ExecutionSandbox | undefined
+    let session = childSession(input.parentSession, contract, childId)
     saveSessionMeta(session)
 
     let run: SubagentRun = {
@@ -220,6 +270,12 @@ export class SubagentRunner {
       childSessionId: childId,
       role: contract.role,
       status: 'running',
+      executionMode: contract.executionMode,
+      modelProfileId,
+      fallbackMode: config.fallbackMode,
+      proposalIds: [],
+      verificationRefs: [],
+      mergeStatus: contract.permissionScope === 'isolated_write' ? 'blocked' : 'not_applicable',
       createdAt: now(),
     }
     inMemoryRuns.set(run.id, run)
@@ -228,15 +284,45 @@ export class SubagentRunner {
 
     try {
       input.emit?.({ type: 'subagent.progress', sessionId: input.parentSession.id, turnId: input.parentTurnId, runId: run.id, message: `Subagent ${contract.role} started.`, createdAt: now() })
+      if (contract.permissionScope === 'isolated_write') {
+        if (!input.parentSession.workspace) throw new Error('Writable subagent requires a workspace.')
+        const worktree = await import('./worktreeSandbox')
+        sandbox = await worktree.createWorktreeSandbox({
+          sessionId: input.parentSession.id,
+          workspace: input.parentSession.workspace,
+          reason: input.reason || contract.goal,
+        })
+        input.emit?.({ type: 'sandbox.created', sessionId: input.parentSession.id, sandbox })
+        input.emit?.({ type: 'subagent.sandbox.created', sessionId: input.parentSession.id, turnId: input.parentTurnId, runId: run.id, sandbox })
+        if (sandbox.status !== 'ready') throw new Error(sandbox.reason || 'Writable subagent sandbox failed.')
+        session = childSession(input.parentSession, contract, childId, sandbox)
+        saveSessionMeta(session)
+        run = { ...run, sandboxId: sandbox.id, sandboxWorkspace: sandbox.sandboxWorkspace }
+        inMemoryRuns.set(run.id, run)
+        await this.runSandboxCommands(input, run, sandbox, config)
+        const proposals = await this.proposalsFromSandbox(input, run, sandbox)
+        run = this.withProposalMerge(run, proposals)
+        if (run.proposalIds?.length) {
+          input.emit?.({ type: 'subagent.proposals.created', sessionId: input.parentSession.id, turnId: input.parentTurnId, runId: run.id, proposalIds: run.proposalIds, mergeStatus: run.mergeStatus || 'ready' })
+        } else {
+          input.emit?.({ type: 'subagent.merge.blocked', sessionId: input.parentSession.id, turnId: input.parentTurnId, runId: run.id, reason: 'Writable subagent produced no diff proposals.' })
+        }
+        inMemoryRuns.set(run.id, run)
+      }
       let result = deterministicResult(input, run)
       try {
         const model = await this.callModel(input, contract)
         if (model.text.trim()) {
           result = { ...result, summary: model.text.trim().slice(0, 1200), usage: model.usage, completedAt: now() }
         }
-      } catch {
-        // Deterministic fallback keeps CI and offline runs independent from API keys.
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        input.emit?.({ type: 'subagent.failed', sessionId: input.parentSession.id, turnId: input.parentTurnId, run, error: `Model unavailable; ${config.fallbackMode} fallback: ${message}` })
+        if (config.fallbackMode === 'strict') throw error
+        input.emit?.({ type: 'subagent.progress', sessionId: input.parentSession.id, turnId: input.parentTurnId, runId: run.id, message: `Model fallback visible: ${message}`, createdAt: now() })
+        result = { ...result, fallbackMode: config.fallbackMode, fallbackReason: message }
       }
+      result = { ...result, proposalIds: run.proposalIds, verificationRefs: run.verificationRefs, mergeStatus: run.mergeStatus, fallbackMode: run.fallbackMode }
       if (cancelledRuns.has(run.id) || input.signal?.aborted) {
         run = { ...run, status: 'cancelled', completedAt: now() }
       } else {
@@ -260,8 +346,55 @@ export class SubagentRunner {
     }
   }
 
+  private async runSandboxCommands(input: SubagentRunnerInput, run: SubagentRun, sandbox: ExecutionSandbox, config: SubagentPolicyConfig): Promise<void> {
+    const commands = (input.commands || []).slice(0, config.maxIterations)
+    if (commands.length === 0) return
+    for (const commandLine of commands) {
+      assertSubagentToolAllowed(run.contract, 'run_command')
+      input.emit?.({ type: 'subagent.progress', sessionId: input.parentSession.id, turnId: input.parentTurnId, runId: run.id, message: `Sandbox command: ${commandLine}`, createdAt: now() })
+      const result = await workspaceRunCommand(sandbox.sandboxWorkspace, {
+        commandLine,
+        timeoutMs: config.timeoutMs,
+        outputLimitBytes: 80 * 1024,
+        shellMode: true,
+      })
+      if (result.status !== 'ok') throw new Error(result.output || result.error || `Sandbox command failed: ${commandLine}`)
+    }
+  }
+
+  private async proposalsFromSandbox(input: SubagentRunnerInput, run: SubagentRun, sandbox: ExecutionSandbox): Promise<EditProposal[]> {
+    const worktree = await import('./worktreeSandbox')
+    const turn: AgentTurn = {
+      id: input.parentTurnId,
+      sessionId: input.parentSession.id,
+      text: `Subagent sandbox merge: ${run.contract.goal}`,
+      createdAt: now(),
+      status: 'completed',
+    }
+    const proposals = await worktree.sandboxDiffAsProposals(input.parentSession, turn, sandbox.id)
+    for (const proposal of proposals) {
+      if (input.emitProposal) {
+        input.emitProposal(proposal)
+      } else {
+        input.emit?.({ type: 'edit.proposed', sessionId: input.parentSession.id, turnId: input.parentTurnId, proposal })
+        await appendSessionEvent({ type: 'edit.proposed', sessionId: input.parentSession.id, turnId: input.parentTurnId, proposal })
+      }
+    }
+    return proposals
+  }
+
+  private withProposalMerge(run: SubagentRun, proposals: EditProposal[]): SubagentRun {
+    const proposalIds = proposals.map(proposal => proposal.id)
+    const mergeStatus: SubagentMergeStatus = proposalIds.length > 0 ? 'ready' : 'blocked'
+    return {
+      ...run,
+      proposalIds,
+      mergeStatus,
+    }
+  }
+
   private async callModel(input: SubagentRunnerInput, contract: SubagentContract): Promise<{ text: string; usage?: AgentUsage }> {
-    const config = getAgentConfigForProvider()
+    const config = getAgentConfigForProvider(contract.modelProfileId)
     if (!config.apiKey && config.providerId !== 'ollama') throw new Error('No model key configured.')
     const messages: AgentChatMessage[] = [
       { role: 'system', content: systemPrompt(contract.role) },
@@ -336,6 +469,8 @@ export function mergeSubagentReview(parent: { sessionId: string; turnId: string 
 }
 
 export function createSubagentMerge(input: { sessionId: string; turnId: string; runs: SubagentRun[]; observationIds?: string[]; findingIds?: string[]; advisorySummary?: string }): SubagentMergeResult {
+  const proposalIds = input.runs.flatMap(run => run.proposalIds || [])
+  const blocked = input.runs.some(run => run.mergeStatus === 'blocked' || run.mergeStatus === 'failed')
   return {
     id: `subagent_merge_${randomUUID()}`,
     parentSessionId: input.sessionId,
@@ -343,6 +478,8 @@ export function createSubagentMerge(input: { sessionId: string; turnId: string; 
     runIds: input.runs.map(run => run.id),
     mergedObservationIds: input.observationIds || [],
     mergedFindingIds: input.findingIds || [],
+    proposalIds,
+    mergeStatus: blocked ? 'blocked' : proposalIds.length > 0 ? 'ready' : 'not_applicable',
     advisorySummary: input.advisorySummary,
     createdAt: now(),
   }

@@ -479,6 +479,21 @@ export async function decidePermission(input: {
     }
   }
 
+  if (input.call.name === 'launch_subagent' && input.call.input.permissionScope === 'isolated_write') {
+    const policyDecision: PolicyDecision = {
+      action: input.mode === 'plan' ? 'deny' : 'ask',
+      risk: 'high',
+      reason: input.mode === 'plan'
+        ? 'Plan 模式不允许启动 isolated_write subagent。'
+        : 'Writable subagent 会创建隔离 worktree 并运行 sandbox 命令，需要确认。',
+      sandboxRequired: true,
+      alternatives: input.mode === 'plan' ? alternativesFor(input.call) : undefined,
+    }
+    return policyDecision.action === 'deny'
+      ? { action: 'deny', reason: policyDecision.reason, policyDecision }
+      : { action: 'ask', reason: policyDecision.reason, request: createApprovalRequest(input, tool.definition.title, policyDecision, commandRisk), policyDecision }
+  }
+
   if (input.mode === 'plan') {
     const allowedPlanTools = new Set(['list_directory', 'read_file', 'search_files', 'git_status', 'git_diff', 'read_diagnostics', 'search_tools', 'explore_codebase', 'update_plan', 'update_task_contract'])
     const allowed = tool.definition.isReadOnly || allowedPlanTools.has(input.call.name)

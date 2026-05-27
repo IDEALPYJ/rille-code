@@ -157,10 +157,20 @@ function validateActivateSkillInput(input: Record<string, unknown>): ToolValidat
 }
 
 function validateLaunchSubagentInput(input: Record<string, unknown>): ToolValidationResult {
-  const base = validateStringFields(input, ['role', 'goal'], ['reason'])
-  if (!base.ok) return base
+  for (const key of Object.keys(input)) {
+    if (!['role', 'goal', 'reason', 'focusFiles', 'permissionScope', 'commands'].includes(key)) return invalid(`不支持输入字段 ${key}。`)
+  }
+  if (typeof input.role !== 'string' || !input.role.trim()) return invalid('字段 role 必须是非空字符串。')
+  if (typeof input.goal !== 'string' || !input.goal.trim()) return invalid('字段 goal 必须是非空字符串。')
+  if (input.reason !== undefined && typeof input.reason !== 'string') return invalid('字段 reason 必须是字符串。')
   const role = input.role
   if (!['explorer', 'verifier', 'reviewer', 'advisor'].includes(String(role))) return invalid(`无效 subagent role: ${String(role)}`)
+  if (input.permissionScope !== undefined && !['read_only', 'verify_only', 'review_only', 'advisory_only', 'isolated_write'].includes(String(input.permissionScope))) {
+    return invalid(`无效 subagent permissionScope: ${String(input.permissionScope)}`)
+  }
+  if (input.commands !== undefined && (!Array.isArray(input.commands) || input.commands.some(item => typeof item !== 'string'))) {
+    return invalid('字段 commands 必须是字符串数组。')
+  }
   if (input.focusFiles !== undefined && (!Array.isArray(input.focusFiles) || input.focusFiles.some(item => typeof item !== 'string'))) {
     return invalid('字段 focusFiles 必须是字符串数组。')
   }
@@ -169,6 +179,8 @@ function validateLaunchSubagentInput(input: Record<string, unknown>): ToolValida
     goal: input.goal,
     reason: input.reason,
     focusFiles: Array.isArray(input.focusFiles) ? input.focusFiles : undefined,
+    permissionScope: input.permissionScope,
+    commands: Array.isArray(input.commands) ? input.commands : undefined,
   })
 }
 
@@ -539,8 +551,8 @@ export const toolRegistry: RegisteredTool[] = [
       title: '应用编辑提案',
       description: 'Apply a pending edit proposal after approval. Input: { "proposalId": string }.',
       inputSchema: { type: 'object', required: ['proposalId'], properties: { proposalId: { type: 'string' } }, additionalProperties: false },
-      isReadOnly: false,
-      risk: 'high',
+      isReadOnly: true,
+      risk: 'low',
       category: 'edit',
       keywords: ['apply', 'write'],
     },
@@ -798,7 +810,7 @@ export const toolRegistry: RegisteredTool[] = [
     definition: {
       name: 'launch_subagent',
       title: '启动子代理',
-      description: 'Launch a controlled read-only subagent. Input: { "role": "explorer"|"verifier"|"reviewer"|"advisor", "goal": string, "reason"?: string, "focusFiles"?: string[] }.',
+      description: 'Launch a controlled subagent. Input: { "role": "explorer"|"verifier"|"reviewer"|"advisor", "goal": string, "reason"?: string, "focusFiles"?: string[], "permissionScope"?: "isolated_write", "commands"?: string[] }.',
       inputSchema: {
         type: 'object',
         required: ['role', 'goal'],
@@ -807,6 +819,8 @@ export const toolRegistry: RegisteredTool[] = [
           goal: { type: 'string' },
           reason: { type: 'string' },
           focusFiles: { type: 'array', items: { type: 'string' } },
+          permissionScope: { type: 'string', enum: ['read_only', 'verify_only', 'review_only', 'advisory_only', 'isolated_write'] },
+          commands: { type: 'array', items: { type: 'string' } },
         },
         additionalProperties: false,
       },
@@ -815,13 +829,13 @@ export const toolRegistry: RegisteredTool[] = [
       deferred: true,
       category: 'subagent',
       keywords: ['subagent', 'advisor', 'reviewer', 'verifier', 'explorer'],
-      activationHint: 'Use when a task benefits from isolated read-only exploration, review, verification planning, or advice.',
+      activationHint: 'Use read-only by default; request isolated_write only when sandboxed command execution and reviewable diff proposals are required.',
     },
     visibility: 'model',
     sideEffect: 'none',
     validate: validateLaunchSubagentInput,
     summarize: input => `${str(input, 'role')}: ${str(input, 'goal')}`,
-    execute: async (input, { session, turn, context, taskContract, emitEvent }) => {
+    execute: async (input, { session, turn, context, taskContract, emitEvent, emitProposal }) => {
       const run = await new SubagentRunner().run({
         parentSession: session,
         parentTurnId: turn.id,
@@ -829,8 +843,11 @@ export const toolRegistry: RegisteredTool[] = [
         goal: str(input, 'goal'),
         reason: str(input, 'reason') || undefined,
         focusFiles: Array.isArray(input.focusFiles) ? input.focusFiles as string[] : undefined,
+        permissionScope: str(input, 'permissionScope') as any || undefined,
+        commands: Array.isArray(input.commands) ? input.commands as string[] : undefined,
         context,
         taskContract,
+        emitProposal,
         emit: event => {
           if (emitEvent) emitEvent(event)
           else void appendSessionEvent(event)

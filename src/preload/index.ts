@@ -143,7 +143,7 @@ export interface RilleAPI {
   agentListMcpServers(sessionId: string): Promise<McpServerState[]>
   agentStartMcpServer(sessionId: string, pluginId: string, serverId: string, workspace?: AgentWorkspaceLocation | null): Promise<McpServerState>
   agentStopMcpServer(sessionId: string, pluginId: string, serverId: string): Promise<McpServerState>
-  agentLaunchSubagent(sessionId: string, input: { turnId?: string; role: SubagentRole; goal: string; reason?: string; focusFiles?: string[]; context?: AgentContextSnapshot }): Promise<SubagentRun>
+  agentLaunchSubagent(sessionId: string, input: { turnId?: string; role: SubagentRole; goal: string; reason?: string; focusFiles?: string[]; context?: AgentContextSnapshot; permissionScope?: SubagentRun['contract']['permissionScope']; commands?: string[] }): Promise<SubagentRun>
   agentListSubagents(sessionId: string): Promise<SubagentRun[]>
   agentReadSubagent(sessionId: string, runId: string): Promise<SubagentRun>
   agentCancelSubagent(sessionId: string, runId: string): Promise<SubagentRun>

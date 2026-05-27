@@ -276,6 +276,8 @@ export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<Agent
         goal: op.goal,
         reason: op.reason,
         focusFiles: op.focusFiles,
+        permissionScope: op.permissionScope,
+        commands: op.commands,
         context: op.context || { workspace: session.workspace, activeFile: null, openFiles: [], diagnostics: [] },
         emit: event => void appendSessionEvent(event),
       })

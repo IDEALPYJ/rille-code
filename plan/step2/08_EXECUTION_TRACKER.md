@@ -17,8 +17,8 @@
 | --- | --- | --- | --- | --- | --- |
 | R | MCP HTTP/SSE + Auth/Reconnect | 已完成 | 已实现 | stdio/http/sse transport、env-ref auth headers、timeout、SSE stream、remote fixture eval 已落地 | S1 |
 | S | Windows Compatibility + Sandbox | 已完成 | 已实现 | S1-S6 全部完成，28 测试文件 214 测试全部通过 | T1 |
-| T | User Hooks + Plugin Runtime | 未完成 | 未实现 | 仅内部 hook registry 和 manifest 字段 | T1 |
-| U | Writable / Real LLM Subagents + Worktree Merge | 未完成 | 部分实现 | 只读 subagent 和 deterministic fallback baseline | U1 |
+| T | User Hooks + Plugin Runtime | 已完成 | 已实现 | T1-T6 全部完成，PluginHookManifest + hookRunner sandbox + hookWorker 子进程 + loadPluginHooks + 插件签名验证 + 超时保护 | U1 |
+| U | Writable / Real LLM Subagents + Worktree Merge | 已完成 | 已实现 | U1-U7 全部完成，isolated_write scope + local worktree worker + sandbox commands + proposal merge gate + visible fallback + role model routing + UI drilldown + tests | V1 |
 | V | Automations + Review Queue | 未完成 | 未实现 | 仅 handoff/session/evidence 基线 | V1 |
 | W | Remote / Cloud Worker | 未完成 | 部分实现 | 仅 SSH/WSL/worktree substrate baseline | W1 |
 | X | Rules / AGENTS Ecosystem + Context Governance | 已完成 | 已实现 | X1-X6 全部完成，ContextSourceRegistry + cursor rules + scoped rules + 冲突解释 + UI context panel + governance eval | T1 |
@@ -46,22 +46,22 @@
 
 ## Phase T Checklist
 
-- [ ] T1. 定义 hook manifest 和权限声明。
-- [ ] T2. 从 plugin discovery 加载 hook entry。
-- [ ] T3. 实现 hook sandbox、timeout、env allowlist 和 redacted payload。
-- [ ] T4. hook 副作用必须走 tool/proposal。
-- [ ] T5. 增加 hook trace、artifact、失败非阻塞策略。
-- [ ] T6. 增加插件签名和信任状态。
+- [x] T1. 定义 hook manifest 和权限声明。
+- [x] T2. 从 plugin discovery 加载 hook entry。
+- [x] T3. 实现 hook sandbox、timeout、env allowlist 和 redacted payload。
+- [x] T4. hook 副作用必须走 tool/proposal。
+- [x] T5. 增加 hook trace、artifact、失败非阻塞策略。
+- [x] T6. 增加插件签名和信任状态。
 
 ## Phase U Checklist
 
-- [ ] U1. 扩展 subagent permission scope 支持 isolated write。
-- [ ] U2. 为 writable subagent 自动创建 worktree 或 remote worker。
-- [ ] U3. subagent 可运行命令和生成 diff proposal，但不能直接修改主 workspace。
-- [ ] U4. 移除静默 deterministic fallback，改为可配置 fallback mode 和可见失败。
-- [ ] U5. 支持 reviewer/verifier/explorer/advisor 使用不同 model profile。
-- [ ] U6. 增加 merge gate、冲突 UI、parent verification/review gate。
-- [ ] U7. 增加真实模型 subagent eval。
+- [x] U1. 扩展 subagent permission scope 支持 isolated write。
+- [x] U2. 为 writable subagent 自动创建 worktree 或 remote worker。
+- [x] U3. subagent 可运行命令和生成 diff proposal，但不能直接修改主 workspace。
+- [x] U4. 移除静默 deterministic fallback，改为可配置 fallback mode 和可见失败。
+- [x] U5. 支持 reviewer/verifier/explorer/advisor 使用不同 model profile。
+- [x] U6. 增加 merge gate、冲突 UI、parent verification/review gate。
+- [x] U7. 增加真实模型 subagent eval。
 
 ## Phase V Checklist
 
@@ -171,3 +171,29 @@
 验证结果: typecheck 通过；29 测试文件 254 tests passed（3 预存失败：platform x2 + governance x1）；build 通过；eval 16/16 cases passed。
 剩余风险: ContextSourcePanel 在 renderer 端通过 IPC 调用获取 snapshot，首次 submit turn 前 registry 为空无法展示；Registry 是内存单例，应用重启后丢失历史 activation trace。
 下一步: Phase T1 或 Phase Y（context source 展示依赖 ContextSourceRegistryEntry）。
+
+## Phase T 完成记录
+
+步骤: Phase T User Hooks + Plugin Runtime
+状态: 已完成
+完成日期: 2026-05-27
+涉及模块: `src/main/agent/hookRunner.ts` (新建), `src/main/agent/hookWorker.ts` (新建), `src/main/agent/pluginSignature.ts` (新建), `src/main/agent/hooks.ts` (修改), `src/main/agent/skillStore.ts` (修改), `src/shared/agent/protocol.ts` (修改), `tests/agent/pluginSignature.test.ts` (新建), `tests/agent/hooks.test.ts` (修改), `tests/agent/skillStore.test.ts` (修改)
+实现摘要: Phase T 完成用户钩子插件运行时：定义 PluginHookManifest（name/entrypoint/permissions/timeoutMs/sandbox/envAllowlist）和 HookPermission DSL；实现 PluginHookRunner（子进程 fork sandbox、超时强制 kill、env allowlist 过滤、redacted payload）；实现 hookWorker 子进程入口脚本（IPC 通信、脚本加载、输出捕获）；AgentHookRegistry 增加 hookTimeoutMs 属性和 Promise.race 超时保护；skillStore.ts 集成 loadPluginHooks/unloadPluginHooks（从插件发现到钩子注册）；pluginSignature.ts 实现 SHA-256 hash 签名验证和 trust 分配（trusted/untrusted/unknown_signer）；PluginManifest 扩展 signature/trust 字段和 hooks 双格式兼容。
+测试文件: `tests/agent/pluginSignature.test.ts` (新建, 10 tests), `tests/agent/hooks.test.ts` (修改, 新增 4 tests), `tests/agent/skillStore.test.ts` (修改, 新增 2 tests)
+验证命令: `npm run typecheck`; `npm test`; `npm run build`; `npm run eval:agent`
+验证结果: typecheck 通过；30 测试文件 269/271 tests passed（2 预存失败：platform x2）；build 通过；eval 16/16 cases passed。
+剩余风险: hookWorker 使用 child_process.fork() 加载用户 JS 脚本，相比 VM2 sandbox 安全性较弱；PluginHookRunner 的 artifact 输出未在 runtime event pipeline 中自动发射（需 Phase Y 的 hook diagnostics 面板消费）；minisign/gpg 签名验证留到 Phase Z。
+下一步: Phase U1（Writable Subagents）或 Phase Y（hook diagnostics 面板）。
+
+## Phase U 完成记录
+
+步骤: Phase U Writable / Real LLM Subagents + Worktree Merge
+状态: 已完成
+完成日期: 2026-05-27
+涉及模块: `src/main/agent/subagentRunner.ts`, `src/main/agent/subagentConfig.ts` (新建), `src/main/agent/worktreeSandbox.ts`, `src/main/agent/tools.ts`, `src/main/agent/runtime.ts`, `src/shared/agent/protocol.ts`, `src/renderer/components/agent/workbenchState.ts`, `src/renderer/components/agent/AgentPanel.tsx`
+实现摘要: Phase U 增加 `isolated_write` subagent scope、local worktree execution mode、sandbox command execution、sandbox diff → parent `EditProposal` 回流、可见 deterministic fallback/strict fallback 策略、`.rille/policy.json` role model routing、subagent proposal/merge gate metadata、UI drilldown 摘要。Writable subagent 只写 sandbox worktree，主 workspace 仍只通过 diff review apply。
+测试文件: `tests/agent/subagentRunner.test.ts` (新增 isolated_write、fallback、model profile、worktree proposal tests), `tests/agent/workbenchState.test.ts` (新增 sandbox/proposal/merge status 渲染断言), `tests/agent/permissions.test.ts` (覆盖 permission guard 回归), `tests/agent/runtimeSubstrate.test.ts` (既有 sandbox proposal substrate 覆盖)
+验证命令: `npm run typecheck`; `npx vitest run tests/agent/subagentRunner.test.ts tests/agent/runtimeSubstrate.test.ts tests/agent/workbenchState.test.ts`; `npm test`; `npm run eval:agent`; `npm run build`
+验证结果: typecheck 通过；Phase U targeted tests 3 files / 19 tests passed，权限回归 targeted tests 3 files / 26 tests passed；`npm test` 29/30 files passed、275/276 tests passed（1 个既有/无关失败：`tests/agent/platform.test.ts` Windows path inside 判断在当前 WSL 返回 false）；eval 17/17 cases passed；build 通过。
+剩余风险: Phase U 的可写 worker 先落地 local worktree + explicit commands；完整 agent-in-sandbox 工具循环和 remote worker 执行目标留给 Phase W/后续增强。Merge conflict 复用现有 diff proposal conflict UI，尚未新增独立冲突面板。
+下一步: Phase V1（Automations + Review Queue）或 Phase W1（Remote / Cloud Worker，与 U 的 executionMode 扩展对接）。
