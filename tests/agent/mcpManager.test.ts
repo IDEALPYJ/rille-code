@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { createServer, type Server, type ServerResponse } from 'node:http'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +10,7 @@ import type { AgentWorkspaceLocation } from '../../src/shared/agent/protocol'
 
 let root = ''
 let userData = ''
+let httpServer: Server | null = null
 
 function workspace(): AgentWorkspaceLocation {
   return { kind: 'local', path: root, label: 'tmp' }
@@ -52,6 +54,66 @@ process.stdin.on('data', chunk => {
 `, 'utf8')
 }
 
+async function listen(server: Server): Promise<string> {
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('server did not listen on tcp')
+  return `http://127.0.0.1:${address.port}`
+}
+
+function sendJson(res: ServerResponse, id: number, result: unknown): void {
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ jsonrpc: '2.0', id, result }))
+}
+
+async function readBody(req: NodeJS.ReadableStream): Promise<any> {
+  const chunks: Buffer[] = []
+  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)))
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+}
+
+async function createHttpMcpServer(): Promise<string> {
+  httpServer = createServer(async (req, res) => {
+    if (req.method !== 'POST') {
+      res.writeHead(404)
+      res.end()
+      return
+    }
+    const request = await readBody(req)
+    if (request.method === 'initialize') sendJson(res, request.id, { protocolVersion: '2024-11-05', capabilities: {} })
+    else if (request.method === 'tools/list') sendJson(res, request.id, { tools: [{ name: 'echo', description: 'HTTP echo', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true } }] })
+    else if (request.method === 'tools/call') sendJson(res, request.id, { content: [{ type: 'text', text: JSON.stringify(request.params.arguments) }] })
+    else sendJson(res, request.id, {})
+  })
+  return listen(httpServer)
+}
+
+async function createSseMcpServer(): Promise<string> {
+  let stream: ServerResponse | null = null
+  httpServer = createServer(async (req, res) => {
+    if (req.method === 'GET' && req.url === '/sse') {
+      stream = res
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' })
+      res.write(': ready\n\n')
+      return
+    }
+    if (req.method !== 'POST' || req.url !== '/message') {
+      res.writeHead(404)
+      res.end()
+      return
+    }
+    const request = await readBody(req)
+    let result: unknown = {}
+    if (request.method === 'initialize') result = { protocolVersion: '2024-11-05', capabilities: {} }
+    if (request.method === 'tools/list') result = { tools: [{ name: 'echo', description: 'SSE echo', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true } }] }
+    if (request.method === 'tools/call') result = { content: [{ type: 'text', text: JSON.stringify(request.params.arguments) }] }
+    stream?.write(`data: ${JSON.stringify({ jsonrpc: '2.0', id: request.id, result })}\n\n`)
+    res.writeHead(202, { 'Content-Type': 'application/json' })
+    res.end('{}')
+  })
+  return listen(httpServer)
+}
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'rille-mcp-project-'))
   userData = mkdtempSync(join(tmpdir(), 'rille-mcp-user-'))
@@ -61,7 +123,11 @@ beforeEach(() => {
 afterEach(async () => {
   delete process.env.RILLE_AGENT_EXTENSION_USER_DATA
   stopMcpServer('fixture', 'stdio')
+  stopMcpServer('fixture', 'http')
+  stopMcpServer('fixture', 'sse')
   stopMcpServer('broken', 'stdio')
+  if (httpServer) await new Promise(resolve => httpServer?.close(resolve))
+  httpServer = null
   // Allow child processes time to release file handles before cleanup
   await new Promise(resolve => setTimeout(resolve, 200))
   await rm(root, { recursive: true, force: true }).catch(() => {})
@@ -131,5 +197,47 @@ describe('MCP stdio lifecycle', () => {
 
     expect(state.status).toBe('failed')
     expect(state.lastError).toContain('boom')
+  })
+
+  it('connects to a remote HTTP MCP server, discovers tools, and calls tools', async () => {
+    const endpoint = await createHttpMcpServer()
+    mkdirSync(join(root, '.rille/plugins'), { recursive: true })
+    writeFileSync(join(root, '.rille/plugins/fixture.json'), JSON.stringify({
+      id: 'fixture',
+      name: 'Fixture',
+      version: '1.0.0',
+      description: 'fixture mcp',
+      mcpServers: [{ id: 'http', name: 'http', transport: 'http', url: endpoint, sideEffect: 'none' }],
+      enabled: true,
+    }), 'utf8')
+
+    const state = await startMcpServer({ sessionId: 'session_o_mcp_http', pluginId: 'fixture', serverId: 'http', workspace: workspace() })
+
+    expect(state).toMatchObject({ status: 'running', transport: 'http' })
+    expect(state.tools[0]).toMatchObject({ namespace: 'mcp.fixture.http.echo', readOnly: true })
+    const result = await callMcpTool('mcp.fixture.http.echo', { value: 42 })
+    expect(result.status).toBe('ok')
+    expect(result.output).toContain('42')
+  })
+
+  it('connects to a remote SSE MCP server and resolves responses from the event stream', async () => {
+    const endpoint = await createSseMcpServer()
+    mkdirSync(join(root, '.rille/plugins'), { recursive: true })
+    writeFileSync(join(root, '.rille/plugins/fixture.json'), JSON.stringify({
+      id: 'fixture',
+      name: 'Fixture',
+      version: '1.0.0',
+      description: 'fixture mcp',
+      mcpServers: [{ id: 'sse', name: 'sse', transport: 'sse', url: `${endpoint}/sse`, messageUrl: `${endpoint}/message`, sideEffect: 'none' }],
+      enabled: true,
+    }), 'utf8')
+
+    const state = await startMcpServer({ sessionId: 'session_o_mcp_sse', pluginId: 'fixture', serverId: 'sse', workspace: workspace() })
+
+    expect(state).toMatchObject({ status: 'running', transport: 'sse' })
+    expect(state.tools[0]).toMatchObject({ namespace: 'mcp.fixture.sse.echo', readOnly: true })
+    const result = await callMcpTool('mcp.fixture.sse.echo', { value: 'streamed' })
+    expect(result.status).toBe('ok')
+    expect(result.output).toContain('streamed')
   })
 })

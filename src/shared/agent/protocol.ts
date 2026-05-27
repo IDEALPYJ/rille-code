@@ -302,8 +302,8 @@ export type PolicyAction = 'allow' | 'ask' | 'deny'
 export type GrantScope = 'once' | 'session' | 'workspace'
 export type SkillSource = 'project' | 'user' | 'plugin'
 export type SkillTrust = 'trusted' | 'untrusted'
-export type McpTransport = 'stdio'
-export type McpServerStatus = 'stopped' | 'starting' | 'running' | 'failed' | 'stopped_error'
+export type McpTransport = 'stdio' | 'http' | 'sse'
+export type McpServerStatus = 'stopped' | 'starting' | 'running' | 'reconnecting' | 'degraded' | 'failed' | 'stopped_error'
 
 export interface ToolValidationResult {
   ok: boolean
@@ -873,12 +873,19 @@ export interface SkillContract {
 export interface McpServerConfig {
   id: string
   name: string
-  command: string
+  command?: string
+  url?: string
+  messageUrl?: string
+  headers?: Record<string, string>
+  authHeaders?: Record<string, string>
   cwd?: string
   env?: Record<string, string>
   transport: McpTransport
   enabled: boolean
   sideEffect?: ToolSideEffect
+  timeoutMs?: number
+  heartbeatMs?: number
+  reconnect?: { maxAttempts: number; backoffMs: number }
 }
 
 export interface McpToolDescriptor {
@@ -934,6 +941,7 @@ export interface McpServerState {
   id: string
   pluginId: string
   serverId: string
+  transport?: McpTransport
   status: McpServerStatus
   pid?: number
   startedAt?: number

@@ -1,0 +1,16 @@
+{
+  "id": "mcp_http_discovery",
+  "title": "Remote HTTP MCP discovers tools",
+  "task": "Connect to a remote HTTP MCP server and discover tools",
+  "mode": "trace_replay",
+  "expectedTrajectory": ["mcp.server.started", "mcp.server.completed", "mcp.tool.discovered"],
+  "expectedEvidence": [],
+  "expectedState": {},
+  "forbiddenActions": [],
+  "safetyExpectations": ["no destructive commands"],
+  "traceFixture": [
+    { "type": "mcp.server.started", "sessionId": "eval_mcp_http", "state": { "id": "eval_mcp_http", "pluginId": "fixture", "serverId": "http", "transport": "http", "status": "running", "startedAt": 1, "updatedAt": 1, "tools": [] }, "createdAt": 1 },
+    { "type": "mcp.server.completed", "sessionId": "eval_mcp_http", "state": { "id": "eval_mcp_http", "pluginId": "fixture", "serverId": "http", "transport": "http", "status": "running", "startedAt": 1, "updatedAt": 2, "tools": [{ "name": "echo", "title": "echo", "description": "HTTP Echo", "inputSchema": { "type": "object" }, "sideEffect": "none", "namespace": "mcp.fixture.http.echo", "pluginId": "fixture", "serverId": "http", "readOnly": true }] }, "createdAt": 2 },
+    { "type": "mcp.tool.discovered", "sessionId": "eval_mcp_http", "tool": { "name": "echo", "title": "echo", "description": "HTTP Echo", "inputSchema": { "type": "object" }, "sideEffect": "none", "namespace": "mcp.fixture.http.echo", "pluginId": "fixture", "serverId": "http", "readOnly": true }, "createdAt": 3 }
+  ]
+}

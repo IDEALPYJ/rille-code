@@ -64,14 +64,24 @@ describe('skill/plugin discovery', () => {
       version: '1.0.0',
       description: 'fixture',
       skills: [{ id: 'fixture.skill', name: 'Fixture Skill', description: 'skill', activationKeywords: ['fixture'], content: 'fixture skill body' }],
-      mcpServers: [{ id: 'stdio', name: 'stdio', command: 'node fake-server.js', sideEffect: 'none' }, { id: '', command: '' }],
+      mcpServers: [
+        { id: 'stdio', name: 'stdio', command: 'node fake-server.js', sideEffect: 'none' },
+        { id: 'remote', name: 'remote', transport: 'http', url: 'http://127.0.0.1:4321/mcp', authHeaders: { Authorization: 'RILLE_TOKEN' }, sideEffect: 'none' },
+        { id: '', command: '' },
+        { id: 'bad-http', transport: 'http' },
+      ],
       enabled: true,
     }), 'utf8')
 
     const snapshot = discoverExtensions(workspace())
 
     expect(snapshot.plugins).toHaveLength(1)
-    expect(snapshot.plugins[0].mcpServers).toHaveLength(1)
+    expect(snapshot.plugins[0].mcpServers).toHaveLength(2)
+    expect(snapshot.plugins[0].mcpServers.find(server => server.id === 'remote')).toMatchObject({
+      transport: 'http',
+      url: 'http://127.0.0.1:4321/mcp',
+      authHeaders: { Authorization: 'RILLE_TOKEN' },
+    })
     expect(snapshot.skills.find(skill => skill.id === 'fixture.skill')).toMatchObject({ source: 'plugin', pluginId: 'fixture', trust: 'untrusted' })
   })
 

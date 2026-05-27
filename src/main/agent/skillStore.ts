@@ -85,16 +85,29 @@ function normalizeMcpServer(raw: unknown): McpServerConfig | null {
   const data = raw as Partial<McpServerConfig>
   if (!data || typeof data !== 'object') return null
   if (typeof data.id !== 'string' || !data.id.trim()) return null
-  if (typeof data.command !== 'string' || !data.command.trim()) return null
+  const transport = data.transport === 'http' || data.transport === 'sse' ? data.transport : 'stdio'
+  const command = typeof data.command === 'string' && data.command.trim() ? data.command.trim() : undefined
+  const url = typeof data.url === 'string' && data.url.trim() ? data.url.trim() : undefined
+  if (transport === 'stdio' && !command) return null
+  if ((transport === 'http' || transport === 'sse') && !url) return null
   return {
     id: data.id.trim(),
     name: typeof data.name === 'string' && data.name.trim() ? data.name.trim() : data.id.trim(),
-    command: data.command.trim(),
+    command,
+    url,
+    messageUrl: typeof data.messageUrl === 'string' && data.messageUrl.trim() ? data.messageUrl.trim() : undefined,
+    headers: data.headers && typeof data.headers === 'object' ? data.headers as Record<string, string> : undefined,
+    authHeaders: data.authHeaders && typeof data.authHeaders === 'object' ? data.authHeaders as Record<string, string> : undefined,
     cwd: typeof data.cwd === 'string' ? data.cwd : undefined,
     env: data.env && typeof data.env === 'object' ? data.env as Record<string, string> : undefined,
-    transport: 'stdio',
+    transport,
     enabled: data.enabled !== false,
     sideEffect: data.sideEffect,
+    timeoutMs: typeof data.timeoutMs === 'number' && data.timeoutMs > 0 ? Math.floor(data.timeoutMs) : undefined,
+    heartbeatMs: typeof data.heartbeatMs === 'number' && data.heartbeatMs > 0 ? Math.floor(data.heartbeatMs) : undefined,
+    reconnect: data.reconnect && typeof data.reconnect === 'object'
+      ? { maxAttempts: Math.max(0, Math.floor(data.reconnect.maxAttempts || 0)), backoffMs: Math.max(0, Math.floor(data.reconnect.backoffMs || 0)) }
+      : undefined,
   }
 }
 

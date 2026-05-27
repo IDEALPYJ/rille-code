@@ -1,6 +1,6 @@
 import { type ChildProcess, execFileSync } from 'child_process'
 import { rmSync } from 'fs'
-import { resolve } from 'path'
+import { posix, resolve, win32 } from 'path'
 
 export function shellQuote(value: string): string {
   if (process.platform === 'win32') {
@@ -49,12 +49,17 @@ export function normalizePathSep(path: string): string {
 }
 
 export function isPathInside(parent: string, child: string): boolean {
-  const resolvedParent = normalizePathSep(resolve(parent)).replace(/\/+$/, '') + '/'
-  const resolvedChild = normalizePathSep(resolve(child))
-  if (process.platform === 'win32') {
-    return resolvedChild.toLowerCase().startsWith(resolvedParent.toLowerCase())
+  const windowsLike = /^[A-Za-z]:[\\/]/.test(parent) || /^[A-Za-z]:[\\/]/.test(child) || parent.includes('\\') || child.includes('\\')
+  if (windowsLike) {
+    const resolvedParent = normalizePathSep(win32.resolve(parent)).replace(/\/+$/, '')
+    const resolvedChild = normalizePathSep(win32.resolve(child)).replace(/\/+$/, '')
+    const parentKey = resolvedParent.toLowerCase()
+    const childKey = resolvedChild.toLowerCase()
+    return childKey === parentKey || childKey.startsWith(`${parentKey}/`)
   }
-  return resolvedChild.startsWith(resolvedParent)
+  const resolvedParent = posix.normalize(resolve(parent)).replace(/\/+$/, '')
+  const resolvedChild = posix.normalize(resolve(child)).replace(/\/+$/, '')
+  return resolvedChild === resolvedParent || resolvedChild.startsWith(`${resolvedParent}/`)
 }
 
 export function isShellRequired(commandLine: string): boolean {

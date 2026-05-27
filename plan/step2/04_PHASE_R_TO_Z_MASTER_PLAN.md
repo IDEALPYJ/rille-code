@@ -4,7 +4,7 @@
 
 | Phase | 名称 | 当前状态 |
 | --- | --- | --- |
-| R | MCP HTTP/SSE + Auth/Reconnect | 未实现 |
+| R | MCP HTTP/SSE + Auth/Reconnect | 已实现 |
 | S | Windows Compatibility + Sandbox | 部分实现 |
 | T | User Hooks + Plugin Runtime | 未实现 |
 | U | Writable / Real LLM Subagents + Worktree Merge | 部分实现 |
@@ -20,13 +20,13 @@
 
 Checklist：
 
-- [ ] R1. 扩展 MCP config 支持 stdio/http/sse。
-- [ ] R2. 实现 HTTP JSON-RPC transport。
-- [ ] R3. 实现 SSE event stream + request channel。
-- [ ] R4. 增加 auth secret refs、header/env 注入和 redaction。
-- [ ] R5. 增加 heartbeat、reconnect、degraded state 和日志 artifact。
-- [ ] R6. 保持 namespace、sideEffect、Plan Mode policy 与 Step1 一致。
-- [ ] R7. 增加真实远程 MCP fixture 和 eval case。
+- [x] R1. 扩展 MCP config 支持 stdio/http/sse。
+- [x] R2. 实现 HTTP JSON-RPC transport。
+- [x] R3. 实现 SSE event stream + request channel。
+- [x] R4. 增加 auth secret refs、header/env 注入和 redaction。
+- [x] R5. 增加 heartbeat、reconnect、degraded state 和日志 artifact。
+- [x] R6. 保持 namespace、sideEffect、Plan Mode policy 与 Step1 一致。
+- [x] R7. 增加真实远程 MCP fixture 和 eval case。
 
 ## Phase S: Windows Compatibility + Sandbox
 

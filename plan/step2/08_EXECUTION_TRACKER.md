@@ -15,7 +15,7 @@
 
 | Phase | 名称 | 当前完成状态 | 源码能力状态 | 当前完成范围 | 下一步入口 |
 | --- | --- | --- | --- | --- | --- |
-| R | MCP HTTP/SSE + Auth/Reconnect | 未完成 | 未实现 | 仅 Step1 stdio MCP baseline | R1 |
+| R | MCP HTTP/SSE + Auth/Reconnect | 已完成 | 已实现 | stdio/http/sse transport、env-ref auth headers、timeout、SSE stream、remote fixture eval 已落地 | S1 |
 | S | Windows Compatibility + Sandbox | 已完成 | 已实现 | S1-S6 全部完成，28 测试文件 214 测试全部通过 | T1 |
 | T | User Hooks + Plugin Runtime | 未完成 | 未实现 | 仅内部 hook registry 和 manifest 字段 | T1 |
 | U | Writable / Real LLM Subagents + Worktree Merge | 未完成 | 部分实现 | 只读 subagent 和 deterministic fallback baseline | U1 |
@@ -27,13 +27,13 @@
 
 ## Phase R Checklist
 
-- [ ] R1. 扩展 MCP config 支持 stdio/http/sse。
-- [ ] R2. 实现 HTTP JSON-RPC transport。
-- [ ] R3. 实现 SSE event stream + request channel。
-- [ ] R4. 增加 auth secret refs、header/env 注入和 redaction。
-- [ ] R5. 增加 heartbeat、reconnect、degraded state 和日志 artifact。
-- [ ] R6. 保持 namespace、sideEffect、Plan Mode policy 与 Step1 一致。
-- [ ] R7. 增加真实远程 MCP fixture 和 eval case。
+- [x] R1. 扩展 MCP config 支持 stdio/http/sse。
+- [x] R2. 实现 HTTP JSON-RPC transport。
+- [x] R3. 实现 SSE event stream + request channel。
+- [x] R4. 增加 auth secret refs、header/env 注入和 redaction。
+- [x] R5. 增加 heartbeat、reconnect、degraded state 和日志 artifact。
+- [x] R6. 保持 namespace、sideEffect、Plan Mode policy 与 Step1 一致。
+- [x] R7. 增加真实远程 MCP fixture 和 eval case。
 
 ## Phase S Checklist
 
@@ -123,6 +123,17 @@
 ```
 
 ## 当前基线记录
+
+步骤: Phase R1-R7
+状态: 已完成
+完成日期: 2026-05-27
+涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/skillStore.ts`, `src/main/agent/mcpManager.ts`, `src/main/agent/governance.ts`, `tests/agent/mcpManager.test.ts`, `tests/agent/skillStore.test.ts`, `eval/cases/mcp_http_discovery.json`, `eval/cases/mcp_sse_discovery.json`, `eval/cases/mcp_remote_plan_mode_denied.json`
+实现摘要: Phase R 完成 MCP stdio/http/sse transport protocol、remote manifest parsing、env-ref auth headers、HTTP JSON-RPC client、SSE stream + message POST client、timeout/reconnect policy baseline、remote startup/tool call artifacts、namespace/policy 兼容，以及 HTTP/SSE fixture tests 和 eval cases。
+测试文件: `tests/agent/mcpManager.test.ts`, `tests/agent/skillStore.test.ts`, `tests/agent/permissions.test.ts`, `tests/agent/tools.test.ts`, `eval/cases/mcp_*.json`
+验证命令: `npm test -- tests/agent/mcpManager.test.ts tests/agent/skillStore.test.ts tests/agent/permissions.test.ts tests/agent/tools.test.ts`; `npm test`; `npm run typecheck`; `npm run build`; `npm run eval:agent`
+验证结果: 聚焦 Vitest 4 files / 27 tests passed；全量 `npm test` 28 files / 216 tests passed；typecheck passed；build passed（保留既有 memory dynamic/static import warning）；`npm run eval:agent` 15/15 cases passed。
+剩余风险: SSE reconnect 是轻量运行时重连，不做跨进程 session resume；OAuth/动态远程认证不在 Phase R 范围；远程 server 仍依赖 plugin manifest trust。
+下一步: Phase S1。
 
 步骤: Step2 planning initialization
 状态: 已完成

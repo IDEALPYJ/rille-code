@@ -149,10 +149,12 @@ function configFindings(root: string, workspacePath?: string): ConfigAuditFindin
   const pluginDir = workspacePath ? join(workspacePath, '.rille', 'plugins') : ''
   if (pluginDir && existsSync(pluginDir)) {
     for (const file of readdirSync(pluginDir).filter(name => name.endsWith('.json'))) {
-      const manifest = readJson<{ id?: string; enabled?: boolean; mcpServers?: Array<{ id?: string; command?: string; enabled?: boolean; sideEffect?: string }> }>(join(pluginDir, file))
+      const manifest = readJson<{ id?: string; enabled?: boolean; mcpServers?: Array<{ id?: string; command?: string; url?: string; transport?: string; enabled?: boolean; sideEffect?: string }> }>(join(pluginDir, file))
       if (!manifest?.id) results.push({ id: `invalid_plugin_${file}`, source: file, severity: 'error', message: 'Plugin manifest is missing id.', evidenceRefs: [relative(workspacePath || root, join(pluginDir, file))] })
       for (const server of manifest?.mcpServers || []) {
-        if (server.enabled !== false && !server.command) results.push({ id: `mcp_missing_command_${manifest?.id || file}_${server.id || 'server'}`, source: file, severity: 'error', message: 'Enabled MCP server is missing command.', evidenceRefs: [relative(workspacePath || root, join(pluginDir, file))] })
+        const transport = server.transport === 'http' || server.transport === 'sse' ? server.transport : 'stdio'
+        if (server.enabled !== false && transport === 'stdio' && !server.command) results.push({ id: `mcp_missing_command_${manifest?.id || file}_${server.id || 'server'}`, source: file, severity: 'error', message: 'Enabled stdio MCP server is missing command.', evidenceRefs: [relative(workspacePath || root, join(pluginDir, file))] })
+        if (server.enabled !== false && transport !== 'stdio' && !server.url) results.push({ id: `mcp_missing_url_${manifest?.id || file}_${server.id || 'server'}`, source: file, severity: 'error', message: 'Enabled remote MCP server is missing url.', evidenceRefs: [relative(workspacePath || root, join(pluginDir, file))] })
         if (!server.sideEffect) results.push({ id: `mcp_unknown_side_effect_${manifest?.id || file}_${server.id || 'server'}`, source: file, severity: 'warning', message: 'MCP server sideEffect is unknown and will require ask/deny policy.', evidenceRefs: [relative(workspacePath || root, join(pluginDir, file))] })
       }
     }
