@@ -15,14 +15,32 @@ import { MemoryStore } from './memory'
 import { FeatureStore } from './featureStore'
 import { findMatchingSkills } from './skillStore'
 import { registerMcpToolDescriptors } from './mcpManager'
+import { ContextSourceRegistry, parseRuleFrontmatter } from './contextSourceRegistry'
 
 const PROJECT_RULE_PREFIX_FILES = ['AGENTS.md', 'CLAUDE.md', 'RILLE.md', '.rille/rules.md'] as const
 const PROJECT_RULES_DIRECTORY = '.rille/rules'
+const CURSOR_RULE_PREFIX_FILES = ['.cursorrules'] as const
+const CURSOR_RULES_DIRECTORY = '.cursor/rules'
 const PROJECT_RULE_SUFFIX_FILES = ['README.md', '.rille/local.md'] as const
 const MAX_DOC_CHARS = 6_000
 const MAX_CONTEXT_CHARS = 18_000
 const MAX_GIT_STATUS_CHARS = 4_000
 export const DEFAULT_CONTEXT_BUDGET_TOKENS = Math.ceil(MAX_CONTEXT_CHARS / 4)
+
+let _registry: ContextSourceRegistry | null = null
+
+function getRegistry(): ContextSourceRegistry {
+  if (!_registry) _registry = new ContextSourceRegistry()
+  return _registry
+}
+
+export function getContextSourceRegistry(): ContextSourceRegistry {
+  return getRegistry()
+}
+
+export function resetContextSourceRegistry(): void {
+  _registry = null
+}
 const SECTION_ORDER: Record<ContextFragment['section'], number> = {
   stable_prefix: 0,
   dynamic_suffix: 1,
@@ -31,6 +49,8 @@ const SECTION_ORDER: Record<ContextFragment['section'], number> = {
 interface ProjectRuleDoc {
   path: string
   text: string
+  frontmatter: { scopes?: string[]; activation?: string; priority?: number; trust?: string; [key: string]: unknown }
+  scopes?: string[]
 }
 
 function truncate(text: string, maxChars: number): string {
@@ -73,22 +93,25 @@ function sha256(text: string): string {
 
 async function readProjectRuleFile(workspace: AgentWorkspaceLocation, filePath: string): Promise<ProjectRuleDoc | null> {
   try {
-    const content = await workspaceReadFile(workspace, filePath)
+    const raw = await workspaceReadFile(workspace, filePath)
+    const { frontmatter, body } = parseRuleFrontmatter(raw)
     return {
       path: filePath,
-      text: `# ${filePath}\n${truncate(content, MAX_DOC_CHARS)}`,
+      text: `# ${filePath}\n${truncate(body || raw, MAX_DOC_CHARS)}`,
+      frontmatter,
+      scopes: frontmatter.scopes,
     }
   } catch {
     return null
   }
 }
 
-async function readProjectRuleDirectory(workspace: AgentWorkspaceLocation): Promise<ProjectRuleDoc[]> {
+async function readProjectRuleDirectory(workspace: AgentWorkspaceLocation, dirPath: string = PROJECT_RULES_DIRECTORY): Promise<ProjectRuleDoc[]> {
   try {
-    const entries = await workspaceReadDirectory(workspace, PROJECT_RULES_DIRECTORY)
+    const entries = await workspaceReadDirectory(workspace, dirPath)
     const markdownFiles = entries
       .filter(entry => !entry.isDirectory && entry.name.toLowerCase().endsWith('.md'))
-      .map(entry => `${PROJECT_RULES_DIRECTORY}/${entry.name}`)
+      .map(entry => `${dirPath}/${entry.name}`)
       .sort((a, b) => a.localeCompare(b))
     const docs = await Promise.all(markdownFiles.map(filePath => readProjectRuleFile(workspace, filePath)))
     return docs.filter((item): item is ProjectRuleDoc => Boolean(item))
@@ -99,11 +122,21 @@ async function readProjectRuleDirectory(workspace: AgentWorkspaceLocation): Prom
 
 async function readProjectRuleDocs(workspace: AgentWorkspaceLocation): Promise<ProjectRuleDoc[]> {
   const docs: ProjectRuleDoc[] = []
+  // AGENTS, CLAUDE, RILLE, .rille/rules.md
   for (const filePath of PROJECT_RULE_PREFIX_FILES) {
     const doc = await readProjectRuleFile(workspace, filePath)
     if (doc) docs.push(doc)
   }
-  docs.push(...await readProjectRuleDirectory(workspace))
+  // .rille/rules/*.md
+  docs.push(...await readProjectRuleDirectory(workspace, PROJECT_RULES_DIRECTORY))
+  // .cursorrules
+  for (const filePath of CURSOR_RULE_PREFIX_FILES) {
+    const doc = await readProjectRuleFile(workspace, filePath)
+    if (doc) docs.push(doc)
+  }
+  // .cursor/rules/*.md
+  docs.push(...await readProjectRuleDirectory(workspace, CURSOR_RULES_DIRECTORY))
+  // README.md, .rille/local.md
   for (const filePath of PROJECT_RULE_SUFFIX_FILES) {
     const doc = await readProjectRuleFile(workspace, filePath)
     if (doc) docs.push(doc)
@@ -339,6 +372,17 @@ function collectMemoryRefsFragment(input: ContextBuildInput): ContextFragment | 
   store.load()
   const entries = store.listActive(5)
   if (entries.length === 0) return null
+
+  const registry = getRegistry()
+  const sourceId = registry.registerMemorySource(workspacePath).id
+  registry.recordActivation({
+    entryId: sourceId,
+    turnId: input.turn.id,
+    activatedAt: Date.now(),
+    reason: 'always',
+    fragmentId: 'context_memory_refs',
+  })
+
   return fragment({
     id: 'context_memory_refs',
     type: 'memory_ref',
@@ -358,6 +402,17 @@ function collectFeatureListFragment(input: ContextBuildInput): ContextFragment |
   if (!workspacePath || input.contextSnapshot.workspace?.kind !== 'local') return null
   const snapshot = new FeatureStore(workspacePath).load()
   if (snapshot.featureList.length === 0) return null
+
+  const registry = getRegistry()
+  const sourceId = registry.registerFeatureListSource(workspacePath).id
+  registry.recordActivation({
+    entryId: sourceId,
+    turnId: input.turn.id,
+    activatedAt: Date.now(),
+    reason: 'always',
+    fragmentId: 'context_feature_list',
+  })
+
   return fragment({
     id: 'context_feature_list',
     type: 'feature_list',
@@ -429,21 +484,54 @@ function collectSkillFragments(input: ContextBuildInput): ContextFragment[] {
     input.contextSnapshot.activeFile?.name,
     input.taskContract?.goal,
   ].filter(Boolean).join(' ')
-  return findMatchingSkills(query, input.contextSnapshot.workspace, 3).map(skill => fragment({
-    id: `context_skill_${skill.id}`,
-    type: 'skill',
-    section: 'dynamic_suffix',
-    priority: skill.priority,
-    source: `${skill.source}:${skill.id}`,
-    trust: skill.trust === 'trusted' ? 'workspace' : 'external',
-    text: [`Skill: ${skill.name}`, skill.description, skill.content].join('\n'),
-    cacheEligible: false,
-  }))
+  const skills = findMatchingSkills(query, input.contextSnapshot.workspace, 3)
+  const registry = getRegistry()
+
+  return skills.map(skill => {
+    registry.registerSkillSource(
+      skill.id, skill.name, `${skill.source}:${skill.id}`,
+      skill.priority, skill.trust === 'trusted' ? 'workspace' : 'external',
+    )
+    registry.recordActivation({
+      entryId: `ctx_src_skill_${skill.id}`,
+      turnId: input.turn.id,
+      activatedAt: Date.now(),
+      reason: 'keyword_matched',
+      fragmentId: `context_skill_${skill.id}`,
+    })
+    return fragment({
+      id: `context_skill_${skill.id}`,
+      type: 'skill',
+      section: 'dynamic_suffix',
+      priority: skill.priority,
+      source: `${skill.source}:${skill.id}`,
+      trust: skill.trust === 'trusted' ? 'workspace' : 'external',
+      text: [`Skill: ${skill.name}`, skill.description, skill.content].join('\n'),
+      cacheEligible: false,
+    })
+  })
 }
 
 function collectMcpToolFragment(input: ContextBuildInput): ContextFragment | null {
   const tools = registerMcpToolDescriptors(input.contextSnapshot.workspace).slice(0, 12)
   if (tools.length === 0) return null
+
+  const registry = getRegistry()
+  for (const tool of tools) {
+    const parts = tool.namespace.split('.')
+    const pluginId = parts[1] || 'unknown'
+    const serverId = parts[2] || 'unknown'
+    const toolName = parts.slice(3).join('.') || tool.name
+    registry.registerMcpSource(pluginId, serverId, toolName, tool.namespace)
+    registry.recordActivation({
+      entryId: `ctx_src_mcp_${pluginId}_${serverId}_${toolName}`,
+      turnId: input.turn.id,
+      activatedAt: Date.now(),
+      reason: 'always',
+      fragmentId: 'context_mcp_tools',
+    })
+  }
+
   return fragment({
     id: 'context_mcp_tools',
     type: 'mcp_tool',
@@ -492,9 +580,60 @@ async function collectGitFragment(context: AgentContextSnapshot): Promise<Contex
   })
 }
 
-async function collectProjectRulesFragment(context: AgentContextSnapshot): Promise<ContextFragment | null> {
+async function collectProjectRulesFragment(input: ContextBuildInput): Promise<ContextFragment | null> {
+  const context = input.contextSnapshot
   if (!context.workspace) return null
-  const docs = await readProjectRuleDocs(context.workspace)
+  const registry = getRegistry()
+  const allDocs = await readProjectRuleDocs(context.workspace)
+  if (allDocs.length === 0) return null
+
+  const activeFilePath = context.activeFile?.path
+  const turnId = input.turn.id
+  const docs: ProjectRuleDoc[] = []
+
+  for (const doc of allDocs) {
+    // Register in registry with frontmatter-derived metadata
+    const entryId = `ctx_src_rule_${doc.path.replace(/[/\\]/g, '_')}`
+    const resolved = registry.registerRuleFile({
+      id: entryId,
+      filePath: doc.path,
+      content: doc.text, // already has frontmatter stripped
+      scopes: doc.scopes,
+    })
+
+    // Check scope matching
+    const entry = registry.get(entryId)
+    if (entry && !registry.checkScopeMatch(entry, activeFilePath)) {
+      registry.recordActivation({
+        entryId,
+        turnId,
+        activatedAt: Date.now(),
+        reason: 'scope_not_matched',
+        matchedScope: entry.scopes?.join(', '),
+      })
+      continue
+    }
+
+    // Check activation is allowed
+    if (entry && !registry.isActivationAllowed(entry, input.turn.text)) {
+      continue
+    }
+
+    // Record activation
+    registry.recordActivation({
+      entryId,
+      turnId,
+      activatedAt: Date.now(),
+      reason: 'always',
+      matchedScope: doc.scopes?.find(s => {
+        if (!activeFilePath) return false
+        try { return new RegExp(s.replace(/\*\*\/?/g, '__DS__').replace(/\*/g, '[^/]*').replace(/__DS__/g, '(?:.*/)?')).test(activeFilePath) } catch { return false }
+      }),
+    })
+
+    docs.push({ path: doc.path, text: resolved.text, frontmatter: resolved.frontmatter, scopes: doc.scopes })
+  }
+
   if (docs.length === 0) return null
   return fragment({
     id: 'context_project_rules',
@@ -508,6 +647,45 @@ async function collectProjectRulesFragment(context: AgentContextSnapshot): Promi
   })
 }
 
+function collectContextSourceFragment(input: ContextBuildInput): ContextFragment | null {
+  const registry = getRegistry()
+  const snapshot = registry.toSnapshot()
+  const enabled = snapshot.entries.filter(e => e.enabled && !e.stale)
+  if (enabled.length === 0) return null
+
+  const active = registry.getActivationTrace(input.turn.id)
+  const lines = [
+    `Context sources: ${enabled.length} registered, ${active.length} activated this turn`,
+    ...enabled.map(e => {
+      const activated = active.some(a => a.entryId === e.id)
+      const scopeInfo = e.scopes && e.scopes.length > 0 ? ` scopes=[${e.scopes.join(',')}]` : ''
+      return `- [${e.kind}] ${e.provider} priority=${e.priority} trust=${e.trust} activation=${e.activation}${scopeInfo} ${activated ? '✓' : '○'}`
+    }),
+  ]
+
+  if (snapshot.conflicts.length > 0) {
+    lines.push(`Conflicts: ${snapshot.conflicts.length}`)
+    for (const c of snapshot.conflicts) {
+      lines.push(`  - ${c.kind}: ${c.description} → ${c.resolution ?? 'unresolved'}`)
+    }
+  }
+
+  return fragment({
+    id: 'context_source_registry',
+    type: 'context_source',
+    section: 'dynamic_suffix',
+    priority: 20,
+    source: 'context_source_registry',
+    trust: 'system',
+    text: lines.join('\n'),
+    cacheEligible: false,
+  })
+}
+
+function getContextSourceRegistrySnapshot(): string {
+  return JSON.stringify(getRegistry().toSnapshot())
+}
+
 async function collectContextFragments(input: ContextBuildInput): Promise<ContextFragment[]> {
   const context = input.contextSnapshot
   const stable = [
@@ -518,7 +696,7 @@ async function collectContextFragments(input: ContextBuildInput): Promise<Contex
     collectMemoryRefsFragment(input),
     collectFeatureListFragment(input),
     collectWorkspaceFragment(context),
-    await collectProjectRulesFragment(context),
+    await collectProjectRulesFragment(input),
   ].filter((item): item is ContextFragment => Boolean(item))
   const dynamic = [
     collectActiveEditorFragment(context),
@@ -531,6 +709,7 @@ async function collectContextFragments(input: ContextBuildInput): Promise<Contex
     collectSubagentResultFragment(input),
     ...collectSkillFragments(input),
     collectMcpToolFragment(input),
+    collectContextSourceFragment(input),
     await collectGitFragment(context),
   ].filter((item): item is ContextFragment => Boolean(item))
   return [...stable, ...dynamic]

@@ -1,5 +1,5 @@
 import type { WebContents } from 'electron'
-import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, CompactionResult, EditProposal, ExecutionSandbox, ExtensionDiscoverySnapshot, GovernanceAuditReport, McpServerState, ModelUpgradeReview, PlanConfirmation, PluginManifest, RuntimeProcessSummary, RuntimeStateArtifact, SkillContract, SubagentRun } from '../../shared/agent/protocol'
+import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, CompactionResult, ContextSourceSnapshot, EditProposal, ExecutionSandbox, ExtensionDiscoverySnapshot, GovernanceAuditReport, McpServerState, ModelUpgradeReview, PlanConfirmation, PluginManifest, RuntimeProcessSummary, RuntimeStateArtifact, SkillContract, SubagentRun } from '../../shared/agent/protocol'
 import { deleteAgentModelProfile, listAgentModelProfiles, readAgentConfigSnapshot, saveAgentConfig, saveAgentModelProfile, selectAgentModelProfile } from './config'
 import { testAgentProvider } from './provider'
 import { AgentThread } from './thread'
@@ -158,6 +158,7 @@ type AgentDispatchValue =
   | SubagentRun
   | GovernanceAuditReport
   | ModelUpgradeReview
+  | ContextSourceSnapshot
   | { traceEvents: unknown[] }
 
 export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<AgentDispatchValue>> {
@@ -309,6 +310,18 @@ export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<Agent
       })
       governanceReports.set(op.sessionId, report)
       return ok(report.modelUpgrade)
+    }
+    if (op.type === 'context_source.list') {
+      const { getContextSourceRegistry } = await import('./contextBuilder')
+      return ok(getContextSourceRegistry().toSnapshot())
+    }
+    if (op.type === 'context_source.toggle') {
+      const { getContextSourceRegistry } = await import('./contextBuilder')
+      const registry = getContextSourceRegistry()
+      const ok_ = registry.setEnabled(op.entryId, op.enabled)
+      if (!ok_) return fail(`Entry not found: ${op.entryId}`)
+      if (!op.enabled) registry.recordIgnore(op.entryId, 'disabled_by_user')
+      return ok(registry.toSnapshot())
     }
     if ('sessionId' in op) {
       return ok(requireThread(op.sessionId).handle(op))

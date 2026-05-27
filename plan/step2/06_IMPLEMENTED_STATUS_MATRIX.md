@@ -83,16 +83,19 @@ Phase W
 
 ## Capability: Rules / AGENTS Ecosystem and Context Governance
 
-Current status: 部分实现
+Current status: 已实现
 
 Step1 baseline:
 已有 AGENTS、CLAUDE、RILLE、.rille/rules、skills、memory、MCP context fragments。
 
+Implemented details:
+`ContextSourceRegistry` 统一注册所有上下文来源（rule_file/rule_directory/memory/skill/mcp/feature_list），支持注册/注销/启用禁用/激活追踪/冲突检测/ignore reason；规则文件读取兼容 AGENTS.md、CLAUDE.md、RILLE.md、.rille/rules.md、.rille/rules/*.md、.cursorrules、.cursor/rules/*.md、README.md、.rille/local.md；支持 YAML frontmatter（scopes/priority/activation/trust）解析和 glob scope 过滤；UI `ContextSourcePanel` 组件按 kind 分组展示上下文来源、支持启用/禁用 toggle、冲突指示器、激活 trace 展开；新增 `context_governance` eval case。
+
 Missing pieces:
-统一 registry、glob/scoped rules、冲突解释、trust/priority UI、context source disable、governed activation trace。
+Registry 为内存单例，应用重启后丢失历史 activation trace；语义级冲突检测（不同规则文件的矛盾指令分析）尚未实现；ContextSourcePanel 需在首次 submit turn 后才有数据。
 
 Next phase:
-Phase X
+Phase Y (context source 展示面板消费 ContextSourceRegistryEntry)
 
 ## Capability: Product UX Command Center
 

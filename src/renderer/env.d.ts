@@ -444,6 +444,8 @@ declare global {
     agentSelectModelProfile(profileId: string): Promise<AgentConfigSnapshot>
     agentDeleteModelProfile(profileId: string): Promise<AgentModelStoreSnapshot>
     agentTestProvider(profileId?: string): Promise<{ success: boolean; message: string }>
+    agentListContextSources(sessionId: string): Promise<import('../../src/shared/agent/protocol').ContextSourceSnapshot>
+    agentToggleContextSource(sessionId: string, entryId: string, enabled: boolean): Promise<import('../../src/shared/agent/protocol').ContextSourceSnapshot>
     onAgentEvent(callback: (event: AgentEvent) => void): () => void
   }
 

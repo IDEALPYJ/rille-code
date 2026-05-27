@@ -38,6 +38,7 @@ import type {
 import type { OpenFile } from '../../App'
 import type { EditorDiagnostic } from '../Editor'
 import { expandComposerDraft, subagentNodes, summarizeAgentWorkbench, traceDebugSummary } from './workbenchState'
+import { ContextSourcePanel } from './ContextSourcePanel'
 
 interface Props {
   workspace: WorkspaceLocation | null
@@ -1119,6 +1120,7 @@ export function AgentPanel(props: Props) {
       <div className="agent-context-bar">
         <div className="agent-context-line" title={contextLine}>{contextLine}</div>
       </div>
+      {props.sessionId && <ContextSourcePanel sessionId={props.sessionId} />}
       <div className={'agent-risk-card risk-' + riskSummary.risk}>
         <div>
           <strong>{riskText(riskSummary.risk)}</strong>

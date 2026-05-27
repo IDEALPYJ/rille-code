@@ -281,6 +281,7 @@ export type ContextFragmentType =
   | 'plugin'
   | 'mcp_tool'
   | 'subagent_result'
+  | 'context_source'
 export type ContextFragmentSection = 'stable_prefix' | 'dynamic_suffix'
 export type ContextTrustLevel = 'system' | 'workspace' | 'tool_output' | 'user' | 'external'
 export type ToolVisibility = 'model' | 'runtime' | 'ui'
@@ -702,6 +703,64 @@ export interface ContextBuiltSummary {
   cacheEligibleTokenEstimate?: number
   cacheHit?: boolean
   cachedInputTokens?: number
+}
+
+// === Context Governance (Phase X) ===
+
+export type ContextSourceKind =
+  | 'rule_file'
+  | 'rule_directory'
+  | 'memory'
+  | 'skill'
+  | 'mcp'
+  | 'feature_list'
+
+export interface ContextSourceEntry {
+  id: string
+  kind: ContextSourceKind
+  provider: string
+  location: string
+  priority: number
+  trust: ContextTrustLevel
+  activation: 'always' | 'on_match' | 'on_demand'
+  activationKeywords?: string[]
+  scopes?: string[]
+  enabled: boolean
+  stale?: boolean
+  metadata?: Record<string, unknown>
+}
+
+export interface ContextActivationRecord {
+  entryId: string
+  turnId: string
+  activatedAt: number
+  reason: 'file_matched' | 'keyword_matched' | 'always' | 'user_requested' | 'scope_not_matched'
+  matchedScope?: string
+  fragmentId?: string
+}
+
+export interface ContextSourceSnapshot {
+  entries: ContextSourceEntry[]
+  activationTrace: ContextActivationRecord[]
+  conflicts: ContextSourceConflict[]
+  generatedAt: number
+}
+
+export interface ContextSourceConflict {
+  entryA: string
+  entryB: string
+  kind: 'duplicate_rule' | 'contradictory_instruction' | 'namespace_conflict'
+  description: string
+  resolution?: string
+  resolvedBy: 'priority' | 'trust' | 'user' | 'none'
+}
+
+export interface RuleFrontmatter {
+  scopes?: string[]
+  activation?: 'always' | 'on_match' | 'on_demand'
+  priority?: number
+  trust?: ContextTrustLevel
+  [key: string]: unknown
 }
 
 // === Feature / Progress / Handoff ===
@@ -1333,6 +1392,8 @@ export type AgentOp =
   | { type: 'memory.update'; workspacePath: string; entryId: string; changes: Partial<Pick<ProjectMemoryEntry, 'text' | 'status' | 'sourceRefs'>> }
   | { type: 'memory.delete'; workspacePath: string; entryId: string }
   | { type: 'memory.list'; workspacePath: string }
+  | { type: 'context_source.list'; sessionId: string }
+  | { type: 'context_source.toggle'; sessionId: string; entryId: string; enabled: boolean }
 
 export type AgentEvent =
   | { type: 'session.created'; session: AgentSession }
@@ -1402,5 +1463,6 @@ export type AgentEvent =
   | { type: 'memory.created'; sessionId: string; entry: ProjectMemoryEntry }
   | { type: 'memory.updated'; sessionId: string; entry: ProjectMemoryEntry }
   | { type: 'memory.deleted'; sessionId: string; entryId: string; workspacePath: string }
+  | { type: 'context_source.changed'; sessionId: string; snapshot: ContextSourceSnapshot; createdAt: number }
 
 export type AgentIpcResult<T> = { ok: true; value: T } | { ok: false; error: string }

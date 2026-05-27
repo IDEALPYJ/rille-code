@@ -169,6 +169,7 @@ describe('buildAgentContext', () => {
       'diagnostics',
       'open_files',
       'git',
+      'context_source',
     ])
   })
 
@@ -206,7 +207,7 @@ describe('buildAgentContext', () => {
     const excludedTypes = result.trace.excluded.map(item => item.type)
 
     expect(includedTypes).toEqual(['task_contract'])
-    expect(excludedTypes).toEqual(['plan', 'session_summary', 'workspace', 'active_editor', 'diagnostics', 'open_files'])
+    expect(excludedTypes).toEqual(['plan', 'session_summary', 'workspace', 'active_editor', 'diagnostics', 'open_files', 'context_source'])
     expect(result.prompt).toContain('Task Contract:')
     expect(result.prompt).not.toContain('Structured Plan:')
     expect(result.prompt).not.toContain('Open files:')

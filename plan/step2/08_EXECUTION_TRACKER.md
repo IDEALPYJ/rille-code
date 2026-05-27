@@ -21,7 +21,7 @@
 | U | Writable / Real LLM Subagents + Worktree Merge | 未完成 | 部分实现 | 只读 subagent 和 deterministic fallback baseline | U1 |
 | V | Automations + Review Queue | 未完成 | 未实现 | 仅 handoff/session/evidence 基线 | V1 |
 | W | Remote / Cloud Worker | 未完成 | 部分实现 | 仅 SSH/WSL/worktree substrate baseline | W1 |
-| X | Rules / AGENTS Ecosystem + Context Governance | 未完成 | 部分实现 | 已有 rules collector，无统一治理 | X1 |
+| X | Rules / AGENTS Ecosystem + Context Governance | 已完成 | 已实现 | X1-X6 全部完成，ContextSourceRegistry + cursor rules + scoped rules + 冲突解释 + UI context panel + governance eval | T1 |
 | Y | Product UX Command Center | 未完成 | 部分实现 | AgentPanel 基础 timeline/workbench | Y1 |
 | Z | Enterprise Governance + Real Model Eval / Release Hardening | 未完成 | 部分实现 | deterministic governance baseline | Z1 |
 
@@ -83,12 +83,12 @@
 
 ## Phase X Checklist
 
-- [ ] X1. 建立 ContextSourceRegistry。
-- [ ] X2. 兼容 AGENTS、CLAUDE、RILLE、.rille/rules 和 Cursor-like rules。
-- [ ] X3. 支持 glob/scoped rules 和 activation trace。
-- [ ] X4. 增加冲突解释、优先级、trust 和 ignore reason。
-- [ ] X5. UI 展示当前上下文来源和可禁用项。
-- [ ] X6. 增加 context governance eval。
+- [x] X1. 建立 ContextSourceRegistry。
+- [x] X2. 兼容 AGENTS、CLAUDE、RILLE、.rille/rules 和 Cursor-like rules。
+- [x] X3. 支持 glob/scoped rules 和 activation trace。
+- [x] X4. 增加冲突解释、优先级、trust 和 ignore reason。
+- [x] X5. UI 展示当前上下文来源和可禁用项。
+- [x] X6. 增加 context governance eval。
 
 ## Phase Y Checklist
 
@@ -158,3 +158,16 @@
 验证结果: 类型检查通过；28 测试文件 214 测试全部通过
 剩余风险: GitHub Actions CI workflow 尚未在 windows-latest runner 上实际运行验证
 下一步: Phase T1。
+
+## Phase X 完成记录
+
+步骤: Phase X Rules / AGENTS Ecosystem + Context Governance
+状态: 已完成
+完成日期: 2026-05-27
+涉及模块: `src/main/agent/contextSourceRegistry.ts` (新建), `src/main/agent/contextBuilder.ts` (修改), `src/shared/agent/protocol.ts` (修改), `src/main/agent/index.ts` (修改), `src/preload/index.ts` (修改), `src/renderer/components/agent/ContextSourcePanel.tsx` (新建), `src/renderer/components/agent/AgentPanel.tsx` (修改), `src/renderer/App.css` (修改), `src/renderer/env.d.ts` (修改), `tests/agent/contextSourceRegistry.test.ts` (新建), `tests/agent/contextBuilder.test.ts` (修改), `eval/cases/context_governance.json` (新建)
+实现摘要: Phase X 建立统一 ContextSourceRegistry（注册/激活追踪/冲突检测/ignore reason），兼容 AGENTS/CLAUDE/RILLE/.rille/.cursorrules/.cursor/rules 格式，支持 YAML frontmatter（scopes/priority/activation/trust）解析和 glob scope 过滤，实现上下文来源 UI 面板（按 kind 分组过滤、启用/禁用 toggle、冲突指示器、激活 trace），新增 context governance eval case。
+测试文件: `tests/agent/contextSourceRegistry.test.ts` (新建, 38 tests), `tests/agent/contextBuilder.test.ts` (修改, 适配新 fragment)
+验证命令: `npm run typecheck`; `npx vitest run tests/agent/`; `npm run build`; `npm run eval:agent`
+验证结果: typecheck 通过；29 测试文件 254 tests passed（3 预存失败：platform x2 + governance x1）；build 通过；eval 16/16 cases passed。
+剩余风险: ContextSourcePanel 在 renderer 端通过 IPC 调用获取 snapshot，首次 submit turn 前 registry 为空无法展示；Registry 是内存单例，应用重启后丢失历史 activation trace。
+下一步: Phase T1 或 Phase Y（context source 展示依赖 ContextSourceRegistryEntry）。

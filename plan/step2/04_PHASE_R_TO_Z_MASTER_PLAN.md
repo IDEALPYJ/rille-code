@@ -10,7 +10,7 @@
 | U | Writable / Real LLM Subagents + Worktree Merge | 部分实现 |
 | V | Automations + Review Queue | 未实现 |
 | W | Remote / Cloud Worker | 部分实现 |
-| X | Rules / AGENTS Ecosystem + Context Governance | 部分实现 |
+| X | Rules / AGENTS Ecosystem + Context Governance | 已实现 |
 | Y | Product UX Command Center | 部分实现 |
 | Z | Enterprise Governance + Real Model Eval / Release Hardening | 部分实现 |
 
@@ -100,12 +100,12 @@ Checklist：
 
 Checklist：
 
-- [ ] X1. 建立 ContextSourceRegistry。
-- [ ] X2. 兼容 AGENTS、CLAUDE、RILLE、.rille/rules 和 Cursor-like rules。
-- [ ] X3. 支持 glob/scoped rules 和 activation trace。
-- [ ] X4. 增加冲突解释、优先级、trust 和 ignore reason。
-- [ ] X5. UI 展示当前上下文来源和可禁用项。
-- [ ] X6. 增加 context governance eval。
+- [x] X1. 建立 ContextSourceRegistry。
+- [x] X2. 兼容 AGENTS、CLAUDE、RILLE、.rille/rules 和 Cursor-like rules。
+- [x] X3. 支持 glob/scoped rules 和 activation trace。
+- [x] X4. 增加冲突解释、优先级、trust 和 ignore reason。
+- [x] X5. UI 展示当前上下文来源和可禁用项。
+- [x] X6. 增加 context governance eval。
 
 ## Phase Y: Product UX Command Center
 

@@ -159,6 +159,8 @@ export interface RilleAPI {
   agentSelectModelProfile(profileId: string): Promise<AgentConfigSnapshot>
   agentDeleteModelProfile(profileId: string): Promise<AgentModelStoreSnapshot>
   agentTestProvider(profileId?: string): Promise<{ success: boolean; message: string }>
+  agentListContextSources(sessionId: string): Promise<import('../shared/agent/protocol').ContextSourceSnapshot>
+  agentToggleContextSource(sessionId: string, entryId: string, enabled: boolean): Promise<import('../shared/agent/protocol').ContextSourceSnapshot>
   onAgentEvent(callback: (event: AgentEvent) => void): () => void
 }
 
@@ -617,6 +619,8 @@ const api: RilleAPI = {
   agentSelectModelProfile: (profileId) => invokeAgent<AgentConfigSnapshot>('agent:selectModelProfile', profileId),
   agentDeleteModelProfile: (profileId) => invokeAgent<AgentModelStoreSnapshot>('agent:deleteModelProfile', profileId),
   agentTestProvider: (profileId) => invokeAgent<{ success: boolean; message: string }>('agent:testProvider', profileId),
+  agentListContextSources: (sessionId) => invokeAgent('agent:dispatch', { type: 'context_source.list', sessionId }),
+  agentToggleContextSource: (sessionId, entryId, enabled) => invokeAgent('agent:dispatch', { type: 'context_source.toggle', sessionId, entryId, enabled }),
   onAgentEvent: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, event: AgentEvent) => callback(event)
     ipcRenderer.on('agent:event', listener)
