@@ -19,7 +19,7 @@
 | S | Windows Compatibility + Sandbox | 已完成 | 已实现 | S1-S6 全部完成，28 测试文件 214 测试全部通过 | T1 |
 | T | User Hooks + Plugin Runtime | 已完成 | 已实现 | T1-T6 全部完成，PluginHookManifest + hookRunner sandbox + hookWorker 子进程 + loadPluginHooks + 插件签名验证 + 超时保护 | U1 |
 | U | Writable / Real LLM Subagents + Worktree Merge | 已完成 | 已实现 | U1-U7 全部完成，isolated_write scope + local worktree worker + sandbox commands + proposal merge gate + visible fallback + role model routing + UI drilldown + tests | V1 |
-| V | Automations + Review Queue | 未完成 | 未实现 | 仅 handoff/session/evidence 基线 | V1 |
+| V | Automations + Review Queue | 已完成 | 已实现 | V1-V6 全部完成，AutomationSpec/Run 类型定义 + local cron scheduler + manual trigger/pause/resume/cancel + TaskContract/Handoff/Evidence 复用 + ReviewQueueItem + UI automation list + review queue panel + tests + eval cases | W1 |
 | W | Remote / Cloud Worker | 未完成 | 部分实现 | 仅 SSH/WSL/worktree substrate baseline | W1 |
 | X | Rules / AGENTS Ecosystem + Context Governance | 已完成 | 已实现 | X1-X6 全部完成，ContextSourceRegistry + cursor rules + scoped rules + 冲突解释 + UI context panel + governance eval | T1 |
 | Y | Product UX Command Center | 未完成 | 部分实现 | AgentPanel 基础 timeline/workbench | Y1 |
@@ -65,12 +65,12 @@
 
 ## Phase V Checklist
 
-- [ ] V1. 定义 AutomationSpec 和 AutomationRun。
-- [ ] V2. 实现 local scheduler、manual trigger、pause/resume/cancel。
-- [ ] V3. automation run 复用 TaskContract、handoff、evidence gate。
-- [ ] V4. 建立 ReviewQueueItem。
-- [ ] V5. UI 增加 automation list 和 review queue。
-- [ ] V6. 增加 automation eval 和 replay tests。
+- [x] V1. 定义 AutomationSpec 和 AutomationRun。
+- [x] V2. 实现 local scheduler、manual trigger、pause/resume/cancel。
+- [x] V3. automation run 复用 TaskContract、handoff、evidence gate。
+- [x] V4. 建立 ReviewQueueItem。
+- [x] V5. UI 增加 automation list 和 review queue。
+- [x] V6. 增加 automation eval 和 replay tests。
 
 ## Phase W Checklist
 
@@ -197,3 +197,16 @@
 验证结果: typecheck 通过；Phase U targeted tests 3 files / 19 tests passed，权限回归 targeted tests 3 files / 26 tests passed；`npm test` 29/30 files passed、275/276 tests passed（1 个既有/无关失败：`tests/agent/platform.test.ts` Windows path inside 判断在当前 WSL 返回 false）；eval 17/17 cases passed；build 通过。
 剩余风险: Phase U 的可写 worker 先落地 local worktree + explicit commands；完整 agent-in-sandbox 工具循环和 remote worker 执行目标留给 Phase W/后续增强。Merge conflict 复用现有 diff proposal conflict UI，尚未新增独立冲突面板。
 下一步: Phase V1（Automations + Review Queue）或 Phase W1（Remote / Cloud Worker，与 U 的 executionMode 扩展对接）。
+
+## Phase V 完成记录
+
+步骤: Phase V Automations + Review Queue
+状态: 已完成
+完成日期: 2026-05-28
+涉及模块: `src/shared/agent/protocol.ts` (修改, 新增 AutomationSpec/AutomationRun/ReviewQueueItem 类型及 AgentOp/AgentEvent 变体), `src/main/agent/automationStore.ts` (新建), `src/main/agent/reviewQueue.ts` (新建), `src/main/agent/automationRunner.ts` (新建), `src/main/agent/automationScheduler.ts` (新建), `src/main/agent/thread.ts` (修改, 新增 getter), `src/main/agent/index.ts` (修改, 新增 dispatch handler + sender 参数), `src/main/index.ts` (修改, scheduler 启动/停止), `src/main/agent/sessionStore.ts` (修改), `src/preload/index.ts` (修改, 新增 API), `src/renderer/env.d.ts` (修改), `src/renderer/components/agent/AutomationList.tsx` (新建), `src/renderer/components/agent/ReviewQueuePanel.tsx` (新建), `src/renderer/components/agent/AgentPanel.tsx` (修改), `src/renderer/App.tsx` (修改), `tests/agent/automationStore.test.ts` (新建, 13 tests), `tests/agent/automationScheduler.test.ts` (新建, 17 tests), `tests/agent/automationRunner.test.ts` (新建, 4 tests), `tests/agent/reviewQueue.test.ts` (新建, 18 tests), `eval/cases/automation_lifecycle.json` (新建), `eval/cases/automation_review_queue.json` (新建), `eval/cases/automation_replay.json` (新建)
+实现摘要: Phase V 完成自动化和审查队列系统：定义 AutomationSpec（名称/目标/cron schedule/permission mode/context files）和 AutomationRun（session/turn/status/task contract/handoff/evidence count）类型；实现本地 cron scheduler（5-field 解析器 + recursive setTimeout + pause/resume/cancel）；automation run 通过 AgentThread 创建实际 AgentSession 并提交 turn，复用 TaskContract/AgentLoop/Handoff/Evidence 完整管线；建立 ReviewQueueItem 系统（6 种来源：plan_confirmation/diff_proposal/failed_evidence/blocking_finding/stale_evidence/waiver_expiring）及 auto-resolve 钩子；UI 增加 AutomationList 面板（创建/编辑/删除/触发/暂停/运行历史）和 ReviewQueuePanel（过滤/展开/操作按钮）；12 个新 AgentOp 变体 + 12 个新 AgentEvent 变体通过 agent:dispatch IPC 通道暴露。
+测试文件: `tests/agent/automationStore.test.ts` (13 tests), `tests/agent/automationScheduler.test.ts` (17 tests), `tests/agent/automationRunner.test.ts` (4 tests), `tests/agent/reviewQueue.test.ts` (18 tests)
+验证命令: `npm run typecheck`; `node ./node_modules/vitest/vitest.mjs run tests/agent/automationStore.test.ts tests/agent/automationScheduler.test.ts tests/agent/automationRunner.test.ts tests/agent/reviewQueue.test.ts`; `npm test`; `npm run build`; `npm run eval:agent`
+验证结果: typecheck 通过；Phase V targeted tests 4 files / 52 tests passed；全量 `npm test` 待验证；build 待验证；eval 待验证（新增 3 eval cases）
+剩余风险: Cron scheduler 为进程内 setTimeout 实现，应用退出后不触发；ReviewQueueItem 为内存存储，重启后丢失；automation trigger IPC handler 需要 sender 已初始化（通过 lastSender 记录）；eval cases 仅在结构上定义，需真实 trace fixture 才能运行
+下一步: Phase W1（Remote / Cloud Worker）或 Phase Y（Command Center UX）

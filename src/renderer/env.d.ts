@@ -15,6 +15,8 @@ import type {
   ArtifactPayload,
   ArtifactRef,
   ApprovalDecision,
+  AutomationRun,
+  AutomationSpec,
   CheckpointRef,
   CompactionResult,
   EditProposal,
@@ -22,6 +24,7 @@ import type {
   PlanConfirmation,
   GovernanceAuditReport,
   ModelUpgradeReview,
+  ReviewQueueItem,
   RuntimeProcessSummary,
   RuntimeStateArtifact,
   ExtensionDiscoverySnapshot,
@@ -446,6 +449,18 @@ declare global {
     agentTestProvider(profileId?: string): Promise<{ success: boolean; message: string }>
     agentListContextSources(sessionId: string): Promise<import('../../src/shared/agent/protocol').ContextSourceSnapshot>
     agentToggleContextSource(sessionId: string, entryId: string, enabled: boolean): Promise<import('../../src/shared/agent/protocol').ContextSourceSnapshot>
+    agentListAutomations(): Promise<AutomationSpec[]>
+    agentCreateAutomation(spec: Omit<AutomationSpec, 'id' | 'createdAt' | 'updatedAt'>): Promise<AutomationSpec>
+    agentUpdateAutomation(automationId: string, changes: Partial<AutomationSpec>): Promise<AutomationSpec>
+    agentDeleteAutomation(automationId: string): Promise<boolean>
+    agentReadAutomation(automationId: string): Promise<AutomationSpec>
+    agentTriggerAutomation(automationId: string): Promise<AutomationRun>
+    agentPauseAutomation(automationId: string): Promise<AutomationSpec>
+    agentResumeAutomation(automationId: string): Promise<AutomationSpec>
+    agentCancelAutomationRun(runId: string): Promise<boolean>
+    agentListAutomationRuns(automationId: string): Promise<AutomationRun[]>
+    agentListReviewQueue(sessionId?: string, automationId?: string): Promise<ReviewQueueItem[]>
+    agentResolveReviewQueueItem(itemId: string, action: 'dismiss' | 'accept_risk' | 'reject' | 'retry', reason?: string): Promise<ReviewQueueItem>
     onAgentEvent(callback: (event: AgentEvent) => void): () => void
   }
 

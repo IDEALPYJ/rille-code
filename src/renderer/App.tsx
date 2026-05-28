@@ -19,6 +19,7 @@ import {
   PanelLeft,
   PanelRight,
   X,
+  Zap,
 } from 'lucide-react'
 import { FileTree } from './components/FileTree'
 import { Tabs } from './components/Tabs'
@@ -29,6 +30,8 @@ import { GitPanel } from './components/GitPanel'
 import { GitDiffViewer, type GitDiffTarget } from './components/GitDiffViewer'
 import { TerminalPanel } from './components/TerminalPanel'
 import { AgentPanel } from './components/agent/AgentPanel'
+import { AutomationList } from './components/agent/AutomationList'
+import { ReviewQueuePanel } from './components/agent/ReviewQueuePanel'
 import { ModelSettingsDialog } from './components/ModelSettingsDialog'
 import type { AgentEvent, AgentSession, AgentSessionSummary } from '../shared/agent/protocol'
 
@@ -60,7 +63,7 @@ export interface AppContextType extends AppState {
 }
 
 type BottomPanelTab = 'problems' | 'output' | 'debug' | 'terminal' | 'ports'
-type RightTool = 'launcher' | 'files' | 'review' | 'search' | 'browser'
+type RightTool = 'launcher' | 'files' | 'review' | 'search' | 'browser' | 'automation'
 type OpenRightTool = Exclude<RightTool, 'launcher' | 'browser'>
 
 type GitMeta = Pick<GitStatusResult, 'isRepo' | 'repoRoot' | 'branch' | 'remoteName' | 'error'>
@@ -1011,6 +1014,7 @@ export default function App() {
       files: '文件',
       review: '源代码管理',
       search: '搜索',
+      automation: '自动化',
     }
     const activateRightTool = (tool: RightTool) => {
       if (tool === 'browser') return
@@ -1083,6 +1087,7 @@ export default function App() {
       ...(hasProject ? [{ tool: 'files' as const, label: '文件', description: '浏览项目文件', icon: Files }] : []),
       ...(hasProject && hasGit ? [{ tool: 'review' as const, label: '审查', description: '查看代码更改', icon: GitBranch }] : []),
       ...(hasProject ? [{ tool: 'search' as const, label: '搜索', description: '搜索项目内容', icon: Search }] : []),
+      { tool: 'automation' as const, label: '自动化', description: '自动化任务与审查队列', icon: Zap },
       { tool: 'browser', label: '浏览器', description: '打开网站', icon: Globe, disabled: true },
     ]
 
@@ -1265,6 +1270,17 @@ export default function App() {
                 </div>
               )}
             </section>
+            </>
+          )}
+
+          {activeRightTool === 'automation' && (
+            <>
+              <section className="file-workspace-section automation-panel-section" aria-label="自动化">
+                <AutomationList />
+              </section>
+              <section className="file-workspace-section review-queue-panel-section" aria-label="审查队列">
+                <ReviewQueuePanel />
+              </section>
             </>
           )}
 

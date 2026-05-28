@@ -845,6 +845,78 @@ export interface Handoff {
   createdAt: number
 }
 
+// === Automations ===
+
+export type AutomationStatus =
+  | 'idle'
+  | 'pending'
+  | 'running'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export interface AutomationSpec {
+  id: string
+  name: string
+  goal: string
+  schedule: 'manual' | { cron: string; timezone?: string }
+  workspace: AgentWorkspaceLocation
+  permissionMode: AgentPermissionMode
+  contextFiles?: string[]
+  enabled: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export interface AutomationRun {
+  id: string
+  automationId: string
+  sessionId: string
+  turnId: string
+  status: AutomationStatus
+  taskContract?: TaskContract
+  handoff?: Handoff
+  evidenceCount: number
+  findingCount: number
+  error?: string
+  startedAt: number
+  completedAt?: number
+}
+
+// === Review Queue ===
+
+export type ReviewQueueSource =
+  | 'plan_confirmation'
+  | 'diff_proposal'
+  | 'failed_evidence'
+  | 'blocking_finding'
+  | 'stale_evidence'
+  | 'waiver_expiring'
+
+export interface ReviewQueueItem {
+  id: string
+  source: ReviewQueueSource
+  sessionId: string
+  turnId: string
+  automationId?: string
+  title: string
+  description: string
+  severity: 'info' | 'warning' | 'blocking'
+  resolved: boolean
+  resolvedAt?: number
+  resolvedBy?: 'user' | 'automation'
+  payload: {
+    planConfirmationId?: string
+    proposalId?: string
+    evidenceId?: string
+    findingId?: string
+    waiverId?: string
+    filePath?: string
+  }
+  createdAt: number
+}
+
 // === Project Memory ===
 
 export type ProjectMemoryKind = 'command' | 'convention' | 'decision' | 'known_issue' | 'workflow' | 'handoff'
@@ -1357,6 +1429,7 @@ export type MessagePart =
   | { id: string; messageId: string; type: 'handoff'; handoff: Handoff; createdAt: number }
   | { id: string; messageId: string; type: 'artifact'; artifact: ArtifactRef; label: string; createdAt: number }
   | { id: string; messageId: string; type: 'subagent'; run: SubagentRun; result?: SubagentResult; createdAt: number }
+  | { id: string; messageId: string; type: 'automation_run'; run: AutomationRun; createdAt: number }
 
 export interface ApprovalRequest {
   id: string
@@ -1464,6 +1537,18 @@ export type AgentOp =
   | { type: 'context_source.toggle'; sessionId: string; entryId: string; enabled: boolean }
   | { type: 'hook.list'; sessionId: string }
   | { type: 'hook.test'; sessionId: string; pluginId: string; hookName: AgentHookName }
+  | { type: 'automation.create'; spec: Omit<AutomationSpec, 'id' | 'createdAt' | 'updatedAt'> }
+  | { type: 'automation.update'; automationId: string; changes: Partial<AutomationSpec> }
+  | { type: 'automation.delete'; automationId: string }
+  | { type: 'automation.list' }
+  | { type: 'automation.read'; automationId: string }
+  | { type: 'automation.trigger'; automationId: string }
+  | { type: 'automation.pause'; automationId: string }
+  | { type: 'automation.resume'; automationId: string }
+  | { type: 'automation.cancel'; runId: string }
+  | { type: 'automation.listRuns'; automationId: string }
+  | { type: 'review.queue.list'; sessionId?: string; automationId?: string }
+  | { type: 'review.queue.resolve'; itemId: string; action: 'dismiss' | 'accept_risk' | 'reject' | 'retry'; reason?: string }
 
 export type AgentEvent =
   | { type: 'session.created'; session: AgentSession }
@@ -1541,5 +1626,17 @@ export type AgentEvent =
   | { type: 'memory.updated'; sessionId: string; entry: ProjectMemoryEntry }
   | { type: 'memory.deleted'; sessionId: string; entryId: string; workspacePath: string }
   | { type: 'context_source.changed'; sessionId: string; snapshot: ContextSourceSnapshot; createdAt: number }
+  | { type: 'automation.created'; automation: AutomationSpec }
+  | { type: 'automation.updated'; automation: AutomationSpec }
+  | { type: 'automation.deleted'; automationId: string }
+  | { type: 'automation.triggered'; automationId: string; runId: string }
+  | { type: 'automation.run.started'; run: AutomationRun }
+  | { type: 'automation.run.completed'; run: AutomationRun }
+  | { type: 'automation.run.failed'; run: AutomationRun; error: string }
+  | { type: 'automation.paused'; automationId: string }
+  | { type: 'automation.resumed'; automationId: string }
+  | { type: 'review.queue.pushed'; item: ReviewQueueItem }
+  | { type: 'review.queue.resolved'; item: ReviewQueueItem }
+  | { type: 'review.queue.changed'; items: ReviewQueueItem[] }
 
 export type AgentIpcResult<T> = { ok: true; value: T } | { ok: false; error: string }

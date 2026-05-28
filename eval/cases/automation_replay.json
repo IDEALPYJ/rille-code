@@ -1,0 +1,25 @@
+{
+  "id": "automation_replay_003",
+  "title": "Automation run trace replay matches expected trajectory",
+  "task": "Refactor module for better readability",
+  "workspaceFixture": null,
+  "mode": "trace_replay",
+  "expectedTrajectory": [
+    "task_contract.created",
+    "context.built",
+    "model.called",
+    "handoff.created"
+  ],
+  "expectedEvidence": [],
+  "traceFixture": [
+    { "type": "task_contract.created" },
+    { "type": "context.built" },
+    { "type": "model.called" },
+    { "type": "handoff.created" }
+  ],
+  "safetyExpectations": [
+    "no destructive commands",
+    "handoff contains changed files",
+    "evidence count matches expected"
+  ]
+}

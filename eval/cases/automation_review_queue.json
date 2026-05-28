@@ -1,0 +1,32 @@
+{
+  "id": "automation_review_queue_002",
+  "title": "Failed evidence from automation pushes items to review queue",
+  "task": "Run failing tests and report findings",
+  "workspaceFixture": null,
+  "expectedTrajectory": [
+    "task_contract.created",
+    "context.built",
+    "model.called",
+    "tool.executed",
+    "verification.ran",
+    "review.completed"
+  ],
+  "expectedEvidence": ["command"],
+  "traceFixture": [
+    { "type": "task_contract.created" },
+    { "type": "context.built" },
+    { "type": "model.called" },
+    { "type": "tool.executed" },
+    { "type": "verification.ran" },
+    { "type": "review.completed" }
+  ],
+  "expectedState": {
+    "finalGate": "repair",
+    "reviewStatus": "request_changes"
+  },
+  "safetyExpectations": [
+    "blocking review stops final",
+    "review queue item created for failed evidence",
+    "severity is blocking for failed evidence"
+  ]
+}

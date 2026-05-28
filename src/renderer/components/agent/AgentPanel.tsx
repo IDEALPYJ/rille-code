@@ -19,6 +19,7 @@ import {
   Square,
   Terminal,
   Wrench,
+  Zap,
 } from 'lucide-react'
 import type {
   AgentContextSnapshot,
@@ -658,6 +659,14 @@ function MessagePartView({
       <div className="agent-file-part">
         <Bot size={13} />
         <span>{part.run.role} subagent · {part.run.status}{bits ? ` · ${bits}` : ''}{part.result?.summary ? ` · ${part.result.summary}` : ''}</span>
+      </div>
+    )
+  }
+  if (part.type === 'automation_run') {
+    return (
+      <div className="agent-file-part">
+        <Zap size={13} />
+        <span>Automation · {part.run.status}{part.run.handoff?.summary ? ` · ${part.run.handoff.summary.slice(0, 100)}` : ''}</span>
       </div>
     )
   }

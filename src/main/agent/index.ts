@@ -1,5 +1,5 @@
 import type { WebContents } from 'electron'
-import type { AgentConfigSnapshot, AgentConfigUpdate, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, CheckpointRef, CompactionResult, ContextSourceSnapshot, EditProposal, ExecutionSandbox, ExtensionDiscoverySnapshot, GovernanceAuditReport, McpServerState, ModelUpgradeReview, PlanConfirmation, PluginManifest, RuntimeProcessSummary, RuntimeStateArtifact, SkillContract, SubagentRun } from '../../shared/agent/protocol'
+import type { AgentConfigSnapshot, AgentConfigUpdate, AgentEvent, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, AutomationRun, AutomationSpec, CheckpointRef, CompactionResult, ContextSourceSnapshot, EditProposal, ExecutionSandbox, ExtensionDiscoverySnapshot, GovernanceAuditReport, McpServerState, ModelUpgradeReview, PlanConfirmation, PluginManifest, ReviewQueueItem, RuntimeProcessSummary, RuntimeStateArtifact, SkillContract, SubagentRun } from '../../shared/agent/protocol'
 import { deleteAgentModelProfile, listAgentModelProfiles, readAgentConfigSnapshot, saveAgentConfig, saveAgentModelProfile, selectAgentModelProfile } from './config'
 import { testAgentProvider } from './provider'
 import { AgentThread } from './thread'
@@ -15,6 +15,10 @@ import { listMcpServerStates, startMcpServer, stopMcpServer } from './mcpManager
 import { cancelSubagentRun, listSubagentRuns, readSubagentRun, subagentRunsFromEvents, SubagentRunner } from './subagentRunner'
 import { runGovernanceAudit } from './governance'
 import { getToolDefinitions } from './tools'
+import { loadAutomationSpecs, saveAutomationSpec as saveAutoSpec, deleteAutomationSpec as deleteAutoSpec, findAutomationSpec, loadAutomationRuns, saveAutomationRun, findLatestRun } from './automationStore'
+import { pushReviewQueueItem, resolveReviewQueueItem, listReviewQueue } from './reviewQueue'
+import { runAutomation } from './automationRunner'
+import { getAutomationScheduler } from './automationScheduler'
 
 const threads = new Map<string, AgentThread>()
 const governanceReports = new Map<string, GovernanceAuditReport>()
@@ -159,9 +163,18 @@ type AgentDispatchValue =
   | GovernanceAuditReport
   | ModelUpgradeReview
   | ContextSourceSnapshot
+  | AutomationSpec
+  | AutomationSpec[]
+  | AutomationRun
+  | AutomationRun[]
+  | ReviewQueueItem
+  | ReviewQueueItem[]
   | { traceEvents: unknown[] }
 
-export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<AgentDispatchValue>> {
+let lastSender: WebContents | null = null
+
+export async function dispatchAgentOp(op: AgentOp, sender?: WebContents | null): Promise<AgentIpcResult<AgentDispatchValue>> {
+  if (sender) lastSender = sender
   try {
     if (op.type === 'session.rename') return renameAgentSession(op)
     if (op.type === 'session.archive') return archiveAgentSession(op)
@@ -324,6 +337,67 @@ export async function dispatchAgentOp(op: AgentOp): Promise<AgentIpcResult<Agent
       if (!ok_) return fail(`Entry not found: ${op.entryId}`)
       if (!op.enabled) registry.recordIgnore(op.entryId, 'disabled_by_user')
       return ok(registry.toSnapshot())
+    }
+    if (op.type === 'automation.create') {
+      const now = Date.now()
+      const spec: AutomationSpec = { ...op.spec, id: `automation_${now}_${Math.random().toString(36).slice(2, 6)}`, createdAt: now, updatedAt: now }
+      saveAutoSpec(spec)
+      void appendSessionEvent({ type: 'automation.created', sessionId: '', automation: spec } as AgentEvent)
+      return ok(spec)
+    }
+    if (op.type === 'automation.update') {
+      const existing = findAutomationSpec(op.automationId)
+      if (!existing) throw new Error('Automation does not exist.')
+      const updated: AutomationSpec = { ...existing, ...op.changes, id: existing.id, createdAt: existing.createdAt, updatedAt: Date.now() }
+      saveAutoSpec(updated)
+      void appendSessionEvent({ type: 'automation.updated', sessionId: '', automation: updated } as AgentEvent)
+      return ok(updated)
+    }
+    if (op.type === 'automation.delete') {
+      const scheduler = getAutomationScheduler(null as unknown as WebContents, () => {})
+      scheduler.unscheduleAutomation(op.automationId)
+      deleteAutoSpec(op.automationId)
+      void appendSessionEvent({ type: 'automation.deleted', sessionId: '', automationId: op.automationId } as AgentEvent)
+      return ok(true)
+    }
+    if (op.type === 'automation.list') return ok(loadAutomationSpecs())
+    if (op.type === 'automation.read') {
+      const s = findAutomationSpec(op.automationId)
+      if (!s) throw new Error('Automation does not exist.')
+      return ok(s)
+    }
+    if (op.type === 'automation.listRuns') return ok(loadAutomationRuns(op.automationId))
+    if (op.type === 'automation.trigger') {
+      if (!lastSender) return fail('No sender available for automation trigger')
+      const scheduler = getAutomationScheduler(lastSender, event => void appendSessionEvent(event))
+      const run = await scheduler.triggerAutomation(op.automationId)
+      return ok(run)
+    }
+    if (op.type === 'automation.pause') {
+      const scheduler = getAutomationScheduler(null as unknown as WebContents, () => {})
+      scheduler.pauseAutomation(op.automationId)
+      void appendSessionEvent({ type: 'automation.paused', sessionId: '', automationId: op.automationId } as AgentEvent)
+      const s = findAutomationSpec(op.automationId)
+      return ok(s ?? ({} as AutomationSpec))
+    }
+    if (op.type === 'automation.resume') {
+      const scheduler = getAutomationScheduler(null as unknown as WebContents, () => {})
+      scheduler.resumeAutomation(op.automationId)
+      void appendSessionEvent({ type: 'automation.resumed', sessionId: '', automationId: op.automationId } as AgentEvent)
+      const s = findAutomationSpec(op.automationId)
+      return ok(s ?? ({} as AutomationSpec))
+    }
+    if (op.type === 'automation.cancel') {
+      const scheduler = getAutomationScheduler(null as unknown as WebContents, () => {})
+      const ok_ = scheduler.cancelRun(op.runId)
+      return ok(ok_)
+    }
+    if (op.type === 'review.queue.list') return ok(listReviewQueue({ sessionId: op.sessionId, automationId: op.automationId }))
+    if (op.type === 'review.queue.resolve') {
+      const item = resolveReviewQueueItem(op.itemId, op.action, op.reason)
+      if (!item) throw new Error('Review queue item does not exist.')
+      void appendSessionEvent({ type: 'review.queue.resolved', sessionId: item.sessionId, item } as AgentEvent)
+      return ok(item)
     }
     if ('sessionId' in op) {
       return ok(requireThread(op.sessionId).handle(op))

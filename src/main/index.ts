@@ -12,6 +12,8 @@ import { readdir, readFile, writeFile, stat } from 'fs/promises'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import * as pty from 'node-pty'
 import { checkAgentProvider, createAgentSession, dispatchAgentOp, getAgentConfig, getAgentModelProfiles, listAgentSessions, removeAgentModelProfile, resumeAgentSession, resumeLastAgentSession, setActiveAgentModelProfile, submitAgentTurn, updateAgentConfig, updateAgentModelProfile } from './agent'
+import { getAutomationScheduler } from './agent/automationScheduler'
+import { appendSessionEvent } from './agent/sessionStore'
 import { setAgentWorkspaceHost, type CommandRunInput } from './agent/workspace'
 import type { AgentModelProfileUpdate, AgentOp } from '../shared/agent/protocol'
 
@@ -3376,8 +3378,8 @@ ipcMain.handle('agent:submitTurn', async (_event, op: Extract<AgentOp, { type: '
   return submitAgentTurn(op)
 })
 
-ipcMain.handle('agent:dispatch', async (_event, op: AgentOp) => {
-  return dispatchAgentOp(op)
+ipcMain.handle('agent:dispatch', async (event, op: AgentOp) => {
+  return dispatchAgentOp(op, event.sender)
 })
 
 ipcMain.handle('agent:getConfig', () => {
@@ -3413,10 +3415,16 @@ ipcMain.handle('agent:testProvider', async (_event, profileId?: string) => {
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null)
   createWindow()
+  const win = BrowserWindow.getAllWindows()[0]
+  if (win) {
+    getAutomationScheduler(win.webContents, event => { void appendSessionEvent(event) }).start()
+  }
 })
 
 app.on('before-quit', () => {
   killAllTerminals()
+  const scheduler = getAutomationScheduler(null as unknown as WebContents, () => {})
+  scheduler.stop()
 })
 
 app.on('window-all-closed', () => {

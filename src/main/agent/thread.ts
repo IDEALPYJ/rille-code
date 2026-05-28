@@ -91,6 +91,12 @@ export class AgentThread {
   private latestReviewResult: ReviewResult | null = null
   private readonly grants = new PermissionGrantStore()
 
+  get activeTaskContract(): TaskContract | null { return this.latestTaskContract }
+  get activeHandoff(): Handoff | null { return this.lastHandoff }
+  get activeEvidence(): Evidence[] { return this.latestEvidence }
+  get activeReviewResult(): ReviewResult | null { return this.latestReviewResult }
+  get activeSession(): AgentSession { return this.session }
+
   constructor(
     private readonly sender: WebContents,
     workspace: AgentSession['workspace'],

@@ -16,6 +16,8 @@ import type {
   ArtifactPayload,
   ArtifactRef,
   ApprovalDecision,
+  AutomationRun,
+  AutomationSpec,
   CheckpointRef,
   CompactionResult,
   EditProposal,
@@ -23,6 +25,7 @@ import type {
   PlanConfirmation,
   GovernanceAuditReport,
   ModelUpgradeReview,
+  ReviewQueueItem,
   RuntimeProcessSummary,
   RuntimeStateArtifact,
   ExtensionDiscoverySnapshot,
@@ -161,6 +164,18 @@ export interface RilleAPI {
   agentTestProvider(profileId?: string): Promise<{ success: boolean; message: string }>
   agentListContextSources(sessionId: string): Promise<import('../shared/agent/protocol').ContextSourceSnapshot>
   agentToggleContextSource(sessionId: string, entryId: string, enabled: boolean): Promise<import('../shared/agent/protocol').ContextSourceSnapshot>
+  agentListAutomations(): Promise<AutomationSpec[]>
+  agentCreateAutomation(spec: Omit<AutomationSpec, 'id' | 'createdAt' | 'updatedAt'>): Promise<AutomationSpec>
+  agentUpdateAutomation(automationId: string, changes: Partial<AutomationSpec>): Promise<AutomationSpec>
+  agentDeleteAutomation(automationId: string): Promise<boolean>
+  agentReadAutomation(automationId: string): Promise<AutomationSpec>
+  agentTriggerAutomation(automationId: string): Promise<AutomationRun>
+  agentPauseAutomation(automationId: string): Promise<AutomationSpec>
+  agentResumeAutomation(automationId: string): Promise<AutomationSpec>
+  agentCancelAutomationRun(runId: string): Promise<boolean>
+  agentListAutomationRuns(automationId: string): Promise<AutomationRun[]>
+  agentListReviewQueue(sessionId?: string, automationId?: string): Promise<ReviewQueueItem[]>
+  agentResolveReviewQueueItem(itemId: string, action: 'dismiss' | 'accept_risk' | 'reject' | 'retry', reason?: string): Promise<ReviewQueueItem>
   onAgentEvent(callback: (event: AgentEvent) => void): () => void
 }
 
@@ -621,6 +636,18 @@ const api: RilleAPI = {
   agentTestProvider: (profileId) => invokeAgent<{ success: boolean; message: string }>('agent:testProvider', profileId),
   agentListContextSources: (sessionId) => invokeAgent('agent:dispatch', { type: 'context_source.list', sessionId }),
   agentToggleContextSource: (sessionId, entryId, enabled) => invokeAgent('agent:dispatch', { type: 'context_source.toggle', sessionId, entryId, enabled }),
+  agentListAutomations: () => invokeAgent<AutomationSpec[]>('agent:dispatch', { type: 'automation.list' }),
+  agentCreateAutomation: (spec) => invokeAgent<AutomationSpec>('agent:dispatch', { type: 'automation.create', spec }),
+  agentUpdateAutomation: (automationId, changes) => invokeAgent<AutomationSpec>('agent:dispatch', { type: 'automation.update', automationId, changes }),
+  agentDeleteAutomation: (automationId) => invokeAgent<boolean>('agent:dispatch', { type: 'automation.delete', automationId }),
+  agentReadAutomation: (automationId) => invokeAgent<AutomationSpec>('agent:dispatch', { type: 'automation.read', automationId }),
+  agentTriggerAutomation: (automationId) => invokeAgent<AutomationRun>('agent:dispatch', { type: 'automation.trigger', automationId }),
+  agentPauseAutomation: (automationId) => invokeAgent<AutomationSpec>('agent:dispatch', { type: 'automation.pause', automationId }),
+  agentResumeAutomation: (automationId) => invokeAgent<AutomationSpec>('agent:dispatch', { type: 'automation.resume', automationId }),
+  agentCancelAutomationRun: (runId) => invokeAgent<boolean>('agent:dispatch', { type: 'automation.cancel', runId }),
+  agentListAutomationRuns: (automationId) => invokeAgent<AutomationRun[]>('agent:dispatch', { type: 'automation.listRuns', automationId }),
+  agentListReviewQueue: (sessionId, automationId) => invokeAgent<ReviewQueueItem[]>('agent:dispatch', { type: 'review.queue.list', sessionId, automationId }),
+  agentResolveReviewQueueItem: (itemId, action, reason) => invokeAgent<ReviewQueueItem>('agent:dispatch', { type: 'review.queue.resolve', itemId, action, reason }),
   onAgentEvent: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, event: AgentEvent) => callback(event)
     ipcRenderer.on('agent:event', listener)

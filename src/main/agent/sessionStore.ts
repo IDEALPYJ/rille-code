@@ -78,7 +78,9 @@ export function deleteSessionStore(sessionId: string): boolean {
 }
 
 export async function appendSessionEvent(event: AgentEvent): Promise<void> {
-  const sessionId = 'sessionId' in event ? event.sessionId : event.session.id
+  const raw = event as unknown as { sessionId?: string; session?: { id: string } }
+  const sessionId = raw.sessionId ?? raw.session?.id
+  if (!sessionId) return
   ensureSessionDir(sessionId)
   const sequence = (sessionSequences.get(sessionId) || 0) + 1
   sessionSequences.set(sessionId, sequence)
