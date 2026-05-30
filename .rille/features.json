@@ -1,0 +1,112 @@
+{
+  "taskContractId": "contract_814890ae-4053-4089-a8a9-6b070f3ad61f",
+  "featureList": [
+    {
+      "id": "plan_contract",
+      "title": "确认任务合同与验收标准",
+      "status": "implemented_unverified",
+      "acceptanceCriteriaIds": [
+        "ac_goal",
+        "ac_answer",
+        "ac_verify"
+      ],
+      "evidenceRefs": [
+        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+      ],
+      "riskRefs": [
+        "risk_scope"
+      ],
+      "updatedAt": 1780140387498
+    },
+    {
+      "id": "plan_explore",
+      "title": "读取相关上下文并确认修改范围",
+      "status": "implemented_unverified",
+      "acceptanceCriteriaIds": [
+        "ac_goal",
+        "ac_answer",
+        "ac_verify"
+      ],
+      "evidenceRefs": [
+        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+      ],
+      "riskRefs": [
+        "risk_scope"
+      ],
+      "updatedAt": 1780140387498
+    },
+    {
+      "id": "plan_execute",
+      "title": "形成基于上下文的回答",
+      "status": "implemented_unverified",
+      "acceptanceCriteriaIds": [
+        "ac_goal",
+        "ac_answer",
+        "ac_verify"
+      ],
+      "evidenceRefs": [
+        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+      ],
+      "riskRefs": [
+        "risk_scope"
+      ],
+      "updatedAt": 1780140387498
+    },
+    {
+      "id": "plan_verify",
+      "title": "按验收标准验证并汇报结果",
+      "status": "implemented_unverified",
+      "acceptanceCriteriaIds": [
+        "ac_goal",
+        "ac_answer",
+        "ac_verify"
+      ],
+      "evidenceRefs": [
+        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+      ],
+      "riskRefs": [
+        "risk_scope"
+      ],
+      "updatedAt": 1780140387498
+    }
+  ],
+  "lifecycle": [
+    {
+      "featureId": "plan_contract",
+      "status": "active",
+      "source": "feature_store",
+      "evidenceRefs": [
+        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+      ],
+      "updatedAt": 1780140387498
+    },
+    {
+      "featureId": "plan_explore",
+      "status": "active",
+      "source": "feature_store",
+      "evidenceRefs": [
+        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+      ],
+      "updatedAt": 1780140387498
+    },
+    {
+      "featureId": "plan_execute",
+      "status": "active",
+      "source": "feature_store",
+      "evidenceRefs": [
+        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+      ],
+      "updatedAt": 1780140387498
+    },
+    {
+      "featureId": "plan_verify",
+      "status": "active",
+      "source": "feature_store",
+      "evidenceRefs": [
+        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+      ],
+      "updatedAt": 1780140387498
+    }
+  ],
+  "updatedAt": 1780140387498
+}

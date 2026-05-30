@@ -82,7 +82,7 @@ describe('verification gate', () => {
     const gate = evaluateVerificationGate({
       contract: contract(),
       evidence: [evidence('diagnostics')],
-      codeChanged: false,
+      codeChanged: true,
     })
     expect(gate.nextAction).toBe('repair')
   })

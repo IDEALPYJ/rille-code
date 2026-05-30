@@ -273,24 +273,28 @@ export function evaluateVerificationGate(input: {
   const staleCoverage = coverage?.criteria.filter(item => item.status === 'stale') ?? []
   const partialCoverage = coverage?.criteria.filter(item => item.status === 'partial') ?? []
 
-  if (input.codeChanged && input.evidence.length === 0) {
-    return { status: 'blocked', coverage, evidence: input.evidence, nextAction: 'run_more_checks', summary: 'Code changed but no verification evidence exists.' }
+  if (input.codeChanged) {
+    if (input.evidence.length === 0) {
+      return { status: 'blocked', coverage, evidence: input.evidence, nextAction: 'run_more_checks', summary: 'Code changed but no verification evidence exists.' }
+    }
+    if (failedEvidence.length > 0 || failedCoverage.length > 0) {
+      return { status: 'failed', coverage, evidence: input.evidence, nextAction: 'repair', summary: 'Verification evidence or coverage failed.' }
+    }
+    if (staleEvidence.length > 0 || staleCoverage.length > 0) {
+      return { status: 'stale', coverage, evidence: input.evidence, nextAction: 'run_more_checks', summary: 'Verification evidence is stale and must be refreshed.' }
+    }
+    if (partialCoverage.length > 0) {
+      return { status: 'partial', coverage, evidence: input.evidence, nextAction: 'repair', summary: 'Verification coverage is partial.' }
+    }
+    if (coverage && coverage.criteria.length > 0 && coverage.criteria.every(item => item.status === 'covered' || item.status === 'waived')) {
+      return { status: 'passed', coverage, evidence: input.evidence, nextAction: 'allow_final', summary: 'Verification coverage passed.' }
+    }
+    if (coverage && coverage.criteria.length > 0 && coverage.criteria.some(item => item.status === 'blocked')) {
+      return { status: 'blocked', coverage, evidence: input.evidence, nextAction: 'run_more_checks', summary: 'Code changed but coverage is missing.' }
+    }
+    return { status: 'skipped', coverage, evidence: input.evidence, nextAction: 'allow_final', summary: 'No code change requiring verification.' }
   }
-  if (failedEvidence.length > 0 || failedCoverage.length > 0) {
-    return { status: 'failed', coverage, evidence: input.evidence, nextAction: 'repair', summary: 'Verification evidence or coverage failed.' }
-  }
-  if (staleEvidence.length > 0 || staleCoverage.length > 0) {
-    return { status: 'stale', coverage, evidence: input.evidence, nextAction: 'run_more_checks', summary: 'Verification evidence is stale and must be refreshed.' }
-  }
-  if (partialCoverage.length > 0) {
-    return { status: 'partial', coverage, evidence: input.evidence, nextAction: 'repair', summary: 'Verification coverage is partial.' }
-  }
-  if (coverage && coverage.criteria.length > 0 && coverage.criteria.every(item => item.status === 'covered' || item.status === 'waived')) {
-    return { status: 'passed', coverage, evidence: input.evidence, nextAction: 'allow_final', summary: 'Verification coverage passed.' }
-  }
-  if (input.codeChanged || (coverage && coverage.criteria.length > 0 && coverage.criteria.some(item => item.status === 'blocked'))) {
-    return { status: 'blocked', coverage, evidence: input.evidence, nextAction: 'run_more_checks', summary: 'Code changed but coverage is missing.' }
-  }
+  // No code change: conversational / read-only turn
   return { status: 'skipped', coverage, evidence: input.evidence, nextAction: 'allow_final', summary: 'No code change requiring verification.' }
 }
 
@@ -337,34 +341,39 @@ export function runRuleBasedReview(input: {
     })
   }
 
-  for (const filePath of input.pendingProposalFiles ?? []) {
-    addFinding({
-      category: 'correctness',
-      severity: 'high',
-      blocking: true,
-      title: 'Pending edit proposal is not applied',
-      body: `A diff proposal exists but has not been applied to the workspace: ${filePath}`,
-      filePath,
-      evidenceRefs: input.evidence.filter(item => item.source === 'diff').map(item => item.id),
-      recommendation: 'Wait for the user/runtime to apply or reject the proposal before claiming the task is complete.',
-    })
+  if (input.codeChanged) {
+    for (const filePath of input.pendingProposalFiles ?? []) {
+      addFinding({
+        category: 'correctness',
+        severity: 'high',
+        blocking: true,
+        title: 'Pending edit proposal is not applied',
+        body: `A diff proposal exists but has not been applied to the workspace: ${filePath}`,
+        filePath,
+        evidenceRefs: input.evidence.filter(item => item.source === 'diff').map(item => item.id),
+        recommendation: 'Wait for the user/runtime to apply or reject the proposal before claiming the task is complete.',
+      })
+    }
   }
 
-  const completedWithoutEvidence = (input.planItems ?? []).filter(item =>
-    item.status === 'completed'
-    && (!item.evidenceIds || item.evidenceIds.length === 0)
-    && !item.evidence
-  )
-  if (completedWithoutEvidence.length > 0) {
-    addFinding({
-      category: 'evidence',
-      severity: 'medium',
-      blocking: true,
-      title: 'Completed plan item lacks evidence',
-      body: `Completed plan items must bind evidence before final response: ${completedWithoutEvidence.map(item => item.title).join(', ')}`,
-      evidenceRefs: [],
-      recommendation: 'Bind evidence IDs to completed plan items or move them back to in_progress.',
-    })
+  if (input.codeChanged) {
+    const completedWithoutEvidence = (input.planItems ?? []).filter(item =>
+      item.status === 'completed'
+      && item.source !== 'runtime'
+      && (!item.evidenceIds || item.evidenceIds.length === 0)
+      && !item.evidence
+    )
+    if (completedWithoutEvidence.length > 0) {
+      addFinding({
+        category: 'evidence',
+        severity: 'medium',
+        blocking: true,
+        title: 'Completed plan item lacks evidence',
+        body: `Completed plan items must bind evidence before final response: ${completedWithoutEvidence.map(item => item.title).join(', ')}`,
+        evidenceRefs: [],
+        recommendation: 'Bind evidence IDs to completed plan items or move them back to in_progress.',
+      })
+    }
   }
 
   const failedEvidence = input.evidence.filter(item => item.status === 'failed' || item.status === 'blocked')
@@ -380,22 +389,24 @@ export function runRuleBasedReview(input: {
     })
   }
 
-  for (const filePath of input.proposedFiles) {
-    if (!fileInScope(filePath, input.contract)) {
-      addFinding({
-        category: 'scope',
-        severity: 'medium',
-        blocking: true,
-        title: 'Potentially out-of-scope file change',
-        body: `Changed file is not covered by the current task scope: ${filePath}`,
-        filePath,
-        evidenceRefs: input.evidence.filter(item => item.source === 'diff').map(item => item.id),
-        recommendation: 'Confirm the scope or revert unrelated changes.',
-      })
+  if (input.codeChanged) {
+    for (const filePath of input.proposedFiles) {
+      if (!fileInScope(filePath, input.contract)) {
+        addFinding({
+          category: 'scope',
+          severity: 'medium',
+          blocking: true,
+          title: 'Potentially out-of-scope file change',
+          body: `Changed file is not covered by the current task scope: ${filePath}`,
+          filePath,
+          evidenceRefs: input.evidence.filter(item => item.source === 'diff').map(item => item.id),
+          recommendation: 'Confirm the scope or revert unrelated changes.',
+        })
+      }
     }
   }
 
-  if (input.contract?.riskPoints.some(item => item.risk === 'high' || item.risk === 'critical') && input.coverage?.criteria.some(item => item.status !== 'covered' && item.status !== 'waived')) {
+  if (input.codeChanged && input.contract?.riskPoints.some(item => item.risk === 'high' || item.risk === 'critical') && input.coverage?.criteria.some(item => item.status !== 'covered' && item.status !== 'waived')) {
     addFinding({
       category: 'evidence',
       severity: 'medium',

@@ -24,7 +24,7 @@ import {
 import { FileTree } from './components/FileTree'
 import { Tabs } from './components/Tabs'
 import { Editor, type EditorDiagnostic } from './components/Editor'
-import { StatusBar, type StatusDiagnostic } from './components/StatusBar'
+import { type StatusDiagnostic } from './components/StatusBar'
 import { SearchPanel } from './components/SearchPanel'
 import { GitPanel } from './components/GitPanel'
 import { GitDiffViewer, type GitDiffTarget } from './components/GitDiffViewer'
@@ -62,7 +62,6 @@ export interface AppContextType extends AppState {
   markFileApplied: (path: string, content: string) => void
 }
 
-type BottomPanelTab = 'problems' | 'output' | 'debug' | 'terminal' | 'ports'
 type RightTool = 'launcher' | 'files' | 'review' | 'search' | 'browser' | 'automation'
 type OpenRightTool = Exclude<RightTool, 'launcher' | 'browser'>
 
@@ -204,6 +203,20 @@ function readStoredBoolean(key: string, fallback: boolean): boolean {
   }
 }
 
+const STORAGE_KEY_PROJECTS = 'rille:project-workspaces'
+
+function loadProjectWorkspaces(): WorkspaceLocation[] {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY_PROJECTS)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed as WorkspaceLocation[]
+  } catch {
+    return []
+  }
+}
+
 // ── App Component ────────────────────────────────────────────
 
 export default function App() {
@@ -218,7 +231,6 @@ export default function App() {
   const [isSidePanelVisible, setIsSidePanelVisible] = useState(() => readStoredBoolean('rille:side-panel-visible', true))
   const [isRightPanelVisible, setIsRightPanelVisible] = useState(() => readStoredBoolean('rille:file-panel-visible:v2', false))
   const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(() => readStoredBoolean('rille:bottom-panel-visible:v3', false))
-  const [activeBottomTab, setActiveBottomTab] = useState<BottomPanelTab>('terminal')
   const [activeRightTool, setActiveRightTool] = useState<RightTool>('launcher')
   const [openRightTools, setOpenRightTools] = useState<OpenRightTool[]>([])
   const [isRightPanelDetailExpanded, setIsRightPanelDetailExpanded] = useState(false)
@@ -230,7 +242,7 @@ export default function App() {
   const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 })
   const [diagnostics, setDiagnostics] = useState<EditorDiagnostic[]>([])
   const [breakpoints, setBreakpoints] = useState<Record<string, number[]>>({})
-  const [sidebarWidth, setSidebarWidth] = useState(240)
+  const [sidebarWidth, setSidebarWidth] = useState(360)
   const [rightPanelWidth, setRightPanelWidth] = useState(520)
   const [remoteFolderConnection, setRemoteFolderConnection] = useState<RemoteConnection | null>(null)
   const [remoteFolderDialog, setRemoteFolderDialog] = useState<RemoteFolderDialogState | null>(null)
@@ -240,6 +252,8 @@ export default function App() {
   const [sessionContextMenu, setSessionContextMenu] = useState<{ session: AgentSessionSummary; x: number; y: number } | null>(null)
   const [gitMeta, setGitMeta] = useState<GitMeta | null>(null)
   const [collapsedProjectKeys, setCollapsedProjectKeys] = useState<Set<string>>(() => new Set())
+  const [collapsedSidebarSections, setCollapsedSidebarSections] = useState<Set<string>>(() => new Set())
+  const [projectWorkspaces, setProjectWorkspaces] = useState<WorkspaceLocation[]>(loadProjectWorkspaces)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<MonacoEditorApi.IStandaloneCodeEditor | null>(null)
   const pendingRevealRef = useRef<{ path: string; line: number; column: number } | null>(null)
@@ -300,6 +314,13 @@ export default function App() {
     void refreshAgentSessions()
   }, [loadWorkspaceContext, refreshAgentSessions, selectedAgentSession?.id])
 
+  const createSessionInWorkspace = useCallback(async (workspace: WorkspaceLocation | null) => {
+    const session = await window.rille.agentCreateSession(workspace, 'ask')
+    setSelectedAgentSession(session)
+    await loadWorkspaceContext(session.workspace)
+    void refreshAgentSessions()
+  }, [loadWorkspaceContext, refreshAgentSessions])
+
   const createAgentSessionForWorkspace = useCallback(async () => {
     const workspace = selectedAgentSession ? selectedAgentSession.workspace : state.workspace
     const session = await window.rille.agentCreateSession(workspace, 'ask')
@@ -307,6 +328,18 @@ export default function App() {
     await loadWorkspaceContext(session.workspace)
     void refreshAgentSessions()
   }, [loadWorkspaceContext, refreshAgentSessions, selectedAgentSession, state.workspace])
+
+  const addProjectWorkspace = useCallback((ws: WorkspaceLocation) => {
+    const key = workspaceKey(ws)
+    setProjectWorkspaces(prev => {
+      if (prev.some(w => workspaceKey(w) === key)) return prev
+      return [...prev, ws]
+    })
+  }, [])
+
+  const removeProjectWorkspace = useCallback((key: string) => {
+    setProjectWorkspaces(prev => prev.filter(w => workspaceKey(w) !== key))
+  }, [])
 
   const setWorkspace = useCallback(async (workspace: WorkspaceLocation) => {
     setSelectedAgentSession(null)
@@ -385,8 +418,12 @@ export default function App() {
     }
 
     const p = await window.rille.openFolder()
-    if (p) await setWorkspace({ kind: 'local', path: p, label: fileNameFromPath(p) || p })
-  }, [openRemoteFolderDialog, resolveRemoteFolderConnection, setWorkspace, state.workspace])
+    if (p) {
+      const ws: WorkspaceLocation = { kind: 'local', path: p, label: fileNameFromPath(p) || p }
+      addProjectWorkspace(ws)
+      await setWorkspace(ws)
+    }
+  }, [addProjectWorkspace, openRemoteFolderDialog, resolveRemoteFolderConnection, setWorkspace, state.workspace])
 
   const submitRemoteFolderDialog = useCallback(async () => {
     if (!remoteFolderDialog) return
@@ -399,11 +436,12 @@ export default function App() {
       const workspace = await window.rille.remoteOpenWorkspace(remoteFolderDialog.connection.id, remotePath)
       setRemoteFolderConnection(remoteFolderDialog.connection)
       setRemoteFolderDialog(null)
+      addProjectWorkspace(workspace)
       await setWorkspace(workspace)
     } catch (error) {
       setRemoteFolderDialog(prev => prev ? { ...prev, error: error instanceof Error ? error.message : '打开远程目录失败。' } : prev)
     }
-  }, [remoteFolderDialog, setWorkspace])
+  }, [addProjectWorkspace, remoteFolderDialog, setWorkspace])
 
   const refreshWorkspace = useCallback(async () => {
     if (!state.workspace) return
@@ -515,10 +553,6 @@ export default function App() {
   const workspaceName = state.workspace?.label || (workspacePath ? fileNameFromPath(workspacePath) : 'RilleCode')
   const workspaceTitle = workspaceName.toUpperCase()
   const hasRemoteFolderContext = Boolean(remoteFolderConnection || (state.workspace?.kind !== 'local' && state.workspace?.connectionId))
-  const connectionStatusLabel = remoteFolderConnection?.label
-    ?? (state.workspace && state.workspace.kind !== 'local' ? state.workspace.label : '本地')
-  const isRemoteConnectionStatus = connectionStatusLabel !== '本地'
-
   useEffect(() => {
     window.localStorage.setItem('rille:side-panel-visible', String(isSidePanelVisible))
   }, [isSidePanelVisible])
@@ -530,6 +564,10 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem('rille:bottom-panel-visible:v3', String(isBottomPanelVisible))
   }, [isBottomPanelVisible])
+
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE_KEY_PROJECTS, JSON.stringify(projectWorkspaces))
+  }, [projectWorkspaces])
 
   useEffect(() => {
     void refreshAgentSessions()
@@ -651,21 +689,7 @@ export default function App() {
     return diagnostics.filter(diagnostic => openPaths.has(normalizePath(diagnostic.filePath)))
   }, [diagnostics, state.openFiles])
 
-  const openDiagnostic = useCallback(async (diagnostic: StatusDiagnostic) => {
-    pendingRevealRef.current = { path: diagnostic.filePath, line: diagnostic.line, column: diagnostic.column }
-    await openFile(diagnostic.filePath)
-    if (normalizePath(state.activeFilePath ?? '') === normalizePath(diagnostic.filePath) && editorRef.current) {
-      revealEditorPosition(editorRef.current, diagnostic)
-      pendingRevealRef.current = null
-    }
-  }, [openFile, revealEditorPosition, state.activeFilePath])
-
-
-  const debugBreakpoints = useMemo<DebugBreakpoint[]>(() => Object.entries(breakpoints)
-    .map(([sourcePath, lines]) => ({ sourcePath, lines: [...lines].sort((a, b) => a - b) }))
-    .filter(item => item.lines.length > 0), [breakpoints])
-
-  const toggleBreakpoint = useCallback((filePath: string, line: number) => {
+const toggleBreakpoint = useCallback((filePath: string, line: number) => {
     setBreakpoints(prev => {
       const current = prev[filePath] || []
       const nextLines = current.includes(line)
@@ -766,18 +790,17 @@ export default function App() {
     setActiveFile(state.openFiles[nextIndex].path)
   }, [setActiveFile, state.activeFilePath, state.openFiles])
 
-  const showBottomPanel = useCallback((tab: BottomPanelTab) => {
-    setActiveBottomTab(tab)
+  const showBottomPanel = useCallback(() => {
     setIsBottomPanelVisible(true)
   }, [])
 
   const newTerminal = useCallback(() => {
-    showBottomPanel('terminal')
+    showBottomPanel()
     setTerminalNewSignal(value => value + 1)
   }, [showBottomPanel])
 
   const openTerminalProfile = useCallback((profileId?: string, sshHost?: string) => {
-    showBottomPanel('terminal')
+    showBottomPanel()
     setTerminalLaunchRequest(prev => ({ id: (prev?.id ?? 0) + 1, profileId, sshHost }))
   }, [showBottomPanel])
 
@@ -854,20 +877,20 @@ export default function App() {
       items: [
         { label: '新建终端', shortcut: 'Ctrl+Shift+`', action: newTerminal },
         {
-          label: isBottomPanelVisible && activeBottomTab === 'terminal' ? '隐藏终端' : '显示终端',
+          label: isBottomPanelVisible ? '隐藏终端' : '显示终端',
           shortcut: 'Ctrl+`',
           action: () => {
-            if (isBottomPanelVisible && activeBottomTab === 'terminal') {
+            if (isBottomPanelVisible) {
               setIsBottomPanelVisible(false)
             } else {
-              showBottomPanel('terminal')
+              showBottomPanel()
             }
           },
         },
         { label: '关闭终端', action: closeTerminal },
       ],
     },
-  ], [activeBottomTab, activeFile, closeAllFiles, closeFile, closeTerminal, cycleFile, isBottomPanelVisible, newTerminal, openFileFromDialog, openWorkspace, runEditorCommand, saveAllFiles, saveFile, saveFileAs, showBottomPanel, state.openFiles])
+  ], [activeFile, closeAllFiles, closeFile, closeTerminal, cycleFile, isBottomPanelVisible, newTerminal, openFileFromDialog, openWorkspace, runEditorCommand, saveAllFiles, saveFile, saveFileAs, showBottomPanel, state.openFiles])
 
   const projectSessionGroups = useMemo(() => {
     const groups = new Map<string, { workspace: WorkspaceLocation; sessions: AgentSessionSummary[] }>()
@@ -882,12 +905,21 @@ export default function App() {
         groups.set(key, { workspace: session.workspace, sessions: [session] })
       }
     }
+    for (const ws of projectWorkspaces) {
+      const key = workspaceKey(ws)
+      if (!groups.has(key)) {
+        groups.set(key, { workspace: ws, sessions: [] })
+      }
+    }
     return [...groups.values()].sort((a, b) => {
-      const latestA = Math.max(...a.sessions.map(session => session.updatedAt))
-      const latestB = Math.max(...b.sessions.map(session => session.updatedAt))
+      const latestA = a.sessions.length > 0 ? Math.max(...a.sessions.map(s => s.updatedAt)) : 0
+      const latestB = b.sessions.length > 0 ? Math.max(...b.sessions.map(s => s.updatedAt)) : 0
+      if (latestA === 0 && latestB === 0) return a.workspace.label.localeCompare(b.workspace.label)
+      if (latestA === 0) return 1
+      if (latestB === 0) return -1
       return latestB - latestA
     })
-  }, [agentSessions])
+  }, [agentSessions, projectWorkspaces])
 
   const plainSessions = useMemo(
     () => agentSessions.filter(session => !session.workspace && session.status !== 'archived'),
@@ -901,6 +933,18 @@ export default function App() {
 
   const toggleProjectGroup = useCallback((key: string) => {
     setCollapsedProjectKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }, [])
+
+  const toggleSidebarSection = useCallback((key: string) => {
+    setCollapsedSidebarSections(prev => {
       const next = new Set(prev)
       if (next.has(key)) {
         next.delete(key)
@@ -927,64 +971,113 @@ export default function App() {
     </button>
   )
 
-  const renderSidebar = () => (
-    <div className="conversation-sidebar">
-      <button type="button" className="conversation-new-button" onClick={() => void createAgentSessionForWorkspace()}>
-        <Plus size={15} />
-        <span>新对话</span>
+  const renderHeading = (sectionKey: string, label: string, actionIcon?: React.ReactNode, onAction?: () => void) => {
+    const isCollapsed = collapsedSidebarSections.has(sectionKey)
+    return (
+      <button
+        type="button"
+        className="conversation-sidebar-heading"
+        onClick={() => toggleSidebarSection(sectionKey)}
+      >
+        <ChevronDown className={'sidebar-section-chevron ' + (isCollapsed ? 'collapsed' : '')} size={14} />
+        <span>{label}</span>
+        <span className="sidebar-section-spacer" />
+        {actionIcon && onAction && (
+          <button
+            type="button"
+            className="sidebar-section-action"
+            onClick={(e) => { e.stopPropagation(); onAction() }}
+            title={label === '项目' ? '打开项目文件夹' : '新建对话'}
+          >
+            {actionIcon}
+          </button>
+        )}
       </button>
+    )
+  }
 
+  const renderSidebar = () => {
+    const isProjectsCollapsed = collapsedSidebarSections.has('projects')
+    const isConversationsCollapsed = collapsedSidebarSections.has('conversations')
+    const isArchivedCollapsed = collapsedSidebarSections.has('archived')
+
+    return (
+    <div className="conversation-sidebar">
       <div className="conversation-sidebar-scroll">
         <section className="conversation-sidebar-section">
-          <div className="conversation-sidebar-heading">项目</div>
-          {isAgentSessionsLoading && agentSessions.length === 0 ? (
-            <div className="conversation-empty">正在读取对话...</div>
-          ) : projectSessionGroups.length === 0 ? (
-            <div className="conversation-empty">暂无项目</div>
-          ) : (
-            projectSessionGroups.map(group => {
-              const key = workspaceKey(group.workspace)
-              const isExpanded = !collapsedProjectKeys.has(key)
-              return (
-                <div className={'project-session-group ' + (isExpanded ? 'expanded' : 'collapsed')} key={key}>
-                  <button
-                    type="button"
-                    className="project-session-title"
-                    aria-expanded={isExpanded}
-                    onClick={() => toggleProjectGroup(key)}
-                  >
-                    {isExpanded ? <FolderOpen size={17} /> : <Folder size={17} />}
-                    <span>{group.workspace.label || fileNameFromPath(group.workspace.path)}</span>
-                  </button>
-                  {isExpanded && (
-                    <div className="project-session-list">
-                      {group.sessions.map(renderSessionItem)}
-                    </div>
-                  )}
-                </div>
-              )
-            })
+          {renderHeading('projects', '项目', <FolderOpen size={15} />, () => void openWorkspace())}
+          {!isProjectsCollapsed && (
+            isAgentSessionsLoading && agentSessions.length === 0 ? (
+              <div className="conversation-empty">正在读取对话...</div>
+            ) : projectSessionGroups.length === 0 ? (
+              <div className="conversation-empty">暂无项目</div>
+            ) : (
+              projectSessionGroups.map(group => {
+                const key = workspaceKey(group.workspace)
+                const isExpanded = !collapsedProjectKeys.has(key)
+                return (
+                  <div className={'project-session-group ' + (isExpanded ? 'expanded' : 'collapsed')} key={key}>
+                    <button
+                      type="button"
+                      className="project-session-title"
+                      aria-expanded={isExpanded}
+                      onClick={() => toggleProjectGroup(key)}
+                    >
+                      {isExpanded ? <FolderOpen size={17} /> : <Folder size={17} />}
+                      <span>{group.workspace.label || fileNameFromPath(group.workspace.path)}</span>
+                      <span className="project-session-spacer" />
+                      <button
+                        type="button"
+                        className="project-session-action"
+                        onClick={(e) => { e.stopPropagation(); void createSessionInWorkspace(group.workspace) }}
+                        title="新建项目对话"
+                      >
+                        <Plus size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="project-session-remove"
+                        onClick={(e) => { e.stopPropagation(); removeProjectWorkspace(key) }}
+                        title="移除项目"
+                      >
+                        <X size={13} />
+                      </button>
+                    </button>
+                    {isExpanded && (
+                      <div className="project-session-list">
+                        {group.sessions.map(renderSessionItem)}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )
           )}
         </section>
 
         <section className="conversation-sidebar-section plain">
-          <div className="conversation-sidebar-heading">对话</div>
-          {plainSessions.length === 0 ? (
-            <div className="conversation-empty">暂无聊天</div>
-          ) : (
-            plainSessions.map(renderSessionItem)
+          {renderHeading('conversations', '对话', <Plus size={15} />, () => void createSessionInWorkspace(null))}
+          {!isConversationsCollapsed && (
+            plainSessions.length === 0 ? (
+              <div className="conversation-empty">暂无聊天</div>
+            ) : (
+              plainSessions.map(renderSessionItem)
+            )
           )}
         </section>
 
         {archivedSessions.length > 0 && (
           <section className="conversation-sidebar-section plain">
-            <div className="conversation-sidebar-heading">归档</div>
-            {archivedSessions.map(renderSessionItem)}
+            {renderHeading('archived', '归档')}
+            {!isArchivedCollapsed && (
+              archivedSessions.map(renderSessionItem)
+            )}
           </section>
         )}
       </div>
     </div>
-  )
+    )
+  }
 
   const renderAgentPanel = () => (
     <AgentPanel
@@ -1490,15 +1583,9 @@ export default function App() {
             <TerminalPanel
               workspace={state.workspace}
               visible={isBottomPanelVisible}
-              activeTab={activeBottomTab}
-              diagnostics={visibleDiagnostics}
-              breakpoints={debugBreakpoints}
               newSignal={terminalNewSignal}
               killSignal={terminalKillSignal}
               launchRequest={terminalLaunchRequest}
-              onActiveTabChange={(tab) => showBottomPanel(tab)}
-              onSelectDiagnostic={openDiagnostic}
-              onHide={() => setIsBottomPanelVisible(false)}
               onTerminalSessionsEmpty={() => setIsBottomPanelVisible(false)}
             />
           </section>
@@ -1647,15 +1734,6 @@ export default function App() {
           </div>
         )}
 
-        <StatusBar
-          diagnostics={visibleDiagnostics}
-          cursorLine={cursorPosition.line}
-          cursorColumn={cursorPosition.column}
-          problemsActive={isBottomPanelVisible && activeBottomTab === 'problems'}
-          connectionLabel={connectionStatusLabel}
-          isRemoteConnection={isRemoteConnectionStatus}
-          onOpenProblems={() => showBottomPanel('problems')}
-        />
       </div>
     </AppContext.Provider>
   )

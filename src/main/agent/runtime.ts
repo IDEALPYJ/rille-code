@@ -718,6 +718,7 @@ export class AgentLoop {
     return this.evidence.some(item => item.source === 'diff' && item.data && (
       item.data.state === 'applied'
       || item.data.kind === 'workspace_diff'
+      || item.data.kind === 'edit_proposal'
       || item.data.workspaceChanged === true
     ))
   }
