@@ -77,6 +77,28 @@ export function deleteSessionStore(sessionId: string): boolean {
   return true
 }
 
+export function deleteSessionCascade(sessionId: string): number {
+  let deleted = 0
+  const root = rootDir()
+  if (!existsSync(root)) return deleted
+
+  const toDelete: string[] = []
+  for (const id of readdirSync(root)) {
+    if (id === sessionId) continue
+    const meta = readSessionMeta(id)
+    if (meta?.parentSessionId === sessionId) {
+      toDelete.push(id)
+    }
+  }
+
+  for (const childId of toDelete) {
+    deleted += deleteSessionCascade(childId)
+  }
+
+  deleteSessionStore(sessionId)
+  return deleted + 1
+}
+
 export async function appendSessionEvent(event: AgentEvent): Promise<void> {
   const raw = event as unknown as { sessionId?: string; session?: { id: string } }
   const sessionId = raw.sessionId ?? raw.session?.id
@@ -134,6 +156,7 @@ export function listSessionSummaries(): AgentSessionSummary[] {
   for (const id of readdirSync(root)) {
     const meta = readSessionMeta(id)
     if (!meta) continue
+    if (meta.parentSessionId) continue
     let lastMessage: string | undefined
     const events: AgentEvent[] = []
     const eventsFile = eventsPath(id)

@@ -28,6 +28,7 @@ import type {
   PlanConfirmation,
   TaskContract,
 } from '../../../shared/agent/protocol'
+import { stripVerificationSection } from './AgentTurnView'
 
 // ── Utility functions ──
 
@@ -580,9 +581,10 @@ export function MessagePartView({
     )
   }
   if (part.type === 'handoff') {
+    const filteredSummary = stripVerificationSection(part.handoff.summary)
     return (
       <div className="agent-message assistant">
-        <MarkdownMessage text={`## Handoff\n\n${part.handoff.summary}\n\n**下一步**: ${part.handoff.nextSteps.join(', ') || '无'}`} />
+        <MarkdownMessage text={`## Handoff\n\n${filteredSummary}\n\n**下一步**: ${part.handoff.nextSteps.join(', ') || '无'}`} />
       </div>
     )
   }
@@ -607,7 +609,7 @@ export function MessagePartView({
     return (
       <div className="agent-file-part">
         <Zap size={13} />
-        <span>Automation · {part.run.status}{part.run.handoff?.summary ? ` · ${part.run.handoff.summary.slice(0, 100)}` : ''}</span>
+        <span>Automation · {part.run.status}{part.run.handoff?.summary ? ` · ${stripVerificationSection(part.run.handoff.summary).slice(0, 100)}` : ''}</span>
       </div>
     )
   }

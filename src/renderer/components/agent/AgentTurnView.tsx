@@ -24,7 +24,12 @@ function stageLabel(stage: string): string | null {
   }
 }
 
-function stripVerificationSection(text: string): string {
+export function stripVerificationSection(text: string): string {
+  // Strip "无法完成：..." failure summary
+  const failRe = /\n*无法完成[：:]\s*[^\n]+/
+  const failMatch = failRe.exec(text)
+  if (failMatch) return text.slice(0, failMatch.index).trimEnd()
+
   // Strip "验收标准回执" section
   const marker = '\n\n验收标准回执'
   const idx = text.indexOf(marker)
@@ -32,13 +37,13 @@ function stripVerificationSection(text: string): string {
   const altIdx = text.indexOf('\n验收标准回执')
   if (altIdx !== -1) return text.slice(0, altIdx).trimEnd()
 
-  // Strip "任务完成。N 项已验证" footer line
-  const doneRe = /\n+任务完成。\s*\d+\s*项已验证/
+  // Strip "任务...。N 项已验证" footer line
+  const doneRe = /\n*任务(?:完成|结束（[^）]*）|被中断|中断)。\s*\d+\s*项已验证/
   const doneMatch = doneRe.exec(text)
   if (doneMatch) return text.slice(0, doneMatch.index).trimEnd()
 
-  // Strip standalone "下一步: ...验证..." line that follows verification content
-  const nextRe = /\n+下一步[：:]\s*(按验收标准验证|汇报结果|确认修改范围)/
+  // Strip standalone "下一步: ..." line that follows verification content
+  const nextRe = /\n*下一步[：:]\s*(按验收标准验证|汇报结果|确认修改范围|读取相关上下文)/
   const nextMatch = nextRe.exec(text)
   if (nextMatch) return text.slice(0, nextMatch.index).trimEnd()
 
@@ -83,7 +88,12 @@ function useChatItems(parts: MessagePart[], activeTurn?: AgentTurn | null): Chat
 
       if (part.type === 'stage') {
         if (!activeTurn) continue
-        if (part.stage === 'completed' || part.stage === 'failed') continue
+        if (part.stage === 'completed' || part.stage === 'failed') {
+          for (const it of items) {
+            if (it.type === 'stage_status') it.completed = true
+          }
+          continue
+        }
         const label = stageLabel(part.stage)
         if (!label) continue
         if (label === lastStageLabel) continue
@@ -113,11 +123,14 @@ function useChatItems(parts: MessagePart[], activeTurn?: AgentTurn | null): Chat
           items.push({ type: 'assistant_text', text: stripVerificationSection(part.text) })
         }
       } else if (part.type === 'handoff') {
-        items.push({
-          type: 'handoff',
-          summary: part.handoff.summary,
-          nextSteps: part.handoff.nextSteps,
-        })
+        const filtered = stripVerificationSection(part.handoff.summary)
+        if (filtered) {
+          items.push({
+            type: 'handoff',
+            summary: filtered,
+            nextSteps: part.handoff.nextSteps,
+          })
+        }
       }
     }
 

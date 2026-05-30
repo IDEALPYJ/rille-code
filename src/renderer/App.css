@@ -5143,6 +5143,31 @@ button {
   box-shadow: 0 0 0 2px rgba(59, 115, 217, .12);
 }
 
+/* ── Approval banner (slides up from compose area) ── */
+
+.approval-banner {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: 0;
+  transition: max-height 0.25s ease, opacity 0.2s ease, margin-bottom 0.25s ease;
+}
+
+.approval-banner.enter {
+  max-height: 300px;
+  opacity: 1;
+  margin-bottom: 8px;
+}
+
+.approval-banner-inner {
+  transform: translateY(12px);
+  transition: transform 0.25s ease;
+}
+
+.approval-banner.enter .approval-banner-inner {
+  transform: translateY(0);
+}
+
 .agent-compose-actions {
   display: flex;
   align-items: center;

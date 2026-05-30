@@ -4,7 +4,7 @@ import { deleteAgentModelProfile, listAgentModelProfiles, readAgentConfigSnapsho
 import { testAgentProvider } from './provider'
 import { AgentThread } from './thread'
 import { exportSessionTrace } from './trace'
-import { appendSessionEvent, archiveSessionMeta, deleteSessionStore, findLastSession, listSessionSummaries, readSessionMeta, renameSessionMeta, saveSessionMeta } from './sessionStore'
+import { appendSessionEvent, archiveSessionMeta, deleteSessionCascade, findLastSession, listSessionSummaries, readSessionMeta, renameSessionMeta, saveSessionMeta } from './sessionStore'
 import { listArtifacts, readArtifact } from './artifactStore'
 import { cleanupRuntimeProcesses, listRuntimeProcesses, stopRuntimeProcess } from './processRegistry'
 import { createCheckpoint, restoreCheckpointAsProposals } from './checkpointStore'
@@ -99,7 +99,8 @@ export function renameAgentSession(op: Extract<AgentOp, { type: 'session.rename'
 export function deleteAgentSession(op: Extract<AgentOp, { type: 'session.delete' }>): AgentIpcResult<boolean> {
   try {
     threads.delete(op.sessionId)
-    return ok(deleteSessionStore(op.sessionId))
+    const deleted = deleteSessionCascade(op.sessionId)
+    return ok(deleted > 0)
   } catch (error) {
     return fail(error)
   }

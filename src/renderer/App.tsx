@@ -576,6 +576,7 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = window.rille.onAgentEvent((event: AgentEvent) => {
       if (event.type === 'session.created' || event.type === 'session.updated') {
+        if (event.session.subagent) return
         setAgentSessions(prev => {
           const summary: AgentSessionSummary = {
             id: event.session.id,
@@ -608,7 +609,7 @@ export default function App() {
     window.rille.agentResumeLastSession(null)
       .then(async session => {
         if (cancelled) return
-        if (session) {
+        if (session && !session.subagent) {
           setSelectedAgentSession(session)
           await loadWorkspaceContext(session.workspace)
         }

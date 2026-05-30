@@ -67,6 +67,22 @@ function toContextSnapshot(props: Props): AgentContextSnapshot {
   }
 }
 
+function ApprovalBanner({ request, onDecision }: {
+  request: ApprovalRequest
+  onDecision: (request: ApprovalRequest, action: 'allow_once' | 'always_allow' | 'allow_workspace' | 'deny') => void
+}) {
+  const [entered, setEntered] = useState(false)
+  useEffect(() => { requestAnimationFrame(() => setEntered(true)) }, [])
+
+  return (
+    <div className={'approval-banner' + (entered ? ' enter' : '')}>
+      <div className="approval-banner-inner">
+        <ApprovalCard request={request} onDecision={onDecision} />
+      </div>
+    </div>
+  )
+}
+
 export function AgentPanel(props: Props) {
   const [parts, setParts] = useState<MessagePart[]>([])
   const [proposals, setProposals] = useState<Record<string, EditProposal>>({})
@@ -107,7 +123,11 @@ export function AgentPanel(props: Props) {
         setActiveTurn(null)
       } else if (event.type === 'edit.proposed') {
         setProposals(prev => ({ ...prev, [event.proposal.id]: event.proposal }))
-        setReviewProposal(prev => prev?.id === event.proposal.id ? event.proposal : prev)
+        if (event.proposal.state === 'pending') {
+          setReviewProposal(event.proposal)
+        } else {
+          setReviewProposal(prev => prev?.id === event.proposal.id ? event.proposal : prev)
+        }
         if (event.proposal.state === 'applied') {
           props.onFileApplied?.(event.proposal.filePath, event.proposal.modifiedContent)
         }
@@ -267,11 +287,6 @@ export function AgentPanel(props: Props) {
           <ChatTurnView parts={parts} activeTurn={activeTurn} />
         )}
         {error && <div className="agent-error">{error}</div>}
-        {Object.values(approvals).map(request => (
-          <div className="agent-timeline-item approval" key={request.id}>
-            <ApprovalCard request={request} onDecision={respondApproval} />
-          </div>
-        ))}
       </div>
 
       <form
@@ -282,6 +297,9 @@ export function AgentPanel(props: Props) {
           void submit()
         }}
       >
+        {Object.values(approvals).map(request => (
+          <ApprovalBanner key={request.id} request={request} onDecision={respondApproval} />
+        ))}
         <textarea
           value={draft}
           rows={2}
