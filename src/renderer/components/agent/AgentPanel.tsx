@@ -21,11 +21,11 @@ import type { OpenFile } from '../../App'
 import type { EditorDiagnostic } from '../Editor'
 import { expandComposerDraft } from './workbenchState'
 import {
-  ApprovalCard,
+  fileNameFromPath,
   ProposalReview,
   shortModelLabel,
 } from './AgentPartCards'
-import { ChatTurnView } from './AgentTurnView'
+import { ChatTurnView, type TurnRunMeta } from './AgentTurnView'
 
 interface Props {
   workspace: WorkspaceLocation | null
@@ -40,10 +40,12 @@ interface Props {
   onFileApplied?: (filePath: string, content: string) => void
 }
 
-const permissionModes: Array<{ value: AgentPermissionMode; label: string }> = [
-  { value: 'ask', label: 'Ask' },
-  { value: 'plan', label: 'Plan' },
-  { value: 'accept_edits', label: 'Execute' },
+const permissionModes: Array<{ value: AgentPermissionMode; label: string; desc: string }> = [
+  { value: 'ask', label: 'Ask', desc: '写入前询问' },
+  { value: 'plan', label: 'Plan', desc: '仅读取与规划' },
+  { value: 'accept_edits', label: 'Auto-Apply', desc: '自动应用编辑，命令需确认' },
+  { value: 'auto', label: 'Auto', desc: '自动执行，命令需确认' },
+  { value: 'bypass', label: 'Bypass', desc: '完全自主，不询问' },
 ]
 
 function toContextSnapshot(props: Props): AgentContextSnapshot {
@@ -67,17 +69,73 @@ function toContextSnapshot(props: Props): AgentContextSnapshot {
   }
 }
 
-function ApprovalBanner({ request, onDecision }: {
+type ApprovalAction = 'allow_once' | 'always_allow' | 'allow_workspace' | 'deny'
+
+function approvalRequestTitle(request: ApprovalRequest): string {
+  const target = (request.target || '').trim()
+  if (target) return `模型请求执行指令 ${target}`
+  const reason = request.reason.trim()
+  const title = request.title.toLowerCase()
+  if (title.includes('edit') || title.includes('write') || title.includes('proposal') || /propose_file_edit|apply_file_edit/.test(reason)) {
+    return `模型请求编辑 ${fileNameFromPath(reason) || reason || '文件'}`
+  }
+  return reason ? `模型请求 ${reason}` : `模型请求 ${request.title}`
+}
+
+function ApprovalPopover({ request, onDecision }: {
   request: ApprovalRequest
-  onDecision: (request: ApprovalRequest, action: 'allow_once' | 'always_allow' | 'allow_workspace' | 'deny') => void
+  onDecision: (request: ApprovalRequest, action: ApprovalAction, reason?: string) => void
 }) {
   const [entered, setEntered] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const [isGuiding, setIsGuiding] = useState(false)
+  const [guide, setGuide] = useState('')
   useEffect(() => { requestAnimationFrame(() => setEntered(true)) }, [])
+  const decide = useCallback((action: ApprovalAction, reason?: string) => {
+    setLeaving(true)
+    window.setTimeout(() => onDecision(request, action, reason), 180)
+  }, [onDecision, request])
+  const canWorkspace = request.grantOptions?.includes('workspace')
+  const canSession = request.grantOptions?.includes('session')
 
   return (
-    <div className={'approval-banner' + (entered ? ' enter' : '')}>
-      <div className="approval-banner-inner">
-        <ApprovalCard request={request} onDecision={onDecision} />
+    <div className={'approval-popover' + (entered && !leaving ? ' enter' : '') + (leaving ? ' leaving' : '')}>
+      <div className={'approval-popover-card risk-' + request.risk}>
+        <div className="approval-popover-title">{approvalRequestTitle(request)}</div>
+        {(request.target || request.reason) && (
+          <div className="approval-popover-summary">{request.target || request.reason}</div>
+        )}
+        {isGuiding ? (
+          <div className="approval-guide">
+            <textarea
+              value={guide}
+              rows={2}
+              autoFocus
+              placeholder="告诉模型应该怎么改做..."
+              onChange={event => setGuide(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && guide.trim()) {
+                  decide('deny', guide.trim())
+                }
+              }}
+            />
+            <div className="approval-guide-actions">
+              <button type="button" onClick={() => setIsGuiding(false)}>取消</button>
+              <button type="button" disabled={!guide.trim()} onClick={() => decide('deny', guide.trim())}>发送给模型</button>
+            </div>
+          </div>
+        ) : (
+          <div className="approval-popover-actions">
+            <button type="button" onClick={() => decide('allow_once')}>允许一次</button>
+            {canWorkspace ? (
+              <button type="button" onClick={() => decide('allow_workspace')}>该项目中允许</button>
+            ) : canSession ? (
+              <button type="button" onClick={() => decide('always_allow')}>本次会话允许</button>
+            ) : null}
+            <button type="button" onClick={() => decide('deny')}>拒绝</button>
+            <button type="button" onClick={() => setIsGuiding(true)}>告诉模型怎么做</button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -94,6 +152,7 @@ export function AgentPanel(props: Props) {
   const [modelStore, setModelStore] = useState<AgentModelStoreSnapshot | null>(null)
   const [draft, setDraft] = useState('')
   const [activeTurn, setActiveTurn] = useState<AgentTurn | null>(null)
+  const [turnRunMeta, setTurnRunMeta] = useState<TurnRunMeta | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openComposeMenu, setOpenComposeMenu] = useState<'mode' | 'model' | null>(null)
   const threadRef = useRef<HTMLDivElement | null>(null)
@@ -119,7 +178,18 @@ export function AgentPanel(props: Props) {
           : [...prev, event.part])
       } else if (event.type === 'turn.started') {
         setActiveTurn(event.turn)
+        setTurnRunMeta({
+          turnId: event.turn.id,
+          startedAt: event.turn.createdAt,
+          status: 'running',
+        })
       } else if (event.type === 'turn.completed' || event.type === 'turn.failed') {
+        setTurnRunMeta(prev => ({
+          turnId: event.turnId,
+          startedAt: prev?.turnId === event.turnId ? prev.startedAt : Date.now(),
+          completedAt: Date.now(),
+          status: event.type === 'turn.completed' ? 'completed' : 'failed',
+        }))
         setActiveTurn(null)
       } else if (event.type === 'edit.proposed') {
         setProposals(prev => ({ ...prev, [event.proposal.id]: event.proposal }))
@@ -156,6 +226,7 @@ export function AgentPanel(props: Props) {
     setIsTraceOpen(false)
     setReviewProposal(null)
     setActiveTurn(null)
+    setTurnRunMeta(null)
     setError(null)
     if (!props.sessionId) return () => {
       cancelled = true
@@ -198,7 +269,7 @@ export function AgentPanel(props: Props) {
 
   const pendingProposals = useMemo(() => Object.values(proposals).filter(proposal => proposal.state === 'pending'), [proposals])
   const selectedMode = session?.permissionMode ?? 'ask'
-  const selectedModeLabel = permissionModes.find(mode => mode.value === selectedMode)?.label ?? 'Ask'
+  const selectedModeLabel = permissionModes.find(mode => mode.value === selectedMode)?.label ?? selectedMode
   const modelProfiles = modelStore?.profiles ?? []
   const activeModelProfile = modelProfiles.find(profile => profile.id === modelStore?.activeProfileId) ?? modelProfiles[0]
   const activeModelLabel = activeModelProfile
@@ -243,7 +314,7 @@ export function AgentPanel(props: Props) {
     }
   }, [refreshModels])
 
-  const respondApproval = useCallback(async (request: ApprovalRequest, action: 'allow_once' | 'always_allow' | 'allow_workspace' | 'deny') => {
+  const respondApproval = useCallback(async (request: ApprovalRequest, action: ApprovalAction, reason?: string) => {
     await window.rille.agentRespondApproval(
       request.id,
       action === 'allow_once'
@@ -252,7 +323,7 @@ export function AgentPanel(props: Props) {
           ? { action: 'always_allow', pattern: request.target || request.reason }
           : action === 'allow_workspace'
             ? { action: 'allow_workspace', pattern: request.target || request.reason }
-            : { action: 'deny', reason: '用户拒绝。' },
+            : { action: 'deny', reason: reason?.trim() || '用户拒绝。' },
     )
     setApprovals(prev => {
       const next = { ...prev }
@@ -284,7 +355,7 @@ export function AgentPanel(props: Props) {
         {parts.length === 0 ? (
           <div className="agent-empty-state" aria-hidden="true" />
         ) : (
-          <ChatTurnView parts={parts} activeTurn={activeTurn} />
+          <ChatTurnView parts={parts} activeTurn={activeTurn} traceEvents={traceEvents} runMeta={turnRunMeta} />
         )}
         {error && <div className="agent-error">{error}</div>}
       </div>
@@ -298,7 +369,7 @@ export function AgentPanel(props: Props) {
         }}
       >
         {Object.values(approvals).map(request => (
-          <ApprovalBanner key={request.id} request={request} onDecision={respondApproval} />
+          <ApprovalPopover key={request.id} request={request} onDecision={respondApproval} />
         ))}
         <textarea
           value={draft}
@@ -340,7 +411,10 @@ export function AgentPanel(props: Props) {
                       void updateMode(mode.value)
                     }}
                   >
-                    <span>{mode.label}</span>
+                    <div>
+                      <span>{mode.label}</span>
+                      <small>{mode.desc}</small>
+                    </div>
                     {mode.value === selectedMode && <Check size={16} />}
                   </button>
                 ))}

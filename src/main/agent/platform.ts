@@ -49,7 +49,8 @@ export function normalizePathSep(path: string): string {
 }
 
 export function isPathInside(parent: string, child: string): boolean {
-  if (process.platform === 'win32') {
+  const looksWindowsPath = /^[a-zA-Z]:[\\/]/.test(parent) || /^[a-zA-Z]:[\\/]/.test(child) || parent.includes('\\') || child.includes('\\')
+  if (process.platform === 'win32' || looksWindowsPath) {
     const resolvedParent = normalizePathSep(win32.resolve(parent)).replace(/\/+$/, '')
     const resolvedChild = normalizePathSep(win32.resolve(child)).replace(/\/+$/, '')
     const parentKey = resolvedParent.toLowerCase()

@@ -2,11 +2,9 @@ import type { WebContents } from 'electron'
 import { existsSync, readFileSync } from 'fs'
 import { basename } from 'path'
 import type { AgentContextFile, AgentContextSnapshot, AgentEvent, AutomationRun, AutomationSpec } from '../../shared/agent/protocol'
-import { AgentThread } from './thread'
-import { saveAutomationRun } from './automationStore'
-import { createReviewQueueItem, pushReviewQueueItem } from './reviewQueue'
+import { findAutomationRun, saveAutomationRun } from './automationStore'
 
-function buildContextSnapshot(spec: AutomationSpec): AgentContextSnapshot {
+export function buildContextSnapshot(spec: AutomationSpec): AgentContextSnapshot {
   const files: AgentContextFile[] = (spec.contextFiles ?? [])
     .filter(f => existsSync(f))
     .map(f => {
@@ -38,6 +36,10 @@ export async function runAutomation(
   emit: (event: AgentEvent) => void,
 ): Promise<AutomationRun> {
   const context = buildContextSnapshot(spec)
+  const [{ AgentThread }, { createReviewQueueItem, pushReviewQueueItem }] = await Promise.all([
+    import('./thread'),
+    import('./reviewQueue'),
+  ])
 
   // Create thread directly (not through index.ts to avoid circular dependency)
   const thread = new AgentThread(sender, spec.workspace, spec.permissionMode)
@@ -107,7 +109,7 @@ export async function runAutomation(
 }
 
 export async function cancelAutomationRun(runId: string): Promise<boolean> {
-  const run = (await import('./automationStore')).findAutomationRun(runId)
+  const run = findAutomationRun(runId)
   if (!run || run.status !== 'running') return false
   run.status = 'cancelled'
   run.completedAt = Date.now()

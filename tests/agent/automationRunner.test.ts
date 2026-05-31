@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { AutomationRun } from '../../src/shared/agent/protocol'
 
 describe('AutomationRunner', () => {
@@ -49,8 +49,7 @@ describe('AutomationRunner', () => {
   })
 
   it('buildContextSnapshot creates context from context files', async () => {
-    const { runAutomation } = await import('../../src/main/agent/automationRunner')
-    // Test that buildContextSnapshot handles missing files gracefully
+    const { buildContextSnapshot } = await import('../../src/main/agent/automationRunner')
     const spec = {
       id: 'auto_1',
       name: 'Test',
@@ -64,16 +63,10 @@ describe('AutomationRunner', () => {
       updatedAt: Date.now(),
     }
 
-    const mockSender = {} as any
-    const mockEmit = vi.fn()
-
-    // This will fail because createAgentSession requires Electron APIs,
-    // but the context building part should not throw
-    try {
-      await runAutomation(mockSender, spec, 'manual', mockEmit)
-    } catch {
-      // Expected: session creation fails in test environment
-    }
-    // The error should come from session creation, not from context building
+    const context = buildContextSnapshot(spec)
+    expect(context.workspace).toEqual(spec.workspace)
+    expect(context.activeFile).toBeNull()
+    expect(context.openFiles).toEqual([])
+    expect(context.diagnostics).toEqual([])
   })
 })

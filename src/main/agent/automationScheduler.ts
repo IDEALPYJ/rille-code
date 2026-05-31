@@ -1,6 +1,6 @@
 import type { WebContents } from 'electron'
 import type { AgentEvent, AutomationRun, AutomationSpec } from '../../shared/agent/protocol'
-import { loadAutomationSpecs, loadAutomationRuns, saveAutomationRun } from './automationStore'
+import { loadAutomationSpecs, saveAutomationRun } from './automationStore'
 import { runAutomation } from './automationRunner'
 
 // Minimal 5-field cron parser. Supports *, */N, N, N-M, N,M values.
