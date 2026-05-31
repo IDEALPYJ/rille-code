@@ -1,0 +1,421 @@
+/* ── Compact IDE Final Layout Overrides ───────────────────── */
+.workbench.ide-workbench {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(200px, var(--sidebar-width, 240px)) 4px minmax(0, 1fr) 4px var(--right-panel-width, 520px);
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--bg-workbench);
+}
+
+.workbench.ide-workbench.right-collapsed {
+  grid-template-columns: minmax(200px, var(--sidebar-width, 240px)) 4px minmax(0, 1fr) 0 0;
+}
+
+.workbench.ide-workbench.left-collapsed {
+  grid-template-columns: 0 0 minmax(0, 1fr) 4px var(--right-panel-width, 520px);
+}
+
+.workbench.ide-workbench.left-collapsed.right-collapsed {
+  grid-template-columns: 0 0 minmax(0, 1fr) 0 0;
+}
+
+.workbench.ide-workbench > .ide-sidebar {
+  grid-column: 1;
+  grid-row: 1;
+  width: auto !important;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workbench.ide-workbench > .sidebar-resize-handle {
+  grid-column: 2;
+  grid-row: 1;
+  width: 4px;
+  min-width: 4px;
+  cursor: col-resize;
+}
+
+.workbench.ide-workbench > .editor-area {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-editor);
+}
+
+.workbench.ide-workbench > .file-workspace-panel {
+  grid-column: 5;
+  grid-row: 1;
+}
+
+.workbench.ide-workbench > .agent-resize-handle {
+  grid-column: 4;
+  grid-row: 1;
+  width: 4px;
+  min-width: 4px;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.workbench.ide-workbench > .agent-resize-handle:hover,
+.workbench.ide-workbench > .agent-resize-handle:active {
+  background: rgba(59, 115, 217, .16);
+}
+
+.conversation-area {
+  background:
+    linear-gradient(180deg, #fbfcfe 0%, #f7f9fc 100%);
+}
+
+.conversation-panel-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.conversation-panel-shell > .agent-panel {
+  width: 100%;
+  border-left: 0;
+  background: transparent;
+}
+
+.conversation-area .agent-context-bar {
+  min-height: 42px;
+  justify-content: center;
+  padding: 8px clamp(20px, 4vw, 64px);
+  background: rgba(255, 255, 255, .78);
+  backdrop-filter: blur(10px);
+}
+
+.conversation-area .agent-thread {
+  padding: 22px clamp(20px, 5vw, 76px);
+}
+
+.conversation-area .agent-compose {
+  padding: 12px clamp(20px, 5vw, 76px) 14px;
+  background: rgba(255, 255, 255, .86);
+  backdrop-filter: blur(10px);
+}
+
+.conversation-area .agent-compose textarea {
+  min-height: 66px;
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .05);
+}
+
+.file-workspace-panel {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #ffffff;
+  color: #202124;
+}
+
+.file-workspace-header {
+  height: 38px;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 9px 0 11px;
+  border-bottom: 1px solid var(--border);
+  background: #fbfcfe;
+}
+
+.file-workspace-title {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #20242c;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.file-workspace-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-workspace-close {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 5px;
+  color: #626a74;
+  cursor: pointer;
+}
+
+.file-workspace-close:hover {
+  color: #202124;
+  background: #eceef1;
+}
+
+.file-workspace-tabs {
+  height: 34px;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border-soft);
+  background: #ffffff;
+}
+
+.file-workspace-tabs button {
+  height: 26px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: 1;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: #596273;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.file-workspace-tabs button:hover:not(:disabled) {
+  color: #202124;
+  background: #eceff5;
+}
+
+.file-workspace-tabs button.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.file-workspace-tabs button:disabled {
+  color: #b2bac6;
+  cursor: default;
+}
+
+.file-workspace-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.file-panel-tree,
+.file-panel-editor,
+.file-panel-diff {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.file-panel-tree .file-tree {
+  flex: 1;
+  min-height: 0;
+}
+
+.file-panel-editor .tabs-bar {
+  height: 31px;
+}
+
+.file-panel-editor .editor-container,
+.file-panel-diff .git-diff-view {
+  flex: 1;
+  min-height: 0;
+}
+
+.file-panel-empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: #9aa3af;
+  text-align: center;
+}
+
+.file-panel-empty span {
+  color: #788292;
+  font-size: 12px;
+}
+
+.file-workspace-panel .git-diff-header {
+  min-height: 42px;
+  padding: 0 10px;
+}
+
+.file-workspace-panel .git-diff-file-list {
+  width: 190px;
+  min-width: 170px;
+}
+
+.file-workspace-panel .git-diff-labels {
+  height: 28px;
+}
+
+.agent-session-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px;
+}
+
+.agent-session-item,
+.agent-session-new {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #30343a;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-session-item:hover,
+.agent-session-new:hover {
+  background: var(--bg-side-hover);
+}
+
+.agent-session-item.active {
+  background: var(--bg-side-active);
+  color: var(--accent);
+}
+
+.agent-session-item > div {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.agent-session-item strong,
+.agent-session-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-session-item strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.agent-session-item span {
+  color: #6f7782;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.agent-session-item small {
+  flex: 0 0 auto;
+  color: #8b95a3;
+  font-size: 10px;
+}
+
+.agent-session-item.running small::before,
+.agent-session-item.waiting_approval small::before,
+.agent-session-item.error small::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  display: inline-block;
+  margin-right: 4px;
+  border-radius: 999px;
+  background: #9aa3af;
+  vertical-align: 1px;
+}
+
+.agent-session-item.running small::before {
+  background: #2f80ed;
+}
+
+.agent-session-item.waiting_approval small::before {
+  background: #b7791f;
+}
+
+.agent-session-item.error small::before {
+  background: #d92d20;
+}
+
+.agent-session-new {
+  margin-top: 4px;
+  color: #5b6572;
+  justify-content: center;
+}
+
+.agent-panel {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+  background: #ffffff;
+  color: #202124;
+}
+
+.agent-toggle,
+.agent-small-btn,
+.agent-compose button,
+.agent-rail {
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #4f5867;
+  font: inherit;
+  cursor: pointer;
+}
+
+.agent-toggle {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.agent-context-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  background: #fbfcfe;
+}
+
+.agent-context-line {
+  overflow: hidden;
+  color: #626a74;
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

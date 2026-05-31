@@ -2,7 +2,6 @@ import { useState, useCallback, createContext, useContext, useEffect, useMemo, u
 import type { editor as MonacoEditorApi } from 'monaco-editor'
 import {
   ArrowUp,
-  Box,
   ChevronDown,
   Files,
   Folder,
@@ -97,6 +96,11 @@ type MenuGroup = {
   label: string
   items: MenuItem[]
 }
+
+const RIGHT_FILE_SPLITTER_WIDTH = 6
+const DEFAULT_RIGHT_FILE_TREE_WIDTH = 200
+const RIGHT_PANEL_VISIBILITY_KEY = 'rille:file-panel-visible:v4'
+const BOTTOM_PANEL_VISIBILITY_KEY = 'rille:bottom-panel-visible:v4'
 
 export const AppContext = createContext<AppContextType>(null!)
 
@@ -229,12 +233,12 @@ export default function App() {
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isSidePanelVisible, setIsSidePanelVisible] = useState(() => readStoredBoolean('rille:side-panel-visible', true))
-  const [isRightPanelVisible, setIsRightPanelVisible] = useState(() => readStoredBoolean('rille:file-panel-visible:v2', false))
-  const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(() => readStoredBoolean('rille:bottom-panel-visible:v3', false))
+  const [isRightPanelVisible, setIsRightPanelVisible] = useState(() => readStoredBoolean(RIGHT_PANEL_VISIBILITY_KEY, false))
+  const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(() => readStoredBoolean(BOTTOM_PANEL_VISIBILITY_KEY, false))
   const [activeRightTool, setActiveRightTool] = useState<RightTool>('launcher')
   const [openRightTools, setOpenRightTools] = useState<OpenRightTool[]>([])
   const [isRightPanelDetailExpanded, setIsRightPanelDetailExpanded] = useState(false)
-  const [rightBrowserWidth, setRightBrowserWidth] = useState(300)
+  const [rightBrowserWidth, setRightBrowserWidth] = useState(DEFAULT_RIGHT_FILE_TREE_WIDTH)
   const [terminalNewSignal, setTerminalNewSignal] = useState(0)
   const [terminalKillSignal, setTerminalKillSignal] = useState(0)
   const [terminalLaunchRequest, setTerminalLaunchRequest] = useState<TerminalLaunchRequest | null>(null)
@@ -250,6 +254,7 @@ export default function App() {
   const [selectedAgentSession, setSelectedAgentSession] = useState<AgentSession | null>(null)
   const [isAgentSessionsLoading, setIsAgentSessionsLoading] = useState(false)
   const [sessionContextMenu, setSessionContextMenu] = useState<{ session: AgentSessionSummary; x: number; y: number } | null>(null)
+  const [deleteSessionTarget, setDeleteSessionTarget] = useState<AgentSessionSummary | null>(null)
   const [gitMeta, setGitMeta] = useState<GitMeta | null>(null)
   const [collapsedProjectKeys, setCollapsedProjectKeys] = useState<Set<string>>(() => new Set())
   const [collapsedSidebarSections, setCollapsedSidebarSections] = useState<Set<string>>(() => new Set())
@@ -558,11 +563,11 @@ export default function App() {
   }, [isSidePanelVisible])
 
   useEffect(() => {
-    window.localStorage.setItem('rille:file-panel-visible:v2', String(isRightPanelVisible))
+    window.localStorage.setItem(RIGHT_PANEL_VISIBILITY_KEY, String(isRightPanelVisible))
   }, [isRightPanelVisible])
 
   useEffect(() => {
-    window.localStorage.setItem('rille:bottom-panel-visible:v3', String(isBottomPanelVisible))
+    window.localStorage.setItem(BOTTOM_PANEL_VISIBILITY_KEY, String(isBottomPanelVisible))
   }, [isBottomPanelVisible])
 
   useEffect(() => {
@@ -746,8 +751,13 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
   }, [refreshAgentSessions])
 
   const deleteAgentSession = useCallback(async (session: AgentSessionSummary) => {
-    const label = session.title || session.lastMessage || '这个对话'
-    if (!window.confirm(`删除“${label}”？此操作不可恢复。`)) return
+    setDeleteSessionTarget(session)
+  }, [])
+
+  const confirmDeleteAgentSession = useCallback(async () => {
+    const session = deleteSessionTarget
+    if (!session) return
+    setDeleteSessionTarget(null)
     await window.rille.agentDeleteSession(session.id)
     setAgentSessions(prev => prev.filter(item => item.id !== session.id))
     if (selectedAgentSession?.id === session.id) {
@@ -755,7 +765,7 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
       await loadWorkspaceContext(null)
     }
     void refreshAgentSessions()
-  }, [loadWorkspaceContext, refreshAgentSessions, selectedAgentSession?.id])
+  }, [deleteSessionTarget, loadWorkspaceContext, refreshAgentSessions, selectedAgentSession?.id])
 
   const archiveAgentSession = useCallback(async (session: AgentSessionSummary) => {
     const updated = session.status === 'archived'
@@ -1117,6 +1127,7 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
       }
       setActiveRightTool(tool)
       setIsRightPanelDetailExpanded(false)
+      if (tool === 'files') setRightPanelWidth(rightBrowserWidth)
     }
     const closeRightTool = (tool: OpenRightTool) => {
       setOpenRightTools(prev => prev.filter(item => item !== tool))
@@ -1206,11 +1217,22 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
       </div>
     )
 
+    const openFileInExpandedPanel = async (path: string) => {
+      setActiveRightTool('files')
+      setOpenRightTools(prev => prev.includes('files') ? prev : [...prev, 'files'])
+      setIsRightPanelDetailExpanded(true)
+      setRightPanelWidth(rightBrowserWidth * 2 + RIGHT_FILE_SPLITTER_WIDTH)
+      await openFile(path)
+    }
+
     return (
       <aside
         className={'file-workspace-panel right-tool-panel ' + (isRightPanelDetailExpanded ? 'detail-expanded' : '')}
         aria-label="项目工具"
-        style={{ '--right-browser-width': `${rightBrowserWidth}px` } as CSSProperties}
+        style={{
+          '--right-browser-width': `${rightBrowserWidth}px`,
+          '--right-file-tree-width': `${rightBrowserWidth}px`,
+        } as CSSProperties}
       >
         {renderRightToolTabs()}
         {activeRightTool === 'files' && state.workspace && (
@@ -1253,7 +1275,7 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
                 <FileTree
                   entries={state.fileTree}
                   workspace={state.workspace}
-                  onSelectFile={openFile}
+                  onSelectFile={openFileInExpandedPanel}
                   activePath={state.activeFilePath}
                 />
               ) : (
@@ -1272,7 +1294,9 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
                 const startWidth = rightBrowserWidth
                 const onMove = (moveEvent: PointerEvent) => {
                   const delta = startX - moveEvent.clientX
-                  setRightBrowserWidth(Math.max(220, Math.min(520, startWidth + delta)))
+                  const nextWidth = Math.max(160, Math.min(420, startWidth + delta))
+                  setRightBrowserWidth(nextWidth)
+                  setRightPanelWidth(nextWidth * 2 + RIGHT_FILE_SPLITTER_WIDTH)
                 }
                 const onUp = () => {
                   document.removeEventListener('pointermove', onMove)
@@ -1450,49 +1474,6 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
       <div className="app">
         <header className="top-chrome">
           <div className="chrome-left">
-            <div className="chrome-logo" aria-hidden="true">
-              <Box size={15} />
-            </div>
-            <nav className="chrome-menu" aria-label="Application menu" ref={menuRef}>
-              {menus.map(menu => (
-                <div className="menu-group" key={menu.label}>
-                  <button
-                    type="button"
-                    className={openMenu === menu.label ? 'active' : ''}
-                    onClick={() => setOpenMenu(openMenu === menu.label ? null : menu.label)}
-                  >
-                    {menu.label}
-                  </button>
-                  {openMenu === menu.label && (
-                    <div className="menu-dropdown">
-                      {menu.items.map((item, index) => item.type === 'separator' ? (
-                        <div className="menu-separator" key={`sep-${index}`} />
-                      ) : (
-                        <button
-                          type="button"
-                          key={item.label}
-                          disabled={item.disabled}
-                          onClick={() => {
-                            if (!isActionItem(item) || item.disabled) return
-                            setOpenMenu(null)
-                            void item.action()
-                          }}
-                        >
-                          <span>{item.label}</span>
-                          {item.shortcut && <span className="menu-shortcut">{item.shortcut}</span>}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </nav>
-          </div>
-
-          <div className="chrome-center">
-          </div>
-
-          <div className="chrome-right">
             <button
               type="button"
               className="chrome-panel-toggle"
@@ -1538,6 +1519,12 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
             >
               <PanelRight size={14} />
             </button>
+          </div>
+
+          <div className="chrome-center">
+          </div>
+
+          <div className="chrome-right">
           </div>
         </header>
 
@@ -1601,7 +1588,7 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
                   const startWidth = rightPanelWidth
                   const onMove = (ev: PointerEvent) => {
                     const delta = startX - ev.clientX
-                    setRightPanelWidth(Math.max(300, Math.min(900, startWidth + delta)))
+                    setRightPanelWidth(Math.max(180, Math.min(900, startWidth + delta)))
                   }
                   const onUp = () => {
                     document.removeEventListener('pointermove', onMove)
@@ -1659,6 +1646,27 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
             >
               删除
             </button>
+          </div>
+        )}
+
+        {deleteSessionTarget && (
+          <div className="app-confirm-overlay" role="presentation" onMouseDown={() => setDeleteSessionTarget(null)}>
+            <section
+              className="app-confirm-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label="删除对话"
+              onMouseDown={event => event.stopPropagation()}
+            >
+              <div className="app-confirm-title">删除对话</div>
+              <p>
+                确定删除“{deleteSessionTarget.title || deleteSessionTarget.lastMessage || '这个对话'}”吗？此操作不可恢复。
+              </p>
+              <div className="app-confirm-actions">
+                <button type="button" onClick={() => setDeleteSessionTarget(null)}>取消</button>
+                <button type="button" className="danger" onClick={() => void confirmDeleteAgentSession()}>删除</button>
+              </div>
+            </section>
           </div>
         )}
 
