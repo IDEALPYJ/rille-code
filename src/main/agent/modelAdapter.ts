@@ -4,7 +4,7 @@ import { createRuntimeToolCall, getModelVisibleToolDefinitions, type RuntimeTool
 
 export type ModelAction =
   | { type: 'answer'; text: string }
-  | { type: 'tool_calls'; toolCalls: RuntimeToolCall[]; text?: string }
+  | { type: 'tool_calls'; toolCalls: RuntimeToolCall[]; text?: string; step?: string }
 
 export interface ModelAdapter {
   buildMessages(input: { session: AgentSession; contextPrompt: string; userTask: string; taskContract?: TaskContract; planItems?: AgentPlanItem[] }): AgentChatMessage[]
@@ -32,7 +32,10 @@ export function systemPrompt(session: AgentSession): string {
     JSON.stringify(tools),
     '',
     '输出协议：',
-    '1. 如果需要调用工具，只返回 JSON：{"tool_calls":[{"name":"read_file","input":{"filePath":"..."}}],"text":"可选简短说明"}',
+    '1. 如果需要调用工具，只返回 JSON：{"step":"本轮动作简述","tool_calls":[{"name":"read_file","input":{"filePath":"..."}},{"name":"run_command","input":{"commandLine":"npm test"}}],"text":"可选的用户可见说明"}',
+    '   - step 必须简短描述这一批工具调用要完成什么，例如“检查项目结构和关键文件”。',
+    '   - 同一轮里应尽量把相关的只读探索合并成多个 tool_calls；不要为了读取多个文件拆成多轮模型调用。',
+    '   - 写入、命令和需要审批的操作仍会由 runtime 按安全顺序执行，不要绕过权限策略。',
     '2. 如果已完成或需要直接回答，只返回 JSON：{"answer":"..."}',
     '3. 不要把 JSON 包在 Markdown 代码块里。',
   ].join('\n')
@@ -91,7 +94,15 @@ export function extractJsonObject(text: string): unknown | null {
 }
 
 export function parseTextJsonModelAction(text: string): ModelAction {
-  const parsed = extractJsonObject(text) as { answer?: unknown; text?: unknown; tool_calls?: unknown; toolCalls?: unknown } | null
+  const parsed = extractJsonObject(text) as {
+    answer?: unknown
+    text?: unknown
+    step?: unknown
+    summary?: unknown
+    action_summary?: unknown
+    tool_calls?: unknown
+    toolCalls?: unknown
+  } | null
   if (!parsed) return { type: 'answer', text }
   const rawCalls = Array.isArray(parsed.tool_calls) ? parsed.tool_calls : Array.isArray(parsed.toolCalls) ? parsed.toolCalls : null
   if (rawCalls) {
@@ -103,7 +114,16 @@ export function parseTextJsonModelAction(text: string): ModelAction {
         return createRuntimeToolCall(call.name, input, typeof call.id === 'string' ? call.id : undefined)
       })
       .filter((item): item is RuntimeToolCall => Boolean(item))
-    if (toolCalls.length > 0) return { type: 'tool_calls', toolCalls, text: typeof parsed.text === 'string' ? parsed.text : undefined }
+    if (toolCalls.length > 0) {
+      const step = typeof parsed.step === 'string'
+        ? parsed.step
+        : typeof parsed.summary === 'string'
+          ? parsed.summary
+          : typeof parsed.action_summary === 'string'
+            ? parsed.action_summary
+            : undefined
+      return { type: 'tool_calls', toolCalls, text: typeof parsed.text === 'string' ? parsed.text : undefined, step }
+    }
   }
   if (typeof parsed.answer === 'string') return { type: 'answer', text: parsed.answer }
   if (typeof parsed.text === 'string') return { type: 'answer', text: parsed.text }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, ChevronDown, Clock3, Loader2 } from 'lucide-react'
+import { ChevronDown, Clock3, Loader2, Pencil, Search, Terminal, Wrench } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type { AgentTurn, AgentUsage, MessagePart, TraceEvent } from '../../../shared/agent/protocol'
 import { fileNameFromPath, MarkdownMessage, toolResultBadges } from './AgentPartCards'
 
@@ -11,7 +12,6 @@ type ChatItem =
   | { type: 'handoff'; summary: string; nextSteps: string[] }
 
 type ToolPart = Extract<MessagePart, { type: 'tool' }>
-type StagePart = Extract<MessagePart, { type: 'stage' }>
 
 export interface TurnRunMeta {
   turnId?: string | null
@@ -28,27 +28,22 @@ export interface UsageSummary {
   costUsd: number
 }
 
-export interface ProcessGroup {
+export interface ToolBatchStep {
   id: string
-  description: string
-  stage?: StagePart['stage']
+  type: 'tool_batch'
   parts: ToolPart[]
+  running: boolean
+  summary?: string
+}
+
+export interface ModelStep {
+  id: string
+  type: 'model'
+  text?: string
   running: boolean
 }
 
-export function stageDescription(stage: string, detail?: string): string | null {
-  if (detail?.trim()) return detail.trim()
-  switch (stage) {
-    case 'building_context': return '我先整理上下文和当前状态。'
-    case 'calling_model': return '我在思考接下来要做什么。'
-    case 'executing_tools': return '接下来我会执行这批操作。'
-    case 'waiting_approval': return '需要你确认后才能继续。'
-    case 'applying_edit': return '我会应用已确认的编辑。'
-    case 'running_verification': return '我会验证刚才的变更。'
-    case 'compacting_context': return '我会整理并压缩当前上下文。'
-    default: return null
-  }
-}
+export type RunStep = ToolBatchStep | ModelStep
 
 export function stripVerificationSection(text: string): string {
   // Strip "无法完成：..." failure summary
@@ -93,6 +88,10 @@ export function toolCallLabel(name: string): string {
   return map[name] || name
 }
 
+function isFinalStage(stage: string): boolean {
+  return stage === 'completed' || stage === 'failed'
+}
+
 function latestToolParts(parts: ToolPart[]): ToolPart[] {
   const byCall = new Map<string, ToolPart>()
   for (const part of parts) {
@@ -133,6 +132,30 @@ function operationKind(name: string): OperationKind {
   return 'other'
 }
 
+export function toolIconKind(name: string): OperationKind {
+  return operationKind(name)
+}
+
+function toolIconForKind(kind: OperationKind): LucideIcon {
+  if (kind === 'command') return Terminal
+  if (kind === 'edit') return Pencil
+  if (kind === 'read' || kind === 'search' || kind === 'diagnostic') return Search
+  return Wrench
+}
+
+function toolIconForPart(part?: ToolPart): LucideIcon {
+  return toolIconForKind(part ? operationKind(part.call.name) : 'other')
+}
+
+function operationVerb(kind: OperationKind, running: boolean): string {
+  if (kind === 'read') return running ? '读取' : '读取'
+  if (kind === 'search') return running ? '搜索' : '搜索'
+  if (kind === 'command') return running ? '执行' : '执行'
+  if (kind === 'edit') return running ? '编辑' : '编辑'
+  if (kind === 'diagnostic') return running ? '读取诊断' : '检查诊断'
+  return running ? '处理' : '处理'
+}
+
 export function summarizeOperations(parts: ToolPart[], running = false): string {
   const counts: Record<OperationKind, number> = { read: 0, search: 0, command: 0, edit: 0, diagnostic: 0, other: 0 }
   for (const part of latestToolParts(parts)) counts[operationKind(part.call.name)] += 1
@@ -140,11 +163,25 @@ export function summarizeOperations(parts: ToolPart[], running = false): string 
   const labels: string[] = []
   if (counts.read) labels.push(`${prefix}读取 ${counts.read} 个文件`)
   if (counts.search) labels.push(`${prefix}搜索 ${counts.search} 次`)
-  if (counts.command) labels.push(`${prefix}运行 ${counts.command} 条命令`)
+  if (counts.command) labels.push(`${prefix}执行 ${counts.command} 条命令`)
   if (counts.edit) labels.push(`${prefix}编辑 ${counts.edit} 项`)
   if (counts.diagnostic) labels.push(`${prefix}检查 ${counts.diagnostic} 次诊断`)
   if (counts.other) labels.push(`${prefix}处理 ${counts.other} 项`)
   return labels.join(' · ') || `${prefix}处理操作`
+}
+
+function latestActiveOperation(parts: ToolPart[]): string | null {
+  const latest = latestToolParts(parts)
+    .sort((a, b) => (b.call.startedAt || b.createdAt) - (a.call.startedAt || a.createdAt))[0]
+  if (!latest) return null
+  const target = compactTarget(toolTarget(latest))
+  const state = latest.state
+  if (state === 'waiting_approval') return target ? `等待确认 ${target}` : '等待确认'
+  const running = state === 'running'
+  const prefix = running ? '正在' : '已'
+  const verb = operationVerb(operationKind(latest.call.name), running)
+  if (operationKind(latest.call.name) === 'diagnostic') return `${prefix}${verb}`
+  return target ? `${prefix}${verb} ${target}` : `${prefix}${verb}`
 }
 
 export function latestRunningOperation(parts: ToolPart[]): string | null {
@@ -157,54 +194,111 @@ export function latestRunningOperation(parts: ToolPart[]): string | null {
   switch (operationKind(running.call.name)) {
     case 'read': return target ? `正在读取 ${target}` : '正在读取文件'
     case 'search': return target ? `正在搜索 ${target}` : '正在搜索'
-    case 'command': return target ? `正在运行 ${target}` : '正在运行命令'
+    case 'command': return target ? `正在执行 ${target}` : '正在执行命令'
     case 'edit': return target ? `正在编辑 ${target}` : '正在编辑'
     case 'diagnostic': return '正在读取诊断'
     default: return target ? `正在处理 ${target}` : '正在处理操作'
   }
 }
 
-export function buildProcessGroups(parts: MessagePart[]): ProcessGroup[] {
-  const groups: ProcessGroup[] = []
-  let current: ProcessGroup | null = null
-  for (const part of parts) {
-    if (part.type === 'stage') {
-      if (part.stage === 'completed' || part.stage === 'failed') continue
-      const description = stageDescription(part.stage, part.detail)
-      if (!description) continue
-      current = {
-        id: part.id,
-        description,
-        stage: part.stage,
+export function buildRunSteps(parts: MessagePart[], activeTurn?: AgentTurn | null): RunStep[] {
+  const steps: RunStep[] = []
+  const hasFutureTool = (index: number) => parts.slice(index + 1).some(part => part.type === 'tool' && part.call.name !== 'model_config')
+  let currentToolBatch: ToolBatchStep | null = null
+  let currentModelStep: ModelStep | null = null
+  let pendingToolSummary: string | undefined
+
+  function closeToolBatch() {
+    currentToolBatch = null
+  }
+
+  function closeModelStep() {
+    if (currentModelStep && !currentModelStep.text) currentModelStep.running = false
+    currentModelStep = null
+  }
+
+  function ensureModelStep(part: MessagePart): ModelStep {
+    closeToolBatch()
+    if (!currentModelStep || currentModelStep.text) {
+      currentModelStep = {
+        id: `model_${part.messageId}_${steps.length}`,
+        type: 'model',
+        running: true,
+      }
+      steps.push(currentModelStep)
+    } else {
+      currentModelStep.running = true
+    }
+    return currentModelStep
+  }
+
+  function ensureToolBatch(part: MessagePart): ToolBatchStep {
+    closeModelStep()
+    if (!currentToolBatch) {
+      currentToolBatch = {
+        id: `tools_${part.messageId}_${steps.length}`,
+        type: 'tool_batch',
         parts: [],
         running: false,
+        summary: pendingToolSummary,
       }
-      groups.push(current)
+      pendingToolSummary = undefined
+      steps.push(currentToolBatch)
+    }
+    return currentToolBatch
+  }
+
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index]
+    if (part.type === 'stage') {
+      if (isFinalStage(part.stage)) {
+        closeToolBatch()
+        closeModelStep()
+        continue
+      }
+      if (part.stage === 'calling_model') {
+        ensureModelStep(part)
+        continue
+      }
+      if (part.stage === 'executing_tools' || part.stage === 'waiting_approval' || part.stage === 'applying_edit' || part.stage === 'running_verification') {
+        closeToolBatch()
+        closeModelStep()
+        const detail = part.detail?.trim()
+        pendingToolSummary = detail && !/^执行\s+\d+\s+个工具调用$/.test(detail) ? detail : undefined
+      }
+      continue
+    }
+    if (part.type === 'text' && part.role === 'assistant') {
+      const text = stripVerificationSection(part.text)
+      if (text.trim() && hasFutureTool(index)) {
+        const modelStep = ensureModelStep(part)
+        modelStep.text = text
+        modelStep.running = false
+      }
       continue
     }
     if (part.type === 'tool' && part.call.name !== 'model_config') {
-      if (!current) {
-        current = {
-          id: `group_${part.messageId}_${groups.length}`,
-          description: '接下来我会执行这批操作。',
-          parts: [],
-          running: false,
-        }
-        groups.push(current)
-      }
-      current.parts.push(part)
+      ensureToolBatch(part).parts.push(part)
     }
   }
-  return groups
-    .map(group => {
-      const unique = latestToolParts(group.parts)
-      return {
-        ...group,
-        parts: unique,
-        running: unique.some(part => part.state === 'running' || part.state === 'waiting_approval'),
+
+  return steps
+    .map(step => {
+      if (step.type === 'model') {
+        return {
+          ...step,
+          running: step.running && Boolean(activeTurn),
+        }
       }
+      const unique = latestToolParts(step.parts)
+      const running = unique.some(part => part.state === 'running' || part.state === 'waiting_approval')
+      return { ...step, parts: unique, running }
     })
-    .filter(group => group.description || group.parts.length > 0)
+    .filter(step => step.type === 'model' ? Boolean(step.text?.trim() || step.running) : step.parts.length > 0)
+}
+
+export function buildProcessGroups(parts: MessagePart[]): ToolBatchStep[] {
+  return buildRunSteps(parts).filter((step): step is ToolBatchStep => step.type === 'tool_batch')
 }
 
 export function aggregateUsage(traceEvents: TraceEvent[], turnId?: string | null): UsageSummary {
@@ -226,13 +320,23 @@ export function aggregateUsage(traceEvents: TraceEvent[], turnId?: string | null
   }), { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheWriteInputTokens: 0, costUsd: 0 })
 }
 
+function estimateOutputTokens(parts: MessagePart[], usage: UsageSummary): number {
+  if (usage.outputTokens > 0) return usage.outputTokens
+  const streamedChars = parts
+    .filter((part): part is Extract<MessagePart, { type: 'text' }> => part.type === 'text' && part.role === 'assistant')
+    .reduce((count, part) => count + part.text.length, 0)
+  return Math.ceil(streamedChars / 4)
+}
+
 function useChatItems(parts: MessagePart[]): ChatItem[] {
   return useMemo(() => {
     const items: ChatItem[] = []
-    for (const part of parts) {
+    const lastToolIndex = parts.reduce((latest, part, index) => part.type === 'tool' && part.call.name !== 'model_config' ? index : latest, -1)
+    for (let index = 0; index < parts.length; index += 1) {
+      const part = parts[index]
       if (part.type === 'text') {
         if (part.role === 'user') items.push({ type: 'user_text', text: part.text })
-        if (part.role === 'assistant') {
+        if (part.role === 'assistant' && (lastToolIndex === -1 || index > lastToolIndex)) {
           const text = stripVerificationSection(part.text)
           if (text.trim()) items.push({ type: 'assistant_text', text })
         }
@@ -255,10 +359,14 @@ function formatNumber(value: number): string {
 }
 
 export function formatUsageSummary(usage: UsageSummary): string {
-  const total = usage.inputTokens + usage.outputTokens
-  if (!total && !usage.cachedInputTokens && !usage.cacheWriteInputTokens) return 'Token 0'
-  const bits = [`Token ${formatNumber(total)}`]
-  if (usage.cachedInputTokens) bits.push(`缓存 ${formatNumber(usage.cachedInputTokens)}`)
+  if (!usage.inputTokens && !usage.outputTokens && !usage.cachedInputTokens && !usage.cacheWriteInputTokens) {
+    return 'Input 0 · Output 0 · Cache 0'
+  }
+  const bits = [
+    `Input ${formatNumber(usage.inputTokens)}`,
+    `Output ${formatNumber(usage.outputTokens)}`,
+    `Cache ${formatNumber(usage.cachedInputTokens + usage.cacheWriteInputTokens)}`,
+  ]
   if (usage.costUsd) bits.push(`$${usage.costUsd.toFixed(4)}`)
   return bits.join(' · ')
 }
@@ -271,36 +379,62 @@ function formatElapsed(ms: number): string {
   return `${rest}s`
 }
 
-function ProcessGroupView({ group }: { group: ProcessGroup }) {
-  const [expanded, setExpanded] = useState(false)
-  const latest = latestRunningOperation(group.parts)
-  const summary = latest || summarizeOperations(group.parts, false)
-  return (
-    <div className={'agent-process-group' + (group.running ? ' running' : '')}>
-      <div className="agent-process-description">{group.description}</div>
-      {group.parts.length > 0 && (
-        <>
-          <button
-            type="button"
-            className={'agent-process-summary' + (expanded ? ' expanded' : '')}
-            onClick={() => setExpanded(value => !value)}
-          >
-            {group.running ? <Loader2 size={13} className="spin" /> : <CheckCircle2 size={13} />}
-            <span>{summary}</span>
-            <ChevronDown size={12} className="agent-process-chevron" />
-          </button>
-          {expanded && (
-            <div className="agent-process-details">
-              {group.parts.map(part => (
-                <div key={part.call.id} className="agent-process-detail">
-                  <span className="agent-process-detail-name">{toolCallLabel(part.call.name)}</span>
-                  <span className="agent-process-detail-target">{compactTarget(toolTarget(part)) || part.call.summary}</span>
-                  {toolResultBadges(part).length > 0 && <small>{toolResultBadges(part).join(' · ')}</small>}
-                </div>
-              ))}
+function RunStepView({ step }: { step: RunStep }) {
+  if (step.type === 'model') {
+    return (
+      <div className={'agent-run-step model' + (step.running ? ' running' : '')}>
+        <div className="agent-run-step-line">
+          {step.running && <Loader2 size={13} className="spin" />}
+          {step.text ? (
+            <div className="agent-run-step-markdown">
+              <MarkdownMessage text={step.text} />
             </div>
+          ) : (
+            <span className="agent-run-step-text">思考中</span>
           )}
-        </>
+        </div>
+      </div>
+    )
+  }
+  return <ToolBatchStepView step={step} />
+}
+
+function ToolBatchStepView({ step }: { step: ToolBatchStep }) {
+  const [expanded, setExpanded] = useState(false)
+  const latest = latestRunningOperation(step.parts) || (step.running ? latestActiveOperation(step.parts) : null)
+  const summary = latest || summarizeOperations(step.parts, false)
+  const Icon = toolIconForPart(step.running
+    ? latestToolParts(step.parts).filter(part => part.state === 'running' || part.state === 'waiting_approval').sort((a, b) => (b.call.startedAt || b.createdAt) - (a.call.startedAt || a.createdAt))[0]
+    : step.parts[0])
+  return (
+    <div className={'agent-run-step tool-batch' + (step.running ? ' running' : '')}>
+      <button
+        type="button"
+        className={'agent-run-step-line' + (expanded ? ' expanded' : '')}
+        onClick={() => setExpanded(value => !value)}
+      >
+        <Icon size={13} />
+        <span className="agent-run-step-text">{step.summary ? `${step.summary} · ${summary}` : summary}</span>
+        <ChevronDown size={12} className="agent-process-chevron" />
+      </button>
+      {expanded && (
+        <div className="agent-process-details">
+          {step.parts.map(part => {
+            const DetailIcon = toolIconForPart(part)
+            return (
+            <div key={part.call.id} className={'agent-process-detail state-' + part.state}>
+              <DetailIcon size={12} />
+              <span className="agent-process-detail-name">{toolCallLabel(part.call.name)}</span>
+              <span className="agent-process-detail-target">{compactTarget(toolTarget(part)) || part.call.summary}</span>
+              {part.output?.output && (
+                <span className="agent-process-detail-output">
+                  {part.output.output.length > 120 ? `${part.output.output.slice(0, 120)}...` : part.output.output}
+                </span>
+              )}
+              {toolResultBadges(part).length > 0 && <small>{toolResultBadges(part).join(' · ')}</small>}
+            </div>
+          )})}
+        </div>
       )}
     </div>
   )
@@ -330,25 +464,26 @@ export function ChatTurnView({
   runMeta?: TurnRunMeta | null
 }) {
   const items = useChatItems(parts)
-  const groups = useMemo(() => buildProcessGroups(parts), [parts])
   const isRunning = Boolean(activeTurn || runMeta?.status === 'running')
+  const runSteps = useMemo(() => buildRunSteps(parts, activeTurn), [activeTurn, parts])
   const [processOpen, setProcessOpen] = useState(isRunning)
   const now = useNow(isRunning)
   const startedAt = runMeta?.startedAt || activeTurn?.createdAt || parts.find(part => part.type === 'text' && part.role === 'user')?.createdAt
   const completedAt = runMeta?.completedAt
   const elapsed = startedAt ? (completedAt || now) - startedAt : 0
   const usage = useMemo(() => aggregateUsage(traceEvents, runMeta?.turnId || activeTurn?.id), [activeTurn?.id, runMeta?.turnId, traceEvents])
+  const liveUsage = useMemo(() => ({
+    ...usage,
+    outputTokens: Math.max(usage.outputTokens, isRunning ? estimateOutputTokens(parts, usage) : usage.outputTokens),
+  }), [isRunning, parts, usage])
 
   useEffect(() => {
     setProcessOpen(isRunning)
   }, [isRunning, runMeta?.turnId])
 
-  const finalStartIndex = Math.max(0, items.findIndex(item => item.type === 'assistant_text' || item.type === 'handoff'))
   const userItems = items.filter(item => item.type === 'user_text')
-  const finalItems = finalStartIndex === 0
-    ? items.filter(item => item.type === 'assistant_text' || item.type === 'handoff')
-    : items.slice(finalStartIndex).filter(item => item.type === 'assistant_text' || item.type === 'handoff')
-  const showHeader = groups.length > 0 || Boolean(activeTurn || runMeta) || usage.inputTokens || usage.outputTokens
+  const finalItems = items.filter(item => item.type === 'assistant_text' || item.type === 'handoff')
+  const showHeader = runSteps.length > 0 || Boolean(activeTurn || runMeta) || usage.inputTokens || usage.outputTokens
 
   return (
     <div className="agent-turn-view">
@@ -366,12 +501,12 @@ export function ChatTurnView({
           >
             <Clock3 size={13} />
             <span>已处理 {formatElapsed(elapsed)}</span>
-            <small>{formatUsageSummary(usage)}</small>
+            <small>{formatUsageSummary(liveUsage)}</small>
             <ChevronDown size={13} />
           </button>
           {processOpen && (
             <div className="agent-process-log">
-              {groups.map(group => <ProcessGroupView key={group.id} group={group} />)}
+              {runSteps.map(step => <RunStepView key={step.id} step={step} />)}
             </div>
           )}
         </div>

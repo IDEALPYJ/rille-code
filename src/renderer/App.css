@@ -8465,13 +8465,27 @@ select {
 }
 
 .approval-popover-card {
+  position: relative;
   display: grid;
   gap: 9px;
-  padding: 12px;
+  padding: 12px 12px 24px;
   border: 1px solid rgba(20, 27, 38, 0.10);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 16px 42px rgba(15, 23, 42, 0.16);
+  overflow: hidden;
+}
+
+.approval-popover-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22px;
+  border-radius: 0 0 16px 16px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0), rgba(248, 250, 252, 0.92));
+  pointer-events: none;
 }
 
 .approval-popover-card.risk-high,
@@ -8497,26 +8511,49 @@ select {
   word-break: break-word;
 }
 
+.approval-popover-details {
+  color: #6b7480;
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.approval-popover-details summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.approval-popover-details div {
+  display: grid;
+  gap: 3px;
+  margin-top: 5px;
+}
+
+.approval-popover-details span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .approval-popover-actions,
 .approval-guide-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 7px;
-  align-items: center;
+  align-items: stretch;
 }
 
 .approval-popover .approval-popover-actions button,
 .approval-popover .approval-guide-actions button {
-  width: auto;
+  width: 100%;
   min-width: 0;
-  height: 30px;
-  padding: 0 10px;
+  min-height: 34px;
+  padding: 0 12px;
   border: 1px solid rgba(20, 27, 38, 0.08);
-  border-radius: 999px;
+  border-radius: 10px;
   background: #f6f7f9;
   color: #394150;
   font-size: 12px;
-  line-height: 30px;
+  line-height: 18px;
+  text-align: left;
 }
 
 .approval-popover .approval-popover-actions button:hover,
@@ -8530,24 +8567,25 @@ select {
 }
 
 .approval-guide {
+  position: relative;
+  z-index: 1;
   display: grid;
-  gap: 8px;
+  margin-bottom: -14px;
 }
 
-.approval-popover .approval-guide textarea,
-.conversation-area .agent-compose .approval-guide textarea {
+.approval-popover .approval-guide input,
+.conversation-area .agent-compose .approval-guide input {
   width: 100%;
-  min-height: 54px;
-  max-height: 96px;
-  padding: 8px 10px;
+  min-height: 36px;
+  padding: 0 11px;
   border: 1px solid rgba(20, 27, 38, 0.10);
-  border-radius: 10px;
-  background: #fbfcfe;
+  border-radius: 11px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
   color: #2d3137;
   font: inherit;
   font-size: 12px;
-  line-height: 17px;
-  resize: none;
+  line-height: 18px;
   outline: none;
 }
 
@@ -8600,24 +8638,19 @@ select {
 
 .agent-process-log {
   display: grid;
-  gap: 18px;
+  gap: 8px;
   padding: 6px 0 12px;
   border-top: 1px solid rgba(20, 27, 38, 0.10);
 }
 
-.agent-process-group {
+.agent-run-step {
+  min-width: 0;
   display: grid;
-  gap: 8px;
+  gap: 5px;
 }
 
-.agent-process-description {
-  color: #2d3137;
-  font-size: 14px;
-  line-height: 1.72;
-}
-
-.agent-process-summary {
-  width: fit-content;
+.agent-run-step-line {
+  width: 100%;
   max-width: 100%;
   min-height: 24px;
   display: inline-flex;
@@ -8630,21 +8663,62 @@ select {
   font: inherit;
   font-size: 13px;
   text-align: left;
+  line-height: 20px;
   cursor: pointer;
+  min-width: 0;
 }
 
-.agent-process-summary:hover {
+.agent-run-step.model .agent-run-step-line {
+  color: #3f4652;
+  cursor: default;
+}
+
+.agent-run-step-line:hover {
   color: #69717c;
 }
 
-.agent-process-summary span {
+.agent-run-step.model .agent-run-step-line:hover {
+  color: #3f4652;
+}
+
+.agent-run-step-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
-.agent-process-summary svg {
+.agent-run-step-markdown {
+  min-width: 0;
+  max-width: 100%;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+
+.agent-run-step-markdown .agent-markdown {
+  min-width: 0;
+  max-width: 100%;
+  color: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.agent-run-step-markdown .agent-markdown p,
+.agent-run-step-markdown .agent-markdown ul,
+.agent-run-step-markdown .agent-markdown ol,
+.agent-run-step-markdown .agent-markdown blockquote,
+.agent-run-step-markdown .agent-markdown pre {
+  margin: 0 0 6px;
+  white-space: normal;
+}
+
+.agent-run-step-markdown .agent-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.agent-run-step-line svg {
   flex: 0 0 auto;
 }
 
@@ -8652,7 +8726,7 @@ select {
   transition: transform 140ms ease;
 }
 
-.agent-process-summary.expanded .agent-process-chevron {
+.agent-run-step-line.expanded .agent-process-chevron {
   transform: rotate(180deg);
 }
 
@@ -8670,6 +8744,13 @@ select {
   color: #68717d;
   font-size: 12px;
   line-height: 18px;
+  flex-wrap: wrap;
+}
+
+.agent-process-detail svg {
+  flex: 0 0 auto;
+  color: #9aa2ad;
+  transform: translateY(2px);
 }
 
 .agent-process-detail-name {
@@ -8679,9 +8760,15 @@ select {
 
 .agent-process-detail-target {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.agent-process-detail-output {
+  min-width: 0;
+  color: #8c95a1;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .agent-process-detail small {
@@ -8701,6 +8788,6 @@ select {
 
   .approval-popover .approval-popover-actions button,
   .approval-popover .approval-guide-actions button {
-    flex: 1 1 46%;
+    width: 100%;
   }
 }

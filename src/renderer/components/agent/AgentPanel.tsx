@@ -22,7 +22,6 @@ import type { EditorDiagnostic } from '../Editor'
 import { expandComposerDraft } from './workbenchState'
 import {
   fileNameFromPath,
-  ProposalReview,
   shortModelLabel,
 } from './AgentPartCards'
 import { ChatTurnView, type TurnRunMeta } from './AgentTurnView'
@@ -71,7 +70,7 @@ function toContextSnapshot(props: Props): AgentContextSnapshot {
 
 type ApprovalAction = 'allow_once' | 'always_allow' | 'allow_workspace' | 'deny'
 
-function approvalRequestTitle(request: ApprovalRequest): string {
+export function approvalRequestTitle(request: ApprovalRequest): string {
   const target = (request.target || '').trim()
   if (target) return `模型请求执行指令 ${target}`
   const reason = request.reason.trim()
@@ -82,13 +81,20 @@ function approvalRequestTitle(request: ApprovalRequest): string {
   return reason ? `模型请求 ${reason}` : `模型请求 ${request.title}`
 }
 
+export function editProposalTitle(proposals: EditProposal[]): string {
+  const primary = proposals[0]
+  if (!primary) return '模型请求编辑文件'
+  return proposals.length === 1
+    ? `模型请求编辑 ${fileNameFromPath(primary.filePath)}`
+    : `模型请求编辑 ${proposals.length} 个文件`
+}
+
 function ApprovalPopover({ request, onDecision }: {
   request: ApprovalRequest
   onDecision: (request: ApprovalRequest, action: ApprovalAction, reason?: string) => void
 }) {
   const [entered, setEntered] = useState(false)
   const [leaving, setLeaving] = useState(false)
-  const [isGuiding, setIsGuiding] = useState(false)
   const [guide, setGuide] = useState('')
   useEffect(() => { requestAnimationFrame(() => setEntered(true)) }, [])
   const decide = useCallback((action: ApprovalAction, reason?: string) => {
@@ -105,37 +111,90 @@ function ApprovalPopover({ request, onDecision }: {
         {(request.target || request.reason) && (
           <div className="approval-popover-summary">{request.target || request.reason}</div>
         )}
-        {isGuiding ? (
-          <div className="approval-guide">
-            <textarea
-              value={guide}
-              rows={2}
-              autoFocus
-              placeholder="告诉模型应该怎么改做..."
-              onChange={event => setGuide(event.target.value)}
-              onKeyDown={event => {
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && guide.trim()) {
-                  decide('deny', guide.trim())
-                }
-              }}
-            />
-            <div className="approval-guide-actions">
-              <button type="button" onClick={() => setIsGuiding(false)}>取消</button>
-              <button type="button" disabled={!guide.trim()} onClick={() => decide('deny', guide.trim())}>发送给模型</button>
-            </div>
+        <div className="approval-popover-actions">
+          <button type="button" onClick={() => decide('allow_once')}>允许一次</button>
+          {canWorkspace ? (
+            <button type="button" onClick={() => decide('allow_workspace')}>该项目中允许</button>
+          ) : canSession ? (
+            <button type="button" onClick={() => decide('always_allow')}>本次会话允许</button>
+          ) : null}
+          <button type="button" onClick={() => decide('deny')}>拒绝</button>
+        </div>
+        <div className="approval-guide">
+          <input
+            value={guide}
+            placeholder="告诉模型怎么做"
+            onChange={event => setGuide(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && guide.trim()) {
+                event.preventDefault()
+                decide('deny', guide.trim())
+              }
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type EditProposalAction = 'apply_one' | 'apply_all' | 'reject'
+
+function EditProposalPopover({
+  proposals,
+  onDecision,
+}: {
+  proposals: EditProposal[]
+  onDecision: (proposal: EditProposal, action: EditProposalAction, reason?: string) => void
+}) {
+  const [entered, setEntered] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const [guide, setGuide] = useState('')
+  useEffect(() => { requestAnimationFrame(() => setEntered(true)) }, [])
+  const primary = proposals[0]
+  const title = editProposalTitle(proposals)
+  const decide = useCallback((action: EditProposalAction, reason?: string) => {
+    if (!primary) return
+    setLeaving(true)
+    window.setTimeout(() => onDecision(primary, action, reason), 180)
+  }, [onDecision, primary])
+
+  if (!primary) return null
+
+  return (
+    <div className={'approval-popover edit-proposal-popover' + (entered && !leaving ? ' enter' : '') + (leaving ? ' leaving' : '')}>
+      <div className="approval-popover-card">
+        <div className="approval-popover-title">{title}</div>
+        <div className="approval-popover-summary">
+          {proposals.map(proposal => fileNameFromPath(proposal.filePath)).join(' · ')}
+        </div>
+        <details className="approval-popover-details">
+          <summary>查看编辑列表</summary>
+          <div>
+            {proposals.map(proposal => (
+              <span key={proposal.id}>{proposal.title} · {proposal.filePath}</span>
+            ))}
           </div>
-        ) : (
-          <div className="approval-popover-actions">
-            <button type="button" onClick={() => decide('allow_once')}>允许一次</button>
-            {canWorkspace ? (
-              <button type="button" onClick={() => decide('allow_workspace')}>该项目中允许</button>
-            ) : canSession ? (
-              <button type="button" onClick={() => decide('always_allow')}>本次会话允许</button>
-            ) : null}
-            <button type="button" onClick={() => decide('deny')}>拒绝</button>
-            <button type="button" onClick={() => setIsGuiding(true)}>告诉模型怎么做</button>
-          </div>
-        )}
+        </details>
+        {primary.rationale && <div className="approval-popover-summary">{primary.rationale}</div>}
+        <div className="approval-popover-actions">
+          <button type="button" onClick={() => decide('apply_one')}>应用一次</button>
+          <button type="button" onClick={() => decide('apply_all')}>全部应用</button>
+          <button type="button" onClick={() => decide('reject')}>拒绝</button>
+        </div>
+        <div className="approval-guide">
+          <input
+            value={guide}
+            placeholder="告诉模型怎么做"
+            onChange={event => setGuide(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && guide.trim()) {
+                event.preventDefault()
+                decide('reject', guide.trim())
+              }
+            }}
+          />
+        </div>
       </div>
     </div>
   )
@@ -144,7 +203,6 @@ function ApprovalPopover({ request, onDecision }: {
 export function AgentPanel(props: Props) {
   const [parts, setParts] = useState<MessagePart[]>([])
   const [proposals, setProposals] = useState<Record<string, EditProposal>>({})
-  const [reviewProposal, setReviewProposal] = useState<EditProposal | null>(null)
   const [approvals, setApprovals] = useState<Record<string, ApprovalRequest>>({})
   const [agentEvents, setAgentEvents] = useState<AgentEvent[]>([])
   const [traceEvents, setTraceEvents] = useState<TraceEvent[]>([])
@@ -193,11 +251,6 @@ export function AgentPanel(props: Props) {
         setActiveTurn(null)
       } else if (event.type === 'edit.proposed') {
         setProposals(prev => ({ ...prev, [event.proposal.id]: event.proposal }))
-        if (event.proposal.state === 'pending') {
-          setReviewProposal(event.proposal)
-        } else {
-          setReviewProposal(prev => prev?.id === event.proposal.id ? event.proposal : prev)
-        }
         if (event.proposal.state === 'applied') {
           props.onFileApplied?.(event.proposal.filePath, event.proposal.modifiedContent)
         }
@@ -224,7 +277,6 @@ export function AgentPanel(props: Props) {
     setAgentEvents([])
     setTraceEvents([])
     setIsTraceOpen(false)
-    setReviewProposal(null)
     setActiveTurn(null)
     setTurnRunMeta(null)
     setError(null)
@@ -332,6 +384,28 @@ export function AgentPanel(props: Props) {
     })
   }, [])
 
+  const respondProposal = useCallback(async (proposal: EditProposal, action: EditProposalAction, reason?: string) => {
+    if (!session) return
+    if (action === 'apply_one') {
+      const updated = await window.rille.agentApplyEdit(session.id, proposal.id, toContextSnapshot(props))
+      setProposals(prev => ({ ...prev, [updated.id]: updated }))
+      if (updated.state === 'applied') props.onFileApplied?.(updated.filePath, updated.modifiedContent)
+      return
+    }
+    if (action === 'apply_all') {
+      for (const item of pendingProposals) {
+        const updated = await window.rille.agentApplyEdit(session.id, item.id, toContextSnapshot(props))
+        setProposals(prev => ({ ...prev, [updated.id]: updated }))
+        if (updated.state === 'applied') props.onFileApplied?.(updated.filePath, updated.modifiedContent)
+      }
+      return
+    }
+    const updated = await window.rille.agentRejectEdit(session.id, proposal.id, reason?.trim() || '用户拒绝。')
+    if (updated && 'filePath' in updated) {
+      setProposals(prev => ({ ...prev, [updated.id]: updated }))
+    }
+  }, [pendingProposals, props, session])
+
   return (
     <aside className="agent-panel" aria-label="Vibe Coding">
       {isTraceOpen && (
@@ -371,6 +445,9 @@ export function AgentPanel(props: Props) {
         {Object.values(approvals).map(request => (
           <ApprovalPopover key={request.id} request={request} onDecision={respondApproval} />
         ))}
+        {pendingProposals.length > 0 && Object.keys(approvals).length === 0 && (
+          <EditProposalPopover proposals={pendingProposals} onDecision={respondProposal} />
+        )}
         <textarea
           value={draft}
           rows={2}
@@ -467,20 +544,6 @@ export function AgentPanel(props: Props) {
           )}
         </div>
       </form>
-      {reviewProposal && session && (
-        <ProposalReview
-          proposal={reviewProposal}
-          sessionId={session.id}
-          contextSnapshot={toContextSnapshot(props)}
-          pendingProposals={pendingProposals}
-          onClose={() => setReviewProposal(null)}
-          onApplied={props.onFileApplied}
-          onUpdated={proposal => {
-            setProposals(prev => ({ ...prev, [proposal.id]: proposal }))
-            setReviewProposal(proposal)
-          }}
-        />
-      )}
     </aside>
   )
 }

@@ -4,12 +4,30 @@ import { parseTextJsonModelAction, TextJsonToolAdapter } from '../../src/main/ag
 
 describe('parseTextJsonModelAction', () => {
   it('parses fenced tool calls', () => {
-    const action = parseTextJsonModelAction('```json\n{"tool_calls":[{"name":"read_file","input":{"filePath":"src/main/index.ts"}}],"text":"读取文件"}\n```')
+    const action = parseTextJsonModelAction('```json\n{"step":"读取关键文件","tool_calls":[{"name":"read_file","input":{"filePath":"src/main/index.ts"}}],"text":"读取文件"}\n```')
     expect(action.type).toBe('tool_calls')
     if (action.type === 'tool_calls') {
+      expect(action.step).toBe('读取关键文件')
       expect(action.toolCalls).toHaveLength(1)
       expect(action.toolCalls[0].name).toBe('read_file')
       expect(action.toolCalls[0].input.filePath).toBe('src/main/index.ts')
+    }
+  })
+
+  it('parses summary and preserves multiple tool call order', () => {
+    const action = parseTextJsonModelAction(JSON.stringify({
+      summary: '检查目录和入口文件',
+      tool_calls: [
+        { name: 'read_file', input: { filePath: 'main.py' } },
+        { name: 'read_file', input: { filePath: 'utils.py' } },
+        { name: 'run_command', input: { commandLine: 'ls' } },
+      ],
+    }))
+
+    expect(action.type).toBe('tool_calls')
+    if (action.type === 'tool_calls') {
+      expect(action.step).toBe('检查目录和入口文件')
+      expect(action.toolCalls.map(call => call.name)).toEqual(['read_file', 'read_file', 'run_command'])
     }
   })
 

@@ -465,10 +465,10 @@ export class AgentLoop {
           createdAt: now(),
         })
       }
-      messages.push({ role: 'assistant', content: JSON.stringify({ tool_calls: action.toolCalls }) })
+      messages.push({ role: 'assistant', content: JSON.stringify({ step: action.step, tool_calls: action.toolCalls }) })
 
       const results: Array<{ call: RuntimeToolCall; result: unknown }> = []
-      this.emitStage(assistantMessageId, 'executing_tools', `执行 ${action.toolCalls.length} 个工具调用`)
+      this.emitStage(assistantMessageId, 'executing_tools', action.step || `执行 ${action.toolCalls.length} 个工具调用`)
 
       // Phase 1: check permissions for all tool calls
       type ToolSlot = { call: RuntimeToolCall; toolPart: Extract<MessagePart, { type: 'tool' }>; runningCall: ToolCallView; allowed: boolean }
