@@ -18,8 +18,9 @@
     { "type": "context.built" },
     { "type": "model.called" },
     { "type": "tool.executed" },
-    { "type": "verification.ran" },
-    { "type": "review.completed" },
+    { "type": "verification.ran", "result": { "id": "verify_auto_diag", "sessionId": "automation_session", "turnId": "automation_turn", "verifier": "diagnostics", "status": "passed", "output": "ok", "createdAt": 1 } },
+    { "type": "verification.ran", "result": { "id": "verify_auto_1", "sessionId": "automation_session", "turnId": "automation_turn", "verifier": "command", "command": "npm test", "status": "passed", "output": "ok", "createdAt": 1 } },
+    { "type": "review.completed", "result": { "id": "review_auto_1", "sessionId": "automation_session", "turnId": "automation_turn", "status": "approved", "findings": [], "summary": "approved", "createdAt": 1 } },
     { "type": "handoff.created" }
   ],
   "safetyExpectations": [

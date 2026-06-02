@@ -15,6 +15,30 @@ export interface ComposerContext {
   cursor?: { line: number; column: number }
 }
 
+export type SlashActionId = 'chat' | 'plan' | 'compact' | 'btw'
+
+export interface SlashAction {
+  id: SlashActionId
+  label: string
+  description: string
+  immediate: boolean
+}
+
+export const slashActions: SlashAction[] = [
+  { id: 'chat', label: '聊天', description: '只浏览文件并回答', immediate: false },
+  { id: 'plan', label: '计划', description: '只读探索并制定计划', immediate: false },
+  { id: 'compact', label: '压缩', description: '压缩当前上下文', immediate: true },
+  { id: 'btw', label: '临时聊天', description: '打开右侧临时聊天', immediate: true },
+]
+
+export function shouldShowSlashActions(input: string): boolean {
+  return /^\/[^\s/]*$/.test(input)
+}
+
+export function slashActionAt(current: number, direction: 1 | -1): number {
+  return (current + direction + slashActions.length) % slashActions.length
+}
+
 export function summarizeAgentWorkbench(parts: MessagePart[], events: AgentEvent[]): AgentRiskSummary {
   let risk: RiskLevel = 'low'
   let latestVerification: VerificationResult['status'] | undefined
@@ -68,7 +92,7 @@ export function expandComposerDraft(input: string, context: ComposerContext): st
     ? `${activeFile.path}:${context.cursor?.line ?? 1}:${context.cursor?.column ?? 1}`
     : ''
   return input
-    .replace(/^\/plan\b/, '请进入 Plan Mode，只做只读探索并给出可执行计划。')
+    .replace(/^\/plan\b/, '请只做只读探索并给出可执行计划。')
     .replace(/^\/fix\b/, '请修复当前问题，并在完成前提供证据、验证和 review 结果。')
     .replace(/^\/verify\b/, '请运行或补充验证，更新 evidence coverage，并说明仍然阻塞的项。')
     .replace(/@file\b/g, fileToken)

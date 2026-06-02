@@ -138,7 +138,7 @@ function childSession(parent: AgentSession, contract: SubagentContract, id: stri
     createdAt: now(),
     updatedAt: now(),
     status: 'running',
-    permissionMode: contract.permissionScope === 'isolated_write' ? 'bypass' : 'plan',
+    permissionMode: contract.permissionScope === 'isolated_write' ? 'full_access' : 'default',
     parentSessionId: parent.id,
     rootSessionId: parent.rootSessionId || parent.id,
     subagent: { role: contract.role, contractId: contract.id },

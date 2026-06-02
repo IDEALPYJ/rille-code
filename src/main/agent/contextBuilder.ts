@@ -815,7 +815,7 @@ export async function buildAgentContextPrompt(context: AgentContextSnapshot): Pr
     createdAt: 0,
     updatedAt: 0,
     status: 'running',
-    permissionMode: 'ask',
+    permissionMode: 'default',
   }
   const turn: AgentTurn = {
     id: 'turn_context_wrapper',

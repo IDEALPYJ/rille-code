@@ -37,7 +37,7 @@ Step1 的定位是历史基线：保留已经完成的 V2 架构事实，不再�
 3. Harness 控制边界、恢复、验证和审计；Brain 只提出候选意图。
 4. Hands 是受控执行环境，可以是 local、WSL、SSH、worktree、sandbox 或未来 remote runtime。
 5. Tool 是模型影响外部世界的唯一通道；runtime-only action 不能暴露给模型。
-6. Ask 默认，deny-and-continue，危险动作 fail closed。
+6. 三模式权限：默认权限确认编辑/高危命令，自动审查自动应用编辑，完全权限自动允许合法操作。
 7. Task Contract 和 Plan 先于执行，Evidence 和 Review 决定完成。
 8. Generator 不评估自己的工作；独立 evaluator/reviewer 是质量层。
 9. Context 通过 fragment pipeline 构造；stable prefix、dynamic suffix 和 cache key 是架构约束。

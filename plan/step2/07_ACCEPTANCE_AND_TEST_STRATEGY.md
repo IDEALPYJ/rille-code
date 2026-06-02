@@ -44,7 +44,7 @@ npm run governance:agent
 
 | Phase | 测试重点 |
 | --- | --- |
-| R | HTTP/SSE MCP fixture、auth redaction、heartbeat、reconnect、Plan Mode sideEffect deny。 |
+| R | HTTP/SSE MCP fixture、auth redaction、heartbeat、reconnect、default mode sideEffect confirmation。 |
 | S | Windows path/shell/PTY/Git/npm wrapper、sandbox filesystem/network policy、Windows CI。 |
 | T | hook manifest parsing、sandbox timeout、env allowlist、redacted payload、plugin trust。 |
 | U | writable subagent isolation、worktree diff proposal、real model failure visibility、merge conflict。 |

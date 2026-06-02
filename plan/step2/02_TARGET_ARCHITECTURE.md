@@ -16,7 +16,7 @@ Step2 在 Step1 七层架构上新增五个产品化平面：
 
 - 支持 stdio、HTTP、SSE 三类 transport。
 - transport 负责连接、鉴权、重连、心跳、工具发现和日志 artifact。
-- tool namespace、sideEffect、Plan Mode policy 继续沿用 Step1。
+- tool namespace、sideEffect、三模式 permission policy 继续沿用 Step1。
 
 ### Windows Sandbox Adapter
 

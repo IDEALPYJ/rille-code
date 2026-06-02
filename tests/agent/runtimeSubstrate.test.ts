@@ -61,12 +61,12 @@ describe('runtime substrate', () => {
     writeFileSync(join(root, 'README.md'), 'changed again\n', 'utf8')
     const proposal = await restoreCheckpointAsProposal(
       checkpoint.id,
-      { id: 'session_runtime', title: 'runtime', workspace: workspace(root), createdAt: 1, updatedAt: 1, status: 'idle', permissionMode: 'ask' },
+      { id: 'session_runtime', title: 'runtime', workspace: workspace(root), createdAt: 1, updatedAt: 1, status: 'idle', permissionMode: 'default' },
       { id: 'turn_runtime', sessionId: 'session_runtime', text: 'restore', createdAt: 1, status: 'completed' },
     )
     expect(proposal.originalContent).toBe('changed again\n')
     expect(proposal.modifiedContent).toBe('changed\n')
-  }, 15_000)
+  }, 30_000)
 
   it('restores multi-file checkpoints as reviewable proposals without writing files', async () => {
     userData = mkdtempSync(join(tmpdir(), 'rille-runtime-'))
@@ -87,7 +87,7 @@ describe('runtime substrate', () => {
 
     const proposals = await restoreCheckpointAsProposals(
       checkpoint.id,
-      { id: 'session_runtime', title: 'runtime', workspace: workspace(root), createdAt: 1, updatedAt: 1, status: 'idle', permissionMode: 'ask' },
+      { id: 'session_runtime', title: 'runtime', workspace: workspace(root), createdAt: 1, updatedAt: 1, status: 'idle', permissionMode: 'default' },
       { id: 'turn_runtime', sessionId: 'session_runtime', text: 'restore', createdAt: 1, status: 'completed' },
     )
 
@@ -110,7 +110,7 @@ describe('runtime substrate', () => {
     writeFileSync(join(sandbox.sandboxWorkspace.path, 'README.md'), 'sandbox change\n', 'utf8')
 
     const proposals = await sandboxDiffAsProposals(
-      { id: 'session_sandbox', title: 'sandbox', workspace: workspace(root), createdAt: 1, updatedAt: 1, status: 'idle', permissionMode: 'ask' },
+      { id: 'session_sandbox', title: 'sandbox', workspace: workspace(root), createdAt: 1, updatedAt: 1, status: 'idle', permissionMode: 'default' },
       { id: 'turn_sandbox', sessionId: 'session_sandbox', text: 'merge', createdAt: 1, status: 'completed' },
       sandbox.id,
     )

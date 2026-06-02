@@ -32,7 +32,7 @@
 - [x] R3. 实现 SSE event stream + request channel。
 - [x] R4. 增加 auth secret refs、header/env 注入和 redaction。
 - [x] R5. 增加 heartbeat、reconnect、degraded state 和日志 artifact。
-- [x] R6. 保持 namespace、sideEffect、Plan Mode policy 与 Step1 一致。
+- [x] R6. 保持 namespace、sideEffect、三模式 permission policy 与 Step1 一致。
 - [x] R7. 增加真实远程 MCP fixture 和 eval case。
 
 ## Phase S Checklist
@@ -127,7 +127,7 @@
 步骤: Phase R1-R7
 状态: 已完成
 完成日期: 2026-05-27
-涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/skillStore.ts`, `src/main/agent/mcpManager.ts`, `src/main/agent/governance.ts`, `tests/agent/mcpManager.test.ts`, `tests/agent/skillStore.test.ts`, `eval/cases/mcp_http_discovery.json`, `eval/cases/mcp_sse_discovery.json`, `eval/cases/mcp_remote_plan_mode_denied.json`
+涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/skillStore.ts`, `src/main/agent/mcpManager.ts`, `src/main/agent/governance.ts`, `tests/agent/mcpManager.test.ts`, `tests/agent/skillStore.test.ts`, `eval/cases/mcp_http_discovery.json`, `eval/cases/mcp_sse_discovery.json`, `eval/cases/mcp_remote_default_side_effect_asks.json`
 实现摘要: Phase R 完成 MCP stdio/http/sse transport protocol、remote manifest parsing、env-ref auth headers、HTTP JSON-RPC client、SSE stream + message POST client、timeout/reconnect policy baseline、remote startup/tool call artifacts、namespace/policy 兼容，以及 HTTP/SSE fixture tests 和 eval cases。
 测试文件: `tests/agent/mcpManager.test.ts`, `tests/agent/skillStore.test.ts`, `tests/agent/permissions.test.ts`, `tests/agent/tools.test.ts`, `eval/cases/mcp_*.json`
 验证命令: `npm test -- tests/agent/mcpManager.test.ts tests/agent/skillStore.test.ts tests/agent/permissions.test.ts tests/agent/tools.test.ts`; `npm test`; `npm run typecheck`; `npm run build`; `npm run eval:agent`

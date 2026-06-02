@@ -60,7 +60,7 @@ interface AgentPlanItem {
 }
 ```
 
-当前状态：已实现。TaskContract、AgentPlanItem、PlanConfirmation、显式 Plan Mode、计划确认 gate、跨 turn confirmed plan 复用和 PlanItem evidence binding gate 已落地。
+当前状态：已实现。TaskContract、AgentPlanItem、PlanConfirmation、`/plan` 只读规划提示、计划确认 gate、跨 turn confirmed plan 复用和 PlanItem evidence binding gate 已落地。
 
 ### Model Stream
 

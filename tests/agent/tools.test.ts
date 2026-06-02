@@ -18,7 +18,7 @@ function session(): AgentSession {
     createdAt: 1,
     updatedAt: 1,
     status: 'idle',
-    permissionMode: 'ask',
+    permissionMode: 'default',
   }
 }
 

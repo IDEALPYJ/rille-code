@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { AutomationRun, AutomationSpec } from '../../shared/agent/protocol'
+import { normalizeAgentPermissionMode } from '../../shared/agent/permissionModes'
 
 let specsCache: Map<string, AutomationSpec> | null = null
 let runsCache: Map<string, AutomationRun[]> | null = null
@@ -34,7 +35,7 @@ function reloadCache(): void {
   }
   try {
     const raw = JSON.parse(readFileSync(path, 'utf8')) as AutomationSpec[]
-    specsCache = new Map(raw.map(s => [s.id, s]))
+    specsCache = new Map(raw.map(s => [s.id, { ...s, permissionMode: normalizeAgentPermissionMode(s.permissionMode) }]))
   } catch {
     specsCache = new Map()
   }
@@ -57,7 +58,7 @@ export function loadAutomationSpecs(): AutomationSpec[] {
 
 export function saveAutomationSpec(spec: AutomationSpec): void {
   const cache = ensureCache()
-  cache.set(spec.id, spec)
+  cache.set(spec.id, { ...spec, permissionMode: normalizeAgentPermissionMode(spec.permissionMode) })
   flushSpecs()
 }
 

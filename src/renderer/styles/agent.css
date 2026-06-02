@@ -1368,6 +1368,253 @@
   box-shadow: 0 0 0 2px rgba(59, 115, 217, .12);
 }
 
+.agent-compose-input-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+  width: 100%;
+}
+
+.agent-compose-input-row textarea {
+  flex: 1 1 auto;
+}
+
+.agent-compose-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #68717d;
+  font-size: 14px;
+  line-height: 20px;
+  margin-top: 0;
+}
+
+.agent-compose-chip svg {
+  color: #8b929c;
+}
+
+.slash-action-popover {
+  width: min(92%, 900px);
+}
+
+.slash-action-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  padding: 8px;
+  overflow-y: auto;
+  border: 1px solid rgba(20, 27, 38, .10);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 14px 36px rgba(20, 27, 38, .10);
+  backdrop-filter: blur(10px);
+}
+
+.slash-action-card button {
+  min-width: 0;
+  min-height: 36px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #2f3742;
+  text-align: left;
+  cursor: pointer;
+}
+
+.slash-action-card button:hover,
+.slash-action-card button.selected {
+  background: rgba(20, 27, 38, .07);
+}
+
+.slash-action-card button svg {
+  flex: 0 0 auto;
+  color: #626b77;
+}
+
+.slash-action-copy {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.slash-action-copy span,
+.slash-action-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-action-copy span {
+  flex: 0 0 auto;
+  color: #303741;
+  font-size: 13px;
+}
+
+.slash-action-copy small {
+  flex: 1 1 auto;
+  color: #a0a7b1;
+  font-size: 12px;
+}
+
+.slash-action-card::-webkit-scrollbar {
+  width: 10px;
+}
+
+.slash-action-card::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(120, 128, 140, .34);
+  background-clip: content-box;
+}
+
+.agent-plan-interaction-card {
+  margin: 8px 0;
+  padding: 11px;
+  border: 1px solid rgba(20, 27, 38, .10);
+  border-radius: 8px;
+  background: #fff;
+  color: #252b33;
+  box-shadow: 0 1px 2px rgba(20, 27, 38, .04);
+}
+
+.agent-plan-interaction-card.draft {
+  background: #fbfcfe;
+}
+
+.agent-plan-interaction-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-plan-interaction-header svg {
+  color: #607089;
+}
+
+.agent-plan-interaction-header small {
+  margin-left: auto;
+  color: #7a8491;
+  font-weight: 400;
+}
+
+.agent-plan-interaction-card p {
+  margin: 0 0 9px;
+  color: #252b33;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.agent-plan-option-list {
+  display: grid;
+  gap: 7px;
+}
+
+.agent-plan-option-list button {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(20, 27, 38, .10);
+  border-radius: 8px;
+  background: #fff;
+  color: #252b33;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-plan-option-list button.recommended {
+  border-color: rgba(59, 115, 217, .30);
+  background: #f5f8ff;
+}
+
+.agent-plan-option-list button:disabled {
+  cursor: default;
+  opacity: .72;
+}
+
+.agent-plan-option-list span {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-plan-option-list small,
+.agent-plan-answer {
+  color: #747d89;
+  font-size: 11px;
+}
+
+.agent-plan-inline-form {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.agent-plan-inline-form input {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgba(20, 27, 38, .12);
+  border-radius: 8px;
+  background: #fff;
+  color: #252b33;
+  font: inherit;
+  font-size: 12px;
+}
+
+.agent-plan-inline-form button,
+.agent-plan-draft-actions button {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(20, 27, 38, .12);
+  border-radius: 8px;
+  background: #fff;
+  color: #252b33;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.agent-plan-inline-form button:disabled,
+.agent-plan-draft-actions button:disabled {
+  cursor: default;
+  opacity: .55;
+}
+
+.agent-plan-draft-actions {
+  display: flex;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.btw-panel-section {
+  min-width: 0;
+  padding: 0;
+}
+
+.btw-panel-section .agent-panel {
+  height: 100%;
+  border: 0;
+}
+
 /* ── Approval banner (slides up from compose area) ── */
 
 .approval-banner {

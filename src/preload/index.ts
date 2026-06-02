@@ -12,6 +12,7 @@ import type {
   AgentSession,
   AgentSessionSummary,
   AgentTurn,
+  AgentTurnMode,
   AgentWorkspaceLocation,
   ArtifactPayload,
   ArtifactRef,
@@ -23,6 +24,7 @@ import type {
   EditProposal,
   ExecutionSandbox,
   PlanConfirmation,
+  PlanDraft,
   GovernanceAuditReport,
   ModelUpgradeReview,
   ReviewQueueItem,
@@ -126,10 +128,12 @@ export interface RilleAPI {
   agentDisposeSandbox(sessionId: string, sandboxId: string): Promise<ExecutionSandbox>
   agentSandboxDiffAsProposals(sessionId: string, sandboxId: string, turnId?: string): Promise<EditProposal[]>
   agentCaptureRuntimeState(sessionId: string, workspace?: AgentWorkspaceLocation | null, turnId?: string): Promise<RuntimeStateArtifact>
-  agentSubmitTurn(sessionId: string, text: string, context: AgentContextSnapshot): Promise<AgentTurn>
+  agentSubmitTurn(sessionId: string, text: string, context: AgentContextSnapshot, options?: { mode?: AgentTurnMode; transientSessionId?: string }): Promise<AgentTurn>
   agentInterruptTurn(sessionId: string, turnId: string): Promise<AgentSession | null>
   agentConfirmPlan(sessionId: string, confirmationId: string): Promise<PlanConfirmation | AgentSession | null>
   agentRejectPlan(sessionId: string, confirmationId: string, reason?: string): Promise<PlanConfirmation | AgentSession | null>
+  agentAnswerPlanQuestion(sessionId: string, questionId: string, answer: string): Promise<AgentTurn>
+  agentResolvePlanDraft(sessionId: string, draftId: string, action: 'execute' | 'reject' | 'revise', feedback?: string, context?: AgentContextSnapshot): Promise<PlanDraft | AgentTurn>
   agentAddUserEvidence(sessionId: string, input: { turnId?: string; criterionId?: string; status?: VerificationStatus; summary: string; output?: string; artifactId?: string }): Promise<AgentSession | null>
   agentAddBrowserEvidence(sessionId: string, input: { turnId?: string; criterionId?: string; url: string; title?: string; status?: VerificationStatus; summary: string; screenshotArtifactId?: string; domExcerptArtifactId?: string }): Promise<AgentSession | null>
   agentWaiveEvidence(sessionId: string, input: { turnId?: string; criterionId?: string; evidenceIds?: string[]; reason: string; scope?: 'criterion' | 'evidence' | 'turn'; expiresAt?: number }): Promise<AgentSession | null>
@@ -595,10 +599,12 @@ const api: RilleAPI = {
   agentDisposeSandbox: (sessionId, sandboxId) => invokeAgent<ExecutionSandbox>('agent:dispatch', { type: 'sandbox.dispose', sessionId, sandboxId }),
   agentSandboxDiffAsProposals: (sessionId, sandboxId, turnId) => invokeAgent<EditProposal[]>('agent:dispatch', { type: 'sandbox.diffAsProposals', sessionId, sandboxId, turnId }),
   agentCaptureRuntimeState: (sessionId, workspace, turnId) => invokeAgent<RuntimeStateArtifact>('agent:dispatch', { type: 'runtime.state.capture', sessionId, workspace, turnId }),
-  agentSubmitTurn: (sessionId, text, context) => invokeAgent<AgentTurn>('agent:submitTurn', { type: 'turn.submit', sessionId, text, context }),
+  agentSubmitTurn: (sessionId, text, context, options) => invokeAgent<AgentTurn>('agent:submitTurn', { type: 'turn.submit', sessionId, text, context, mode: options?.mode, transientSessionId: options?.transientSessionId }),
   agentInterruptTurn: (sessionId, turnId) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'turn.interrupt', sessionId, turnId }),
   agentConfirmPlan: (sessionId, confirmationId) => invokeAgent<PlanConfirmation | AgentSession | null>('agent:dispatch', { type: 'plan.confirm', sessionId, confirmationId }),
   agentRejectPlan: (sessionId, confirmationId, reason) => invokeAgent<PlanConfirmation | AgentSession | null>('agent:dispatch', { type: 'plan.reject', sessionId, confirmationId, reason }),
+  agentAnswerPlanQuestion: (sessionId, questionId, answer) => invokeAgent<AgentTurn>('agent:dispatch', { type: 'plan.answerQuestion', sessionId, questionId, answer }),
+  agentResolvePlanDraft: (sessionId, draftId, action, feedback, context) => invokeAgent<PlanDraft | AgentTurn>('agent:dispatch', { type: 'plan.resolveDraft', sessionId, draftId, action, feedback, context }),
   agentAddUserEvidence: (sessionId, input) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'evidence.user.add', sessionId, ...input }),
   agentAddBrowserEvidence: (sessionId, input) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'evidence.browser.add', sessionId, ...input }),
   agentWaiveEvidence: (sessionId, input) => invokeAgent<AgentSession | null>('agent:dispatch', { type: 'evidence.waive', sessionId, ...input }),

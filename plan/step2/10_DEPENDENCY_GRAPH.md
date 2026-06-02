@@ -70,7 +70,7 @@
 
 | 依赖 | 类型 | 说明 |
 |------|------|------|
-| Step1 mcpManager.ts | 硬依赖 | 复用 McpServerConfig、namespace、sideEffect policy、Plan Mode 限制 |
+| Step1 mcpManager.ts | 硬依赖 | 复用 McpServerConfig、namespace、sideEffect policy、三模式权限约束 |
 | Step1 permissions.ts | 硬依赖 | auth secret redaction 策略 |
 | Step1 trace.ts / artifactStore.ts | 硬依赖 | heartbeat/degraded state 事件和日志 artifact |
 | 其他 Step2 Phase | 无 | 完全独立 |

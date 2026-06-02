@@ -57,7 +57,7 @@ Event replay 后 UI 状态一致。
 - 已完成 OpenAI Responses API adapter。
 - 已加入 provider fallback matrix。
 - 已为 tools 加 artifactRef、deferred discovery 和组合工具。
-- 已引入 explicit Plan Mode、PlanConfirmation 和 user confirmation gate。
+- 已引入 `/plan` 只读规划提示、PlanConfirmation 和 user confirmation gate。
 - 已将 cache metrics 与 ContextTrace 打通。
 
 里程碑验收：
@@ -164,7 +164,7 @@ Advisor 只给建议，不调用工具，不面向用户输出。
 1. ArtifactRef store。
 2. Streaming event model。
 3. Responses API adapter and provider fallback trace。
-4. Explicit Plan Mode and user confirmation gate。
+4. `/plan` planning shortcut and user confirmation gate。
 5. Checkpoint / side-git rollback。
 6. Browser/user evidence and waiver UI。
 7. Cache-safe compaction。

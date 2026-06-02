@@ -6,10 +6,12 @@ import type {
   AgentPlanItem,
   AgentRunStage,
   AgentSession,
+  AgentTurnMode,
   AgentToolResult,
   AgentTurn,
   ApprovalDecision,
   ApprovalRequest,
+  EditProposal,
   Evidence,
   EvaluatorRun,
   FeatureItem,
@@ -17,6 +19,8 @@ import type {
   Handoff,
   MessagePart,
   Observation,
+  PlanDraft,
+  PlanQuestion,
   PolicyDecision,
   ProgressState,
   ReviewResult,
@@ -37,8 +41,10 @@ import { TraceCollector } from './trace'
 import { redactSecrets } from './redact'
 import { addWorkspacePermissionGrant, decidePermission, deniedToolResult, DenialTracker, PermissionGrantStore, permissionForCall, permissionPattern } from './permissions'
 import { createRuntimeToolCall, executeToolCall, getModelVisibleToolDefinitions, getRegisteredTool, type RuntimeToolCall } from './tools'
+import { applyEditProposal } from './editStore'
+import { createCheckpoint } from './checkpointStore'
 import { VerifierRunner } from './verifier'
-import { TextJsonToolAdapter, type ModelAction } from './modelAdapter'
+import { extractJsonObject, TextJsonToolAdapter, type ModelAction } from './modelAdapter'
 import {
   evaluateVerificationGate,
   evidenceFromDiagnostics,
@@ -66,6 +72,7 @@ interface RuntimeOptions {
   emit: (event: AgentEvent) => void
   requestApproval: (request: ApprovalRequest) => Promise<ApprovalDecision>
   grants?: PermissionGrantStore
+  turnMode?: AgentTurnMode
 }
 
 function now(): number {
@@ -114,6 +121,88 @@ function isIndependentRead(call: RuntimeToolCall): boolean {
   const tool = getRegisteredTool(call.name)
   if (!tool) return false
   return tool.sideEffect === 'none' || tool.sideEffect === 'workspace_read'
+}
+
+const chatReadableTools = new Set([
+  'read_file',
+  'list_files',
+  'search_files',
+  'search_code',
+  'read_diagnostics',
+  'git_status',
+  'git_diff',
+  'git_log',
+  'explore_codebase',
+])
+
+function isReadOnlyTurnMode(mode?: AgentTurnMode): boolean {
+  return mode === 'chat' || mode === 'plan'
+}
+
+function isChatReadableTool(name: string): boolean {
+  return chatReadableTools.has(name)
+}
+
+function planModePrompt(): AgentChatMessage {
+  return {
+    role: 'user',
+    content: [
+      'Runtime mode: plan.',
+      '只做只读探索并制定实现计划。禁止编辑文件、生成 diff proposal、运行命令、写入记忆或调用任何写入/外部副作用工具。',
+      '如果需要用户选择，直接返回 JSON：{"plan_question":{"question":"...","options":[{"label":"推荐方案","description":"..."},{"label":"备选方案","description":"..."},{"label":"备选方案","description":"..."}]}}。',
+      '如果计划已完成，直接返回 JSON：{"plan_draft":{"markdown":"# 标题\\n\\n## Summary\\n...","feedbackHistory":[]}}。',
+      '计划要结合当前项目内容，清楚说明接口、数据流、边界和测试，不要执行实现。',
+    ].join('\n'),
+  }
+}
+
+function normalizePlanOptions(raw: unknown): PlanQuestion['options'] {
+  const values = Array.isArray(raw) ? raw.slice(0, 3) : []
+  return [0, 1, 2].map(index => {
+    const item = values[index] as { id?: unknown; label?: unknown; description?: unknown } | undefined
+    return {
+      id: typeof item?.id === 'string' && item.id.trim() ? item.id.trim() : `option_${index + 1}`,
+      label: typeof item?.label === 'string' && item.label.trim() ? item.label.trim() : index === 0 ? '推荐方案' : `备选方案 ${index}`,
+      description: typeof item?.description === 'string' ? item.description : '',
+    }
+  })
+}
+
+function parsePlanInteraction(text: string, sessionId: string, turnId: string): { kind: 'question'; question: PlanQuestion } | { kind: 'draft'; draft: PlanDraft } | null {
+  const parsed = extractJsonObject(text) as { plan_question?: unknown; plan_draft?: unknown } | null
+  const rawQuestion = parsed?.plan_question as { id?: unknown; question?: unknown; options?: unknown; recommendedOptionId?: unknown } | undefined
+  if (rawQuestion && typeof rawQuestion.question === 'string' && rawQuestion.question.trim()) {
+    const options = normalizePlanOptions(rawQuestion.options)
+    return {
+      kind: 'question',
+      question: {
+        id: typeof rawQuestion.id === 'string' && rawQuestion.id.trim() ? rawQuestion.id.trim() : `plan_question_${randomUUID()}`,
+        sessionId,
+        turnId,
+        question: rawQuestion.question.trim(),
+        options,
+        recommendedOptionId: typeof rawQuestion.recommendedOptionId === 'string' ? rawQuestion.recommendedOptionId : options[0]?.id,
+        createdAt: now(),
+      },
+    }
+  }
+  const rawDraft = parsed?.plan_draft as { id?: unknown; markdown?: unknown; feedbackHistory?: unknown; revision?: unknown } | undefined
+  if (rawDraft && typeof rawDraft.markdown === 'string' && rawDraft.markdown.trim()) {
+    return {
+      kind: 'draft',
+      draft: {
+        id: typeof rawDraft.id === 'string' && rawDraft.id.trim() ? rawDraft.id.trim() : `plan_draft_${randomUUID()}`,
+        sessionId,
+        turnId,
+        markdown: rawDraft.markdown.trim(),
+        status: 'pending',
+        revision: typeof rawDraft.revision === 'number' ? rawDraft.revision : 1,
+        feedbackHistory: Array.isArray(rawDraft.feedbackHistory) ? rawDraft.feedbackHistory.filter((item): item is string => typeof item === 'string') : [],
+        createdAt: now(),
+      },
+    }
+  }
+  return null
 }
 
 function cacheKeyForContext(sessionId: string, turnId: string, prompt: string): string {
@@ -176,6 +265,24 @@ function observationFromPolicy(
   }
 }
 
+function observationFromEdit(sessionId: string, turnId: string, proposal: EditProposal, message: string): Observation {
+  return {
+    id: `observation_${randomUUID()}`,
+    sessionId,
+    turnId,
+    source: 'edit',
+    status: proposal.state === 'applied' ? 'ok' : proposal.state === 'conflicted' ? 'blocked' : 'error',
+    summary: message,
+    data: {
+      proposalId: proposal.id,
+      filePath: proposal.filePath,
+      state: proposal.state,
+      rollbackOf: proposal.rollbackOf,
+    },
+    createdAt: now(),
+  }
+}
+
 function observationFromSubagent(sessionId: string, turnId: string, run: SubagentRun): Observation {
   return {
     id: `observation_${randomUUID()}`,
@@ -202,6 +309,7 @@ export class AgentLoop {
   private readonly subagentScheduler = new SubagentScheduler(3)
   private proposedFiles = new Set<string>()
   private changedFiles: string[] = []
+  private autoApplyQueue: EditProposal[] = []
   private failedAttempts: string[] = []
   private traceCollector = new TraceCollector()
   private gateRepairInjected = false
@@ -230,12 +338,11 @@ export class AgentLoop {
       codeChanged: input.codeChanged,
       signal: this.options.signal,
       emitProposal: proposal => {
-        this.proposedFiles.add(proposal.filePath)
-        if (!this.changedFiles.includes(proposal.filePath)) this.changedFiles.push(proposal.filePath)
-        this.options.emit({ type: 'edit.proposed', sessionId: this.options.session.id, turnId: this.options.turn.id, proposal })
+        this.recordProposal(proposal, false)
       },
       emit: event => this.options.emit(event),
     }))
+    await this.flushAutoApplyQueue()
     this.subagentRuns = [...this.subagentRuns.filter(item => item.id !== run.id), run]
     if (run.result) this.subagentResults = [...this.subagentResults.filter(item => item.id !== run.result?.id), run.result]
     this.emitPart({
@@ -251,6 +358,7 @@ export class AgentLoop {
   }
 
   private shouldAutoExplore(): boolean {
+    if (isReadOnlyTurnMode(this.options.turnMode)) return false
     const hasFocus = Boolean(this.options.context.activeFile) || (this.taskContract?.scope.length ?? 0) > 0
     const hasSearchEvidence = this.evidence.some(item => item.source === 'command' || item.source === 'diagnostics' || item.source === 'diff')
     return !hasFocus || (!hasSearchEvidence && this.options.context.openFiles.length === 0)
@@ -362,12 +470,16 @@ export class AgentLoop {
       taskContract: this.taskContract,
       planItems: this.planItems,
     })
+    if (this.options.turnMode === 'plan') messages.splice(1, 0, planModePrompt())
     const denialTracker = new DenialTracker()
 
     for (let iteration = 0; iteration < 12; iteration += 1) {
       if (this.options.signal.aborted) return this.finalize('interrupted')
       this.emitStage(assistantMessageId, 'calling_model', `第 ${iteration + 1} 轮模型调用`)
-      const tools = getModelVisibleToolDefinitions().map(t => ({
+      const visibleTools = isReadOnlyTurnMode(this.options.turnMode)
+        ? getModelVisibleToolDefinitions().filter(tool => isChatReadableTool(tool.name))
+        : getModelVisibleToolDefinitions()
+      const tools = visibleTools.map(t => ({
         name: t.name,
         description: t.description,
         inputSchema: t.inputSchema,
@@ -396,7 +508,32 @@ export class AgentLoop {
       }
 
       if (action.type === 'answer') {
-        if (this.options.session.permissionMode === 'plan') {
+        if (this.options.turnMode === 'plan') {
+          const interaction = parsePlanInteraction(action.text, this.options.session.id, this.options.turn.id)
+          if (interaction?.kind === 'question') {
+            this.emitPart({
+              id: createPartId(),
+              messageId: assistantMessageId,
+              type: 'plan_question',
+              question: interaction.question,
+              createdAt: now(),
+            })
+            this.emitStage(assistantMessageId, 'completed', '计划模式等待用户回答')
+            return this.finalize('completed')
+          }
+          if (interaction?.kind === 'draft') {
+            this.emitPart({
+              id: createPartId(),
+              messageId: assistantMessageId,
+              type: 'plan_draft',
+              draft: interaction.draft,
+              createdAt: now(),
+            })
+            this.emitStage(assistantMessageId, 'completed', '计划已生成')
+            return this.finalize('completed')
+          }
+        }
+        if (isReadOnlyTurnMode(this.options.turnMode)) {
           if (streamedTextPart) {
             this.updatePart({ ...streamedTextPart, text: action.text })
           } else {
@@ -409,7 +546,7 @@ export class AgentLoop {
               createdAt: now(),
             })
           }
-          this.emitStage(assistantMessageId, 'completed', 'Plan Mode 生成计划，等待用户确认')
+          this.emitStage(assistantMessageId, 'completed', this.options.turnMode === 'plan' ? '计划模式给出只读答复' : '聊天模式给出只读答复')
           return this.finalize('completed')
         }
         const gate = await this.runFinalGate()
@@ -479,6 +616,28 @@ export class AgentLoop {
         this.options.emit({ type: 'tool.started', sessionId: this.options.session.id, turnId: this.options.turn.id, call: runningCall })
         const toolPart: Extract<MessagePart, { type: 'tool' }> = { id: createPartId(), messageId: assistantMessageId, type: 'tool', call: runningCall, state: 'running', createdAt: now() }
         this.emitPart(toolPart)
+
+        if (isReadOnlyTurnMode(this.options.turnMode) && !isChatReadableTool(call.name)) {
+          const reason = this.options.turnMode === 'plan'
+            ? '计划模式只允许浏览文件内容和只读项目信息，不能编辑、运行命令或写入上下文。'
+            : '聊天模式只允许浏览文件内容和只读项目信息，不能编辑、运行命令或写入上下文。'
+          const result = deniedToolResult(call, reason)
+          results.push({ call, result })
+          this.failedAttempts.push(`${call.name}: ${reason}`)
+          this.emitObservation({
+            id: `observation_${randomUUID()}`,
+            sessionId: this.options.session.id,
+            turnId: this.options.turn.id,
+            source: 'policy',
+            status: 'denied',
+            summary: `Policy deny: ${reason}`,
+            data: { callId: call.id, toolName: call.name, mode: this.options.turnMode },
+            createdAt: now(),
+          })
+          this.completeToolPart(toolPart, runningCall, result)
+          slots.push({ call, toolPart, runningCall, allowed: false })
+          continue
+        }
 
         const permission = await decidePermission({
           call,
@@ -619,6 +778,93 @@ export class AgentLoop {
     return { text, usage, toolCalls: toolCalls.length > 0 ? toolCalls : undefined, cacheMetrics, fallbackTrace: fallbackTrace.length > 0 ? fallbackTrace : undefined, streamedTextPart: textPart || undefined }
   }
 
+  private shouldAutoApplyEdits(): boolean {
+    if (isReadOnlyTurnMode(this.options.turnMode)) return false
+    return this.options.session.permissionMode === 'auto_review' || this.options.session.permissionMode === 'full_access'
+  }
+
+  private recordProposal(proposal: EditProposal, emitDiffPart: boolean): void {
+    this.proposedFiles.add(proposal.filePath)
+    if (!this.changedFiles.includes(proposal.filePath)) {
+      this.changedFiles.push(proposal.filePath)
+    }
+    this.options.emit({ type: 'edit.proposed', sessionId: this.options.session.id, turnId: this.options.turn.id, proposal })
+    if (emitDiffPart) {
+      this.emitPart({
+        id: createPartId(),
+        messageId: createMessageId('assistant'),
+        type: 'diff',
+        proposalId: proposal.id,
+        title: proposal.title,
+        state: proposal.state,
+        createdAt: now(),
+      })
+    }
+    if (this.shouldAutoApplyEdits() && proposal.state === 'pending') {
+      this.autoApplyQueue.push(proposal)
+    }
+  }
+
+  private async flushAutoApplyQueue(): Promise<void> {
+    if (!this.shouldAutoApplyEdits() || this.autoApplyQueue.length === 0) return
+    const queue = this.autoApplyQueue
+    this.autoApplyQueue = []
+    for (const proposal of queue) {
+      await this.autoApplyProposal(proposal)
+    }
+  }
+
+  private async autoApplyProposal(proposal: EditProposal): Promise<void> {
+    this.emitStage(createMessageId('assistant'), 'applying_edit', `自动应用编辑提案 ${proposal.id}`)
+    if (this.options.session.workspace) {
+      const checkpoint = await createCheckpoint({
+        sessionId: this.options.session.id,
+        turnId: this.options.turn.id,
+        workspace: this.options.session.workspace,
+        reason: `Before auto-applying edit proposal ${proposal.id}`,
+      })
+      this.options.emit({ type: 'checkpoint.created', sessionId: this.options.session.id, turnId: this.options.turn.id, checkpoint })
+    }
+    const applied = await applyEditProposal(proposal.id, this.options.session.workspace, this.options.context)
+    this.options.emit({ type: 'edit.proposed', sessionId: this.options.session.id, turnId: applied.turnId, proposal: applied })
+    const message = applied.state === 'applied'
+      ? `已自动应用编辑提案 ${applied.id}。`
+      : applied.state === 'conflicted'
+        ? `编辑提案 ${applied.id} 与当前文件内容冲突，未写入。`
+        : `编辑提案 ${applied.id} 当前状态为 ${applied.state}。`
+    this.emitPart({
+      id: createPartId(),
+      messageId: createMessageId('assistant'),
+      type: 'edit_result',
+      proposalId: applied.id,
+      state: applied.state,
+      filePath: applied.filePath,
+      message,
+      createdAt: now(),
+    })
+    this.emitObservation(observationFromEdit(this.options.session.id, applied.turnId, applied, message))
+    this.recordEvidence({
+      id: `evidence_${randomUUID()}`,
+      sessionId: this.options.session.id,
+      turnId: applied.turnId,
+      source: 'diff',
+      status: applied.state === 'applied' ? 'passed' : applied.state === 'conflicted' ? 'blocked' : 'failed',
+      summary: applied.state === 'applied' ? 'Edit proposal applied.' : message,
+      output: message,
+      data: {
+        kind: 'applied_edit',
+        proposalId: applied.id,
+        filePath: applied.filePath,
+        state: applied.state,
+        workspaceChanged: applied.state === 'applied',
+      },
+      createdAt: now(),
+    })
+    if (applied.state === 'applied') {
+      await this.runAutomaticVerification('自动应用编辑后运行项目验证')
+    }
+  }
+
   private async executeAndRecord(call: RuntimeToolCall, toolPart: Extract<MessagePart, { type: 'tool' }>, runningCall: ToolCallView): Promise<{ call: RuntimeToolCall; result: unknown }> {
     await this.invokeHook('tool.before', { callId: call.id, name: call.name })
     const result = await executeToolCall(call, {
@@ -628,20 +874,7 @@ export class AgentLoop {
       taskContract: this.taskContract,
       planItems: this.planItems,
       emitProposal: proposal => {
-        this.proposedFiles.add(proposal.filePath)
-        if (!this.changedFiles.includes(proposal.filePath)) {
-          this.changedFiles.push(proposal.filePath)
-        }
-        this.options.emit({ type: 'edit.proposed', sessionId: this.options.session.id, turnId: this.options.turn.id, proposal })
-        this.emitPart({
-          id: createPartId(),
-          messageId: createMessageId('assistant'),
-          type: 'diff',
-          proposalId: proposal.id,
-          title: proposal.title,
-          state: proposal.state,
-          createdAt: now(),
-        })
+        this.recordProposal(proposal, true)
       },
       updatePlan: (items, reason) => this.updatePlan(items, reason),
       updateTaskContract: (contract, reason) => this.updateTaskContract(contract, reason),
@@ -649,6 +882,7 @@ export class AgentLoop {
     })
     const evidence = evidenceFromToolResult({ sessionId: this.options.session.id, turnId: this.options.turn.id, call, result })
     if (evidence) this.recordEvidence(evidence)
+    await this.flushAutoApplyQueue()
     this.completeToolPart(toolPart, runningCall, result)
     await this.invokeHook('tool.after', { callId: call.id, name: call.name, status: (result as ToolResultView).status || 'ok' })
     return { call, result }
@@ -718,13 +952,12 @@ export class AgentLoop {
     return this.evidence.some(item => item.source === 'diff' && item.data && (
       item.data.state === 'applied'
       || item.data.kind === 'workspace_diff'
-      || item.data.kind === 'edit_proposal'
       || item.data.workspaceChanged === true
     ))
   }
 
-  private async runAutomaticVerification(): Promise<void> {
-    this.emitStage(createMessageId('assistant'), 'running_verification', 'Final gate requested project verification')
+  private async runAutomaticVerification(detail = 'Final gate requested project verification'): Promise<void> {
+    this.emitStage(createMessageId('assistant'), 'running_verification', detail)
     this.options.emit({ type: 'verification.started', sessionId: this.options.session.id, turnId: this.options.turn.id, verifier: 'command' })
     const { result, evidence } = await new VerifierRunner(this.options.session, this.options.turn).runFirstAvailableWithEvidence()
     this.options.emit({ type: 'verification.completed', sessionId: this.options.session.id, turnId: this.options.turn.id, result })

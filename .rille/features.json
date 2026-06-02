@@ -1,5 +1,5 @@
 {
-  "taskContractId": "contract_814890ae-4053-4089-a8a9-6b070f3ad61f",
+  "taskContractId": "contract_dca45409-b5fd-468d-9857-593aaddeefd7",
   "featureList": [
     {
       "id": "plan_contract",
@@ -7,67 +7,67 @@
       "status": "implemented_unverified",
       "acceptanceCriteriaIds": [
         "ac_goal",
-        "ac_answer",
+        "ac_diff",
         "ac_verify"
       ],
       "evidenceRefs": [
-        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+        "evidence_0a8a6bd5-eeef-45ef-a4b8-ce9b3c677e29"
       ],
       "riskRefs": [
         "risk_scope"
       ],
-      "updatedAt": 1780140387498
+      "updatedAt": 1780237139175
     },
     {
       "id": "plan_explore",
       "title": "读取相关上下文并确认修改范围",
-      "status": "implemented_unverified",
+      "status": "in_progress",
       "acceptanceCriteriaIds": [
         "ac_goal",
-        "ac_answer",
+        "ac_diff",
         "ac_verify"
       ],
       "evidenceRefs": [
-        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+        "evidence_0a8a6bd5-eeef-45ef-a4b8-ce9b3c677e29"
       ],
       "riskRefs": [
         "risk_scope"
       ],
-      "updatedAt": 1780140387498
+      "updatedAt": 1780237139175
     },
     {
       "id": "plan_execute",
-      "title": "形成基于上下文的回答",
-      "status": "implemented_unverified",
+      "title": "生成必要的 diff proposal",
+      "status": "not_started",
       "acceptanceCriteriaIds": [
         "ac_goal",
-        "ac_answer",
+        "ac_diff",
         "ac_verify"
       ],
       "evidenceRefs": [
-        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+        "evidence_0a8a6bd5-eeef-45ef-a4b8-ce9b3c677e29"
       ],
       "riskRefs": [
         "risk_scope"
       ],
-      "updatedAt": 1780140387498
+      "updatedAt": 1780237139175
     },
     {
       "id": "plan_verify",
       "title": "按验收标准验证并汇报结果",
-      "status": "implemented_unverified",
+      "status": "not_started",
       "acceptanceCriteriaIds": [
         "ac_goal",
-        "ac_answer",
+        "ac_diff",
         "ac_verify"
       ],
       "evidenceRefs": [
-        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+        "evidence_0a8a6bd5-eeef-45ef-a4b8-ce9b3c677e29"
       ],
       "riskRefs": [
         "risk_scope"
       ],
-      "updatedAt": 1780140387498
+      "updatedAt": 1780237139175
     }
   ],
   "lifecycle": [
@@ -76,37 +76,37 @@
       "status": "active",
       "source": "feature_store",
       "evidenceRefs": [
-        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+        "evidence_0a8a6bd5-eeef-45ef-a4b8-ce9b3c677e29"
       ],
-      "updatedAt": 1780140387498
+      "updatedAt": 1780237139175
     },
     {
       "featureId": "plan_explore",
       "status": "active",
       "source": "feature_store",
       "evidenceRefs": [
-        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+        "evidence_0a8a6bd5-eeef-45ef-a4b8-ce9b3c677e29"
       ],
-      "updatedAt": 1780140387498
+      "updatedAt": 1780237139175
     },
     {
       "featureId": "plan_execute",
-      "status": "active",
+      "status": "planned",
       "source": "feature_store",
       "evidenceRefs": [
-        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+        "evidence_0a8a6bd5-eeef-45ef-a4b8-ce9b3c677e29"
       ],
-      "updatedAt": 1780140387498
+      "updatedAt": 1780237139175
     },
     {
       "featureId": "plan_verify",
-      "status": "active",
+      "status": "planned",
       "source": "feature_store",
       "evidenceRefs": [
-        "evidence_29c7cd6b-2500-41b9-aba1-d90ed7c7c3fe"
+        "evidence_0a8a6bd5-eeef-45ef-a4b8-ce9b3c677e29"
       ],
-      "updatedAt": 1780140387498
+      "updatedAt": 1780237139175
     }
   ],
-  "updatedAt": 1780140387498
+  "updatedAt": 1780237139175
 }

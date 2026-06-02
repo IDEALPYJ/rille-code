@@ -159,7 +159,7 @@ describe('AutomationScheduler', () => {
       goal: 'test',
       schedule: 'manual' as const,
       workspace: { path: '/tmp', label: 'test' },
-      permissionMode: 'plan' as const,
+      permissionMode: 'default' as const,
       enabled: true,
       createdAt: Date.now(),
       updatedAt: Date.now(),

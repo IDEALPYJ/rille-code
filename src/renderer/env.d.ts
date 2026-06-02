@@ -11,6 +11,7 @@ import type {
   AgentSession,
   AgentSessionSummary,
   AgentTurn,
+  AgentTurnMode,
   AgentWorkspaceLocation,
   ArtifactPayload,
   ArtifactRef,
@@ -22,6 +23,7 @@ import type {
   EditProposal,
   ExecutionSandbox,
   PlanConfirmation,
+  PlanDraft,
   GovernanceAuditReport,
   ModelUpgradeReview,
   ReviewQueueItem,
@@ -411,10 +413,12 @@ declare global {
     agentDisposeSandbox(sessionId: string, sandboxId: string): Promise<ExecutionSandbox>
     agentSandboxDiffAsProposals(sessionId: string, sandboxId: string, turnId?: string): Promise<EditProposal[]>
     agentCaptureRuntimeState(sessionId: string, workspace?: AgentWorkspaceLocation | null, turnId?: string): Promise<RuntimeStateArtifact>
-    agentSubmitTurn(sessionId: string, text: string, context: AgentContextSnapshot): Promise<AgentTurn>
+    agentSubmitTurn(sessionId: string, text: string, context: AgentContextSnapshot, options?: { mode?: AgentTurnMode; transientSessionId?: string }): Promise<AgentTurn>
     agentInterruptTurn(sessionId: string, turnId: string): Promise<AgentSession | null>
     agentConfirmPlan(sessionId: string, confirmationId: string): Promise<PlanConfirmation | AgentSession | null>
     agentRejectPlan(sessionId: string, confirmationId: string, reason?: string): Promise<PlanConfirmation | AgentSession | null>
+    agentAnswerPlanQuestion(sessionId: string, questionId: string, answer: string): Promise<AgentTurn>
+    agentResolvePlanDraft(sessionId: string, draftId: string, action: 'execute' | 'reject' | 'revise', feedback?: string, context?: AgentContextSnapshot): Promise<PlanDraft | AgentTurn>
     agentAddUserEvidence(sessionId: string, input: { turnId?: string; criterionId?: string; status?: VerificationStatus; summary: string; output?: string; artifactId?: string }): Promise<AgentSession | null>
     agentAddBrowserEvidence(sessionId: string, input: { turnId?: string; criterionId?: string; url: string; title?: string; status?: VerificationStatus; summary: string; screenshotArtifactId?: string; domExcerptArtifactId?: string }): Promise<AgentSession | null>
     agentWaiveEvidence(sessionId: string, input: { turnId?: string; criterionId?: string; evidenceIds?: string[]; reason: string; scope?: 'criterion' | 'evidence' | 'turn'; expiresAt?: number }): Promise<AgentSession | null>

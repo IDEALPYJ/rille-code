@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, Clock3, Loader2, Pencil, Search, Terminal, Wrench } from 'lucide-react'
+import { CheckCircle2, ChevronDown, Clock3, Loader2, Pencil, Search, Terminal, Wrench } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import type { AgentTurn, AgentUsage, MessagePart, TraceEvent } from '../../../shared/agent/protocol'
+import type { AgentContextSnapshot, AgentTurn, AgentUsage, MessagePart, TraceEvent } from '../../../shared/agent/protocol'
 import { fileNameFromPath, MarkdownMessage, toolResultBadges } from './AgentPartCards'
 
 // ── Chat item model ──
@@ -10,6 +10,8 @@ type ChatItem =
   | { type: 'user_text'; text: string }
   | { type: 'assistant_text'; text: string }
   | { type: 'handoff'; summary: string; nextSteps: string[] }
+  | { type: 'plan_question'; part: Extract<MessagePart, { type: 'plan_question' }> }
+  | { type: 'plan_draft'; part: Extract<MessagePart, { type: 'plan_draft' }> }
 
 type ToolPart = Extract<MessagePart, { type: 'tool' }>
 
@@ -345,6 +347,8 @@ function useChatItems(parts: MessagePart[]): ChatItem[] {
         const filtered = stripVerificationSection(part.handoff.summary)
         if (filtered) items.push({ type: 'handoff', summary: filtered, nextSteps: part.handoff.nextSteps })
       }
+      if (part.type === 'plan_question') items.push({ type: 'plan_question', part })
+      if (part.type === 'plan_draft' && part.draft.status !== 'superseded') items.push({ type: 'plan_draft', part })
     }
     return items
   }, [parts])
@@ -377,6 +381,11 @@ function formatElapsed(ms: number): string {
   const rest = seconds % 60
   if (minutes > 0) return `${minutes}m ${rest}s`
   return `${rest}s`
+}
+
+export function elapsedMsForRun(runMeta: TurnRunMeta | null | undefined, nowValue: number): number {
+  if (!runMeta?.startedAt) return 0
+  return Math.max(0, (runMeta.completedAt ?? nowValue) - runMeta.startedAt)
 }
 
 function RunStepView({ step }: { step: RunStep }) {
@@ -450,6 +459,124 @@ function useNow(enabled: boolean): number {
   return value
 }
 
+function PlanQuestionCard({
+  part,
+  sessionId,
+}: {
+  part: Extract<MessagePart, { type: 'plan_question' }>
+  sessionId?: string | null
+}) {
+  const [customAnswer, setCustomAnswer] = useState('')
+  const [busy, setBusy] = useState(false)
+  const question = part.question
+  const disabled = busy || !sessionId || Boolean(question.answered)
+  const submitAnswer = async (answer: string) => {
+    if (!sessionId || disabled || !answer.trim()) return
+    setBusy(true)
+    try {
+      await window.rille.agentAnswerPlanQuestion(sessionId, question.id, answer.trim())
+      setCustomAnswer('')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="agent-plan-interaction-card">
+      <div className="agent-plan-interaction-header">
+        <CheckCircle2 size={15} />
+        <span>计划问题</span>
+      </div>
+      <p>{question.question}</p>
+      <div className="agent-plan-option-list">
+        {question.options.slice(0, 3).map((option, index) => {
+          const recommended = question.recommendedOptionId === option.id || (!question.recommendedOptionId && index === 0)
+          return (
+            <button
+              type="button"
+              key={option.id}
+              disabled={disabled}
+              className={recommended ? 'recommended' : ''}
+              onClick={() => void submitAnswer(`${option.label}: ${option.description}`)}
+            >
+              <span>{option.label}{recommended ? ' · 推荐' : ''}</span>
+              <small>{option.description}</small>
+            </button>
+          )
+        })}
+      </div>
+      {question.answered ? (
+        <small className="agent-plan-answer">已回答：{question.answered}</small>
+      ) : (
+        <form
+          className="agent-plan-inline-form"
+          onSubmit={event => {
+            event.preventDefault()
+            void submitAnswer(customAnswer)
+          }}
+        >
+          <input value={customAnswer} onChange={event => setCustomAnswer(event.target.value)} placeholder="输入自己的想法" disabled={disabled} />
+          <button type="submit" disabled={disabled || !customAnswer.trim()}>提交</button>
+        </form>
+      )}
+    </div>
+  )
+}
+
+function PlanDraftCard({
+  part,
+  sessionId,
+  context,
+}: {
+  part: Extract<MessagePart, { type: 'plan_draft' }>
+  sessionId?: string | null
+  context?: AgentContextSnapshot
+}) {
+  const [feedback, setFeedback] = useState('')
+  const [busy, setBusy] = useState(false)
+  const draft = part.draft
+  const disabled = busy || !sessionId || draft.status !== 'pending'
+  const resolveDraft = async (action: 'execute' | 'reject' | 'revise') => {
+    if (!sessionId || disabled) return
+    if (action === 'revise' && !feedback.trim()) return
+    setBusy(true)
+    try {
+      await window.rille.agentResolvePlanDraft(sessionId, draft.id, action, action === 'revise' ? feedback.trim() : undefined, context)
+      if (action === 'revise') setFeedback('')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className={'agent-plan-interaction-card draft status-' + draft.status}>
+      <div className="agent-plan-interaction-header">
+        <CheckCircle2 size={15} />
+        <span>计划草案</span>
+        <small>Revision {draft.revision}</small>
+      </div>
+      <MarkdownMessage text={draft.markdown} />
+      {draft.status !== 'pending' && <small className="agent-plan-answer">状态：{draft.status}</small>}
+      {draft.status === 'pending' && (
+        <>
+          <div className="agent-plan-draft-actions">
+            <button type="button" disabled={disabled} onClick={() => void resolveDraft('execute')}>执行</button>
+            <button type="button" disabled={disabled} onClick={() => void resolveDraft('reject')}>拒绝</button>
+          </div>
+          <form
+            className="agent-plan-inline-form"
+            onSubmit={event => {
+              event.preventDefault()
+              void resolveDraft('revise')
+            }}
+          >
+            <input value={feedback} onChange={event => setFeedback(event.target.value)} placeholder="输入需要调整的部分" disabled={disabled} />
+            <button type="submit" disabled={disabled || !feedback.trim()}>提交调整</button>
+          </form>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── View ──
 
 export function ChatTurnView({
@@ -457,20 +584,22 @@ export function ChatTurnView({
   activeTurn,
   traceEvents = [],
   runMeta,
+  sessionId,
+  context,
 }: {
   parts: MessagePart[]
   activeTurn?: AgentTurn | null
   traceEvents?: TraceEvent[]
   runMeta?: TurnRunMeta | null
+  sessionId?: string | null
+  context?: AgentContextSnapshot
 }) {
   const items = useChatItems(parts)
   const isRunning = Boolean(activeTurn || runMeta?.status === 'running')
   const runSteps = useMemo(() => buildRunSteps(parts, activeTurn), [activeTurn, parts])
   const [processOpen, setProcessOpen] = useState(isRunning)
   const now = useNow(isRunning)
-  const startedAt = runMeta?.startedAt || activeTurn?.createdAt || parts.find(part => part.type === 'text' && part.role === 'user')?.createdAt
-  const completedAt = runMeta?.completedAt
-  const elapsed = startedAt ? (completedAt || now) - startedAt : 0
+  const elapsed = elapsedMsForRun(runMeta, now)
   const usage = useMemo(() => aggregateUsage(traceEvents, runMeta?.turnId || activeTurn?.id), [activeTurn?.id, runMeta?.turnId, traceEvents])
   const liveUsage = useMemo(() => ({
     ...usage,
@@ -482,7 +611,7 @@ export function ChatTurnView({
   }, [isRunning, runMeta?.turnId])
 
   const userItems = items.filter(item => item.type === 'user_text')
-  const finalItems = items.filter(item => item.type === 'assistant_text' || item.type === 'handoff')
+  const finalItems = items.filter(item => item.type === 'assistant_text' || item.type === 'handoff' || item.type === 'plan_question' || item.type === 'plan_draft')
   const showHeader = runSteps.length > 0 || Boolean(activeTurn || runMeta) || usage.inputTokens || usage.outputTokens
 
   return (
@@ -530,6 +659,12 @@ export function ChatTurnView({
               )}
             </div>
           )
+        }
+        if (item.type === 'plan_question') {
+          return <PlanQuestionCard key={`plan-question-${item.part.question.id}`} part={item.part} sessionId={sessionId} />
+        }
+        if (item.type === 'plan_draft') {
+          return <PlanDraftCard key={`plan-draft-${item.part.draft.id}`} part={item.part} sessionId={sessionId} context={context} />
         }
         return null
       })}

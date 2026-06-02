@@ -39,7 +39,7 @@ function makeSpec(overrides: Partial<AutomationSpec> = {}): AutomationSpec {
     goal: 'Run tests',
     schedule: 'manual',
     workspace: { path: '/tmp', label: 'test' },
-    permissionMode: 'plan',
+    permissionMode: 'default',
     enabled: true,
     createdAt: Date.now(),
     updatedAt: Date.now(),

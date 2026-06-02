@@ -61,7 +61,7 @@ export interface AppContextType extends AppState {
   markFileApplied: (path: string, content: string) => void
 }
 
-type RightTool = 'launcher' | 'files' | 'review' | 'search' | 'browser' | 'automation'
+type RightTool = 'launcher' | 'files' | 'review' | 'search' | 'browser' | 'automation' | 'btw'
 type OpenRightTool = Exclude<RightTool, 'launcher' | 'browser'>
 
 type GitMeta = Pick<GitStatusResult, 'isRepo' | 'repoRoot' | 'branch' | 'remoteName' | 'error'>
@@ -237,6 +237,7 @@ export default function App() {
   const [isBottomPanelVisible, setIsBottomPanelVisible] = useState(() => readStoredBoolean(BOTTOM_PANEL_VISIBILITY_KEY, false))
   const [activeRightTool, setActiveRightTool] = useState<RightTool>('launcher')
   const [openRightTools, setOpenRightTools] = useState<OpenRightTool[]>([])
+  const [btwSessionId, setBtwSessionId] = useState<string | null>(null)
   const [isRightPanelDetailExpanded, setIsRightPanelDetailExpanded] = useState(false)
   const [rightBrowserWidth, setRightBrowserWidth] = useState(DEFAULT_RIGHT_FILE_TREE_WIDTH)
   const [terminalNewSignal, setTerminalNewSignal] = useState(0)
@@ -320,7 +321,7 @@ export default function App() {
   }, [loadWorkspaceContext, refreshAgentSessions, selectedAgentSession?.id])
 
   const createSessionInWorkspace = useCallback(async (workspace: WorkspaceLocation | null) => {
-    const session = await window.rille.agentCreateSession(workspace, 'ask')
+    const session = await window.rille.agentCreateSession(workspace, 'default')
     setSelectedAgentSession(session)
     await loadWorkspaceContext(session.workspace)
     void refreshAgentSessions()
@@ -328,7 +329,7 @@ export default function App() {
 
   const createAgentSessionForWorkspace = useCallback(async () => {
     const workspace = selectedAgentSession ? selectedAgentSession.workspace : state.workspace
-    const session = await window.rille.agentCreateSession(workspace, 'ask')
+    const session = await window.rille.agentCreateSession(workspace, 'default')
     setSelectedAgentSession(session)
     await loadWorkspaceContext(session.workspace)
     void refreshAgentSessions()
@@ -1090,6 +1091,22 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
     )
   }
 
+  const openBtwPanel = useCallback(() => {
+    if (!selectedAgentSession) return
+    const transientId = `btw_${selectedAgentSession.id}_${Date.now()}`
+    setBtwSessionId(transientId)
+    setIsRightPanelVisible(true)
+    setOpenRightTools(prev => prev.includes('btw') ? prev : [...prev, 'btw'])
+    setActiveRightTool('btw')
+    setIsRightPanelDetailExpanded(false)
+  }, [selectedAgentSession])
+
+  useEffect(() => {
+    setBtwSessionId(null)
+    setOpenRightTools(prev => prev.filter(tool => tool !== 'btw'))
+    if (activeRightTool === 'btw') setActiveRightTool('launcher')
+  }, [selectedAgentSession?.id])
+
   const renderAgentPanel = () => (
     <AgentPanel
       workspace={state.workspace}
@@ -1102,6 +1119,7 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
       sessionId={selectedAgentSession?.id ?? null}
       onSessionChange={setSelectedAgentSession}
       onFileApplied={markFileApplied}
+      onOpenBtw={openBtwPanel}
     />
   )
 
@@ -1119,11 +1137,15 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
       review: '源代码管理',
       search: '搜索',
       automation: '自动化',
+      btw: '临时聊天',
     }
     const activateRightTool = (tool: RightTool) => {
       if (tool === 'browser') return
       if (tool !== 'launcher') {
         setOpenRightTools(prev => prev.includes(tool) ? prev : [...prev, tool])
+      }
+      if (tool === 'btw' && selectedAgentSession && !btwSessionId) {
+        setBtwSessionId(`btw_${selectedAgentSession.id}_${Date.now()}`)
       }
       setActiveRightTool(tool)
       setIsRightPanelDetailExpanded(false)
@@ -1131,6 +1153,7 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
     }
     const closeRightTool = (tool: OpenRightTool) => {
       setOpenRightTools(prev => prev.filter(item => item !== tool))
+      if (tool === 'btw') setBtwSessionId(null)
       if (activeRightTool === tool) {
         setActiveRightTool('launcher')
         setIsRightPanelDetailExpanded(false)
@@ -1195,6 +1218,9 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
       { tool: 'automation' as const, label: '自动化', description: '自动化任务与审查队列', icon: Zap },
       { tool: 'browser', label: '浏览器', description: '打开网站', icon: Globe, disabled: true },
     ]
+    const btwSession: AgentSession | null = selectedAgentSession && btwSessionId
+      ? { ...selectedAgentSession, id: btwSessionId, title: '临时聊天', status: 'idle' }
+      : null
 
     const renderToolLauncher = () => (
       <div className="right-tool-launcher" aria-label="项目工具">
@@ -1258,6 +1284,35 @@ const toggleBreakpoint = useCallback((filePath: string, line: number) => {
               <Globe size={34} />
               <span>浏览器功能暂未实现</span>
             </div>
+          )}
+
+          {activeRightTool === 'btw' && (
+            <section className="file-workspace-section btw-panel-section" aria-label="临时聊天">
+              {btwSession && selectedAgentSession ? (
+                <AgentPanel
+                  workspace={state.workspace}
+                  gitMeta={gitMeta}
+                  activeFile={activeFile}
+                  openFiles={state.openFiles}
+                  diagnostics={visibleDiagnostics}
+                  cursor={cursorPosition}
+                  session={btwSession}
+                  sessionId={btwSession.id}
+                  submitSessionId={selectedAgentSession.id}
+                  transientSessionId={btwSession.id}
+                  persistHistory={false}
+                  allowSlashActions={false}
+                  showPermissionMenu={false}
+                  forceTurnMode="chat"
+                  onSessionChange={() => {}}
+                />
+              ) : (
+                <div className="file-panel-empty">
+                  <MessageSquare size={34} />
+                  <span>选择一个主对话后可使用临时聊天。</span>
+                </div>
+              )}
+            </section>
           )}
 
           {activeRightTool === 'files' && (

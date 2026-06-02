@@ -300,6 +300,17 @@ function commandRiskToPolicyRisk(risk: CommandRisk): RiskLevel {
   return commandRiskToApprovalRisk(risk)
 }
 
+function commandRequiresApproval(risk: CommandRisk | null, guardian?: GuardianDecision): boolean {
+  if (guardian?.verdict === 'ask' || guardian?.verdict === 'deny') return true
+  if (!risk) return false
+  const policyRisk = commandRiskToPolicyRisk(risk)
+  return policyRisk === 'high' || policyRisk === 'critical'
+}
+
+function effectiveRisk(baseRisk: RiskLevel, commandRisk: CommandRisk | null, guardian?: GuardianDecision): RiskLevel {
+  return guardian?.risk ?? (commandRisk ? commandRiskToPolicyRisk(commandRisk) : baseRisk)
+}
+
 export function deniedToolResult(call: RuntimeToolCall, reason: string, alternatives: string[] = []): ToolResultView {
   return {
     output: `权限拒绝：${reason}${alternatives.length > 0 ? `\n可选替代路径：${alternatives.join('；')}` : ''}`,
@@ -455,65 +466,33 @@ export async function decidePermission(input: {
       const policyDecision: PolicyDecision = { action: 'deny', risk: 'low', reason: '命令为空。', alternatives: alternativesFor(input.call) }
       return { action: 'deny', reason: policyDecision.reason, policyDecision }
     }
-    if (guardian.verdict === 'deny') {
-      const policyDecision: PolicyDecision = {
-        action: 'deny',
-        risk: guardian.risk,
-        reason: guardian.reason,
-        guardian,
-        commandSubject,
-        alternatives: alternativesFor(input.call),
-      }
-      return { action: 'deny', reason: policyDecision.reason, policyDecision }
+  }
+
+  if (input.mode === 'full_access') {
+    const policyDecision: PolicyDecision = {
+      action: 'allow',
+      risk: effectiveRisk(baseRisk, commandRisk, guardian),
+      reason: '完全权限模式允许。',
+      guardian,
+      commandSubject,
     }
-    if (commandRisk === 'destructive' || commandRisk === 'deploy') {
-      const policyDecision: PolicyDecision = {
-        action: 'deny',
-        risk: 'critical',
-        reason: `命令风险过高 (${commandRisk})，已直接拒绝。`,
-        guardian,
-        commandSubject,
-        alternatives: alternativesFor(input.call),
-      }
-      return { action: 'deny', reason: policyDecision.reason, policyDecision }
-    }
+    return { action: 'allow', reason: policyDecision.reason, policyDecision }
   }
 
   if (input.call.name === 'launch_subagent' && input.call.input.permissionScope === 'isolated_write') {
     const policyDecision: PolicyDecision = {
-      action: input.mode === 'plan' ? 'deny' : 'ask',
+      action: 'ask',
       risk: 'high',
-      reason: input.mode === 'plan'
-        ? 'Plan 模式不允许启动 isolated_write subagent。'
-        : 'Writable subagent 会创建隔离 worktree 并运行 sandbox 命令，需要确认。',
+      reason: 'Writable subagent 会创建隔离 worktree 并运行 sandbox 命令，需要确认。',
       sandboxRequired: true,
-      alternatives: input.mode === 'plan' ? alternativesFor(input.call) : undefined,
     }
-    return policyDecision.action === 'deny'
-      ? { action: 'deny', reason: policyDecision.reason, policyDecision }
-      : { action: 'ask', reason: policyDecision.reason, request: createApprovalRequest(input, tool.definition.title, policyDecision, commandRisk), policyDecision }
-  }
-
-  if (input.mode === 'plan') {
-    const allowedPlanTools = new Set(['list_directory', 'read_file', 'search_files', 'git_status', 'git_diff', 'read_diagnostics', 'search_tools', 'explore_codebase', 'update_plan', 'update_task_contract'])
-    const allowed = tool.definition.isReadOnly || allowedPlanTools.has(input.call.name)
-    const policyDecision: PolicyDecision = {
-      action: allowed ? 'allow' : 'deny',
-      risk: commandRisk ? commandRiskToPolicyRisk(commandRisk) : baseRisk,
-      reason: allowed ? 'Plan 模式允许只读探索和计划更新。' : 'Plan 模式不允许写文件、运行命令、应用编辑或操作 sandbox。',
-      guardian,
-      commandSubject,
-      alternatives: allowed ? undefined : alternativesFor(input.call),
-    }
-    return allowed
-      ? { action: 'allow', reason: policyDecision.reason, policyDecision }
-      : { action: 'deny', reason: policyDecision.reason, policyDecision }
+    return { action: 'ask', reason: policyDecision.reason, request: createApprovalRequest(input, tool.definition.title, policyDecision, commandRisk), policyDecision }
   }
 
   const grantPatterns = policyTargetsForCall(input.call)
   const grant = input.grants?.match(permission, permissionPattern(input.call))
   if (grant) {
-    const policyDecision: PolicyDecision = { action: grant.action, risk: commandRisk ? commandRiskToPolicyRisk(commandRisk) : baseRisk, reason: `匹配 ${grant.scope} grant。`, grant, guardian, commandSubject }
+    const policyDecision: PolicyDecision = { action: grant.action, risk: effectiveRisk(baseRisk, commandRisk, guardian), reason: `匹配 ${grant.scope} grant。`, grant, guardian, commandSubject }
     return grant.action === 'allow'
       ? { action: 'allow', reason: policyDecision.reason, policyDecision }
       : { action: 'deny', reason: policyDecision.reason, policyDecision }
@@ -521,7 +500,7 @@ export async function decidePermission(input: {
   const workspaceKey = workspaceGrantKey(input.context)
   const workspaceGrant = workspaceKey ? new WorkspacePermissionGrantStore().load().match(workspaceKey, permission, grantPatterns) : null
   if (workspaceGrant) {
-    const policyDecision: PolicyDecision = { action: workspaceGrant.action, risk: commandRisk ? commandRiskToPolicyRisk(commandRisk) : baseRisk, reason: '匹配 workspace grant。', grant: workspaceGrant, guardian, commandSubject }
+    const policyDecision: PolicyDecision = { action: workspaceGrant.action, risk: effectiveRisk(baseRisk, commandRisk, guardian), reason: '匹配 workspace grant。', grant: workspaceGrant, guardian, commandSubject }
     return workspaceGrant.action === 'allow'
       ? { action: 'allow', reason: policyDecision.reason, policyDecision }
       : { action: 'deny', reason: policyDecision.reason, policyDecision }
@@ -532,40 +511,42 @@ export async function decidePermission(input: {
   if (rule) {
     const policyDecision: PolicyDecision = {
       action: rule.action,
-      risk: rule.risk || (commandRisk ? commandRiskToPolicyRisk(commandRisk) : baseRisk),
+      risk: rule.risk || effectiveRisk(baseRisk, commandRisk, guardian),
       reason: rule.reason || `匹配项目 policy：${rule.id}`,
       matchedRule: rule.id,
       guardian,
       commandSubject,
       alternatives: rule.action === 'deny' ? alternativesFor(input.call) : undefined,
     }
-    if (rule.action === 'allow') return { action: 'allow', reason: policyDecision.reason, policyDecision }
+    if (rule.action === 'allow' && !commandRequiresApproval(commandRisk, guardian)) return { action: 'allow', reason: policyDecision.reason, policyDecision }
     if (rule.action === 'deny') return { action: 'deny', reason: policyDecision.reason, policyDecision }
     return { action: 'ask', reason: policyDecision.reason, request: createApprovalRequest(input, tool.definition.title, policyDecision, commandRisk), policyDecision }
   }
 
   if (tool.definition.isReadOnly || input.call.name === 'propose_file_edit') {
-    const policyDecision: PolicyDecision = { action: 'allow', risk: commandRisk ? commandRiskToPolicyRisk(commandRisk) : baseRisk, reason: '只读工具或 diff proposal 自动允许。' }
+    const policyDecision: PolicyDecision = { action: 'allow', risk: effectiveRisk(baseRisk, commandRisk, guardian), reason: '只读工具或 diff proposal 自动允许。' }
     return { action: 'allow', reason: policyDecision.reason, policyDecision }
   }
 
-  if (input.mode === 'bypass') {
-    const policyDecision: PolicyDecision = { action: 'allow', risk: baseRisk, reason: 'Bypass 模式允许。' }
+  if (input.call.name === 'run_command' && !commandRequiresApproval(commandRisk, guardian)) {
+    const policyDecision: PolicyDecision = {
+      action: 'allow',
+      risk: effectiveRisk(baseRisk, commandRisk, guardian),
+      reason: '当前权限模式允许低风险命令。',
+      guardian,
+      commandSubject,
+    }
     return { action: 'allow', reason: policyDecision.reason, policyDecision }
   }
-  if (input.mode === 'accept_edits' && input.call.name === 'apply_file_edit') {
-    const policyDecision: PolicyDecision = { action: 'allow', risk: baseRisk, reason: 'Accept edits 模式允许应用编辑。' }
-    return { action: 'allow', reason: policyDecision.reason, policyDecision }
-  }
-  if (input.mode === 'auto' && input.call.name !== 'run_command') {
-    const policyDecision: PolicyDecision = { action: 'allow', risk: baseRisk, reason: 'Auto 模式允许低风险写操作。' }
+  if (input.mode === 'auto_review' && input.call.name !== 'run_command') {
+    const policyDecision: PolicyDecision = { action: 'allow', risk: baseRisk, reason: '自动审查模式允许非命令工具。' }
     return { action: 'allow', reason: policyDecision.reason, policyDecision }
   }
 
   const policyDecision: PolicyDecision = {
     action: 'ask',
-    risk: commandRisk ? commandRiskToPolicyRisk(commandRisk) : baseRisk,
-    reason: input.call.name === 'run_command' ? `运行命令需要确认：${target}` : `${tool.definition.title} 需要确认。`,
+    risk: effectiveRisk(baseRisk, commandRisk, guardian),
+    reason: input.call.name === 'run_command' ? `高危命令需要确认：${target}` : `${tool.definition.title} 需要确认。`,
     guardian,
     commandSubject,
     sandboxRequired: commandRisk === 'install' || commandRisk === 'write_workspace' || commandRisk === 'git_write' || guardian?.verdict === 'ask',

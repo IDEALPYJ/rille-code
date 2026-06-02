@@ -5,10 +5,10 @@
 Current status: 已实现
 
 Step1 baseline:
-已有 stdio MCP lifecycle、namespace、sideEffect policy 和 Plan Mode 限制。
+已有 stdio MCP lifecycle、namespace、sideEffect policy 和三模式权限约束。
 
 Implemented details:
-`McpTransport` 支持 `stdio`、`http`、`sse`；plugin manifest 可声明 remote `url`、`messageUrl`、static headers、env-ref auth headers、timeout、heartbeat 和 reconnect policy；MCP manager 已抽象 transport client，保留 stdio Content-Length framing，并新增 HTTP JSON-RPC POST 与 SSE stream + message POST；remote tools 继续使用 `mcp.<pluginId>.<serverId>.<toolName>` namespace、sideEffect policy、Plan Mode deny 和 artifact-backed tool output。
+`McpTransport` 支持 `stdio`、`http`、`sse`；plugin manifest 可声明 remote `url`、`messageUrl`、static headers、env-ref auth headers、timeout、heartbeat 和 reconnect policy；MCP manager 已抽象 transport client，保留 stdio Content-Length framing，并新增 HTTP JSON-RPC POST 与 SSE stream + message POST；remote tools 继续使用 `mcp.<pluginId>.<serverId>.<toolName>` namespace、sideEffect policy、三模式 permission policy 和 artifact-backed tool output。
 
 Missing pieces:
 SSE reconnect 当前是本进程内轻量重连，不做跨 app 重启 session resume；远程 OAuth/动态 auth flow 留到后续插件信任与企业治理阶段。

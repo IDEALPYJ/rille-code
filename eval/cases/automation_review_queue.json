@@ -17,8 +17,8 @@
     { "type": "context.built" },
     { "type": "model.called" },
     { "type": "tool.executed" },
-    { "type": "verification.ran" },
-    { "type": "review.completed" }
+    { "type": "verification.ran", "result": { "id": "verify_auto_fail", "sessionId": "automation_session", "turnId": "automation_turn", "verifier": "command", "command": "npm test", "status": "failed", "output": "failed", "createdAt": 1 } },
+    { "type": "review.completed", "result": { "id": "review_auto_fail", "sessionId": "automation_session", "turnId": "automation_turn", "status": "request_changes", "findings": [], "summary": "request changes", "createdAt": 1 } }
   ],
   "expectedState": {
     "finalGate": "repair",

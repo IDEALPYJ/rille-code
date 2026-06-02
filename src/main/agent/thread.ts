@@ -10,6 +10,7 @@ import type {
   AgentPermissionMode,
   AgentSession,
   AgentTurn,
+  AgentTurnMode,
   ApprovalDecision,
   ApprovalRequest,
   Evidence,
@@ -19,10 +20,13 @@ import type {
   Observation,
   AgentPlanItem,
   PlanConfirmation,
+  PlanDraft,
+  PlanQuestion,
   ReviewResult,
   TaskContract,
   VerificationCoverage,
 } from '../../shared/agent/protocol'
+import { normalizeAgentPermissionMode } from '../../shared/agent/permissionModes'
 import { applyEditProposal, createRollbackProposal, rejectEditProposal } from './editStore'
 import { PermissionGrantStore } from './permissions'
 import { AgentLoop } from './runtime'
@@ -86,6 +90,8 @@ export class AgentThread {
   private latestTaskContract: TaskContract | null = null
   private latestPlanItems: AgentPlanItem[] = []
   private latestPlanConfirmation: PlanConfirmation | null = null
+  private latestPlanQuestions: PlanQuestion[] = []
+  private latestPlanDrafts: PlanDraft[] = []
   private latestEvidence: Evidence[] = []
   private latestCoverage: VerificationCoverage | null = null
   private latestReviewResult: ReviewResult | null = null
@@ -100,18 +106,18 @@ export class AgentThread {
   constructor(
     private readonly sender: WebContents,
     workspace: AgentSession['workspace'],
-    permissionMode: AgentPermissionMode = 'ask',
+    permissionMode: AgentPermissionMode = 'default',
     existingSession?: AgentSession,
   ) {
     const timestamp = now()
-    this.session = existingSession || {
+    this.session = existingSession ? { ...existingSession, permissionMode: normalizeAgentPermissionMode(existingSession.permissionMode) } : {
       id: `session_${randomUUID()}`,
       workspace,
       title: workspace?.label || 'Vibe Coding',
       createdAt: timestamp,
       updatedAt: timestamp,
       status: 'idle',
-      permissionMode,
+      permissionMode: normalizeAgentPermissionMode(permissionMode),
     }
   }
 
@@ -158,6 +164,13 @@ export class AgentThread {
       if (event.type === 'task_contract.created' || event.type === 'task_contract.updated') this.latestTaskContract = event.contract
       if (event.type === 'plan.updated') this.latestPlanItems = event.items
       if (event.type === 'plan.confirmation.requested' || event.type === 'plan.confirmation.resolved') this.latestPlanConfirmation = event.confirmation
+      if (event.type === 'message.part.created') {
+        const part = event.part
+        if (part.type === 'plan_question') this.latestPlanQuestions = [...this.latestPlanQuestions.filter(item => item.id !== part.question.id), part.question]
+        if (part.type === 'plan_draft') this.latestPlanDrafts = [...this.latestPlanDrafts.filter(item => item.id !== part.draft.id), part.draft]
+      }
+      if (event.type === 'plan.question.answered') this.latestPlanQuestions = [...this.latestPlanQuestions.filter(item => item.id !== event.question.id), event.question]
+      if (event.type === 'plan.draft.resolved') this.latestPlanDrafts = [...this.latestPlanDrafts.filter(item => item.id !== event.draft.id), event.draft]
       if (event.type === 'evidence.created') {
         this.latestEvidence = [...this.latestEvidence.filter(item => item.id !== event.evidence.id), event.evidence].slice(-50)
       }
@@ -188,7 +201,7 @@ export class AgentThread {
 
   handle(op: AgentOp): AgentSession | PlanConfirmation | null {
     if (op.type === 'permission.update') {
-      this.session = { ...this.session, permissionMode: op.permissionMode, updatedAt: now() }
+      this.session = { ...this.session, permissionMode: normalizeAgentPermissionMode(op.permissionMode), updatedAt: now() }
       this.emit({ type: 'session.updated', session: this.session })
       return this.session
     }
@@ -354,6 +367,60 @@ export class AgentThread {
     return this.resolvePlanConfirmation(confirmationId, 'rejected', reason)
   }
 
+  async answerPlanQuestion(questionId: string, answer: string): Promise<AgentTurn> {
+    const current = this.latestPlanQuestions.find(question => question.id === questionId)
+    if (!current) throw new Error('Plan question does not exist.')
+    const answered: PlanQuestion = { ...current, answered: answer, answeredAt: now() }
+    this.latestPlanQuestions = [...this.latestPlanQuestions.filter(item => item.id !== questionId), answered]
+    this.emit({ type: 'plan.question.answered', sessionId: this.session.id, turnId: current.turnId, question: answered })
+    this.emitPart(current.turnId, {
+      id: createPartId(),
+      messageId: createMessageId('system'),
+      type: 'plan_question',
+      question: answered,
+      createdAt: now(),
+    })
+    return this.submitTurn(`继续制定计划。用户对问题“${current.question}”的回答是：${answer}`, {
+      workspace: this.session.workspace,
+      activeFile: null,
+      openFiles: [],
+      diagnostics: [],
+    }, { mode: 'plan' })
+  }
+
+  async resolvePlanDraft(draftId: string, action: 'execute' | 'reject' | 'revise', feedback?: string, context?: AgentContextSnapshot): Promise<PlanDraft | AgentTurn> {
+    const current = this.latestPlanDrafts.find(draft => draft.id === draftId)
+    if (!current) throw new Error('Plan draft does not exist.')
+    const nextStatus: PlanDraft['status'] = action === 'execute' ? 'executing' : action === 'reject' ? 'rejected' : 'superseded'
+    const resolved: PlanDraft = {
+      ...current,
+      status: nextStatus,
+      feedbackHistory: feedback?.trim() ? [...current.feedbackHistory, feedback.trim()] : current.feedbackHistory,
+      resolvedAt: now(),
+    }
+    this.latestPlanDrafts = [...this.latestPlanDrafts.filter(item => item.id !== draftId), resolved]
+    this.emit({ type: 'plan.draft.resolved', sessionId: this.session.id, turnId: current.turnId, draft: resolved })
+    this.emitPart(current.turnId, {
+      id: createPartId(),
+      messageId: createMessageId('system'),
+      type: 'plan_draft',
+      draft: resolved,
+      createdAt: now(),
+    })
+    const fallbackContext = context ?? { workspace: this.session.workspace, activeFile: null, openFiles: [], diagnostics: [] }
+    if (action === 'execute') {
+      return this.submitTurn(`请执行以下已批准计划：\n\n${current.markdown}`, fallbackContext, { mode: 'agent' })
+    }
+    if (action === 'revise') {
+      return this.submitTurn([
+        '请根据用户反馈重新制定计划。先忽略上一版计划在界面中的展示，输出新的计划草案。',
+        `上一版计划：\n${current.markdown}`,
+        `用户反馈：${feedback?.trim() || '请改进计划。'}`,
+      ].join('\n\n'), fallbackContext, { mode: 'plan' })
+    }
+    return resolved
+  }
+
   private resolveTurnId(turnId?: string): string {
     return turnId || this.activeTurn?.id || this.latestTaskContract?.turnId || `turn_ui_${randomUUID()}`
   }
@@ -471,6 +538,15 @@ export class AgentThread {
   }
 
   async compactContext(turnId?: string, reason?: string) {
+    const resolvedTurnId = this.resolveTurnId(turnId)
+    this.emitPart(resolvedTurnId, {
+      id: createPartId(),
+      messageId: createMessageId('assistant'),
+      type: 'stage',
+      stage: 'compacting_context',
+      detail: '正在压缩当前上下文',
+      createdAt: now(),
+    })
     const task = createCompactionTask(this.session.id, turnId, reason)
     this.emit({ type: 'context.compaction.started', sessionId: this.session.id, turnId, task })
     try {
@@ -480,11 +556,35 @@ export class AgentThread {
       })
       this.emit({ type: 'artifact.created', sessionId: this.session.id, turnId, artifact: result.summaryArtifact })
       this.emit({ type: 'context.compacted', sessionId: this.session.id, turnId, task: completedTask, result })
+      this.emitPart(resolvedTurnId, {
+        id: createPartId(),
+        messageId: createMessageId('assistant'),
+        type: 'artifact',
+        artifact: result.summaryArtifact,
+        label: '上下文压缩摘要',
+        createdAt: now(),
+      })
+      this.emitPart(resolvedTurnId, {
+        id: createPartId(),
+        messageId: createMessageId('assistant'),
+        type: 'text',
+        role: 'assistant',
+        text: '上下文已压缩，后续对话会优先使用保留摘要和当前工作区状态。',
+        createdAt: now(),
+      })
       return result
     } catch (error) {
       const failedTask = markCompactionTaskFailed(task)
       const message = error instanceof Error ? error.message : String(error)
       this.emit({ type: 'context.compaction.failed', sessionId: this.session.id, turnId, task: failedTask, error: message })
+      this.emitPart(resolvedTurnId, {
+        id: createPartId(),
+        messageId: createMessageId('assistant'),
+        type: 'text',
+        role: 'assistant',
+        text: `上下文压缩失败：${message}`,
+        createdAt: now(),
+      })
       throw error
     }
   }
@@ -498,37 +598,50 @@ export class AgentThread {
     }
   }
 
-  async submitTurn(text: string, context: AgentContextSnapshot): Promise<AgentTurn> {
+  async submitTurn(text: string, context: AgentContextSnapshot, options: { mode?: AgentTurnMode; transientSessionId?: string } = {}): Promise<AgentTurn> {
     if (this.session.status === 'archived') {
       throw new Error('归档会话不能继续运行，请先取消归档。')
     }
-    if (this.session.status === 'running') {
+    const mode = options.mode ?? 'agent'
+    const transientSessionId = options.transientSessionId?.trim()
+    const isTransient = Boolean(transientSessionId)
+    if (!isTransient && this.session.status === 'running') {
       throw new Error('当前会话已有正在运行的 turn。')
     }
 
-    this.abortController = new AbortController()
+    const abortController = new AbortController()
+    if (!isTransient) this.abortController = abortController
+    const runtimeSession: AgentSession = isTransient
+      ? { ...this.session, id: transientSessionId!, workspace: context.workspace, status: 'running', updatedAt: now() }
+      : { ...this.session, workspace: context.workspace, status: 'running', updatedAt: now() }
+    const emitEvent = (event: AgentEvent) => {
+      if (isTransient) this.send(event)
+      else this.emit(event)
+    }
+    const emitPart = (turnId: string, part: MessagePart) => {
+      emitEvent({ type: 'message.part.created', sessionId: runtimeSession.id, turnId, part })
+    }
     const turn: AgentTurn = {
       id: `turn_${randomUUID()}`,
-      sessionId: this.session.id,
+      sessionId: runtimeSession.id,
       text,
       createdAt: now(),
       status: 'running',
     }
-    this.activeTurn = turn
-    this.session = {
-      ...this.session,
-      workspace: context.workspace,
-      status: 'running',
-      updatedAt: now(),
+    if (!isTransient) {
+      this.activeTurn = turn
+      this.session = runtimeSession
     }
 
-    this.emit({ type: 'session.updated', session: this.session })
-    this.emit({ type: 'turn.started', sessionId: this.session.id, turn })
-    await this.invokeHook(turn.id, 'turn.start', { textLength: text.length })
-    await this.captureRuntime(turn.id, context.workspace)
+    if (!isTransient) this.emit({ type: 'session.updated', session: this.session })
+    emitEvent({ type: 'turn.started', sessionId: runtimeSession.id, turn })
+    if (!isTransient) {
+      await this.invokeHook(turn.id, 'turn.start', { textLength: text.length })
+      await this.captureRuntime(turn.id, context.workspace)
+    }
 
     const userMessageId = createMessageId('user')
-    this.emitPart(turn.id, {
+    emitPart(turn.id, {
       id: createPartId(),
       messageId: userMessageId,
       type: 'text',
@@ -539,31 +652,31 @@ export class AgentThread {
 
     try {
       const confirmed = this.useConfirmedPlanForTurn(turn)
-      const contract = confirmed.contract ?? createInitialTaskContract({ session: this.session, turn, text, context })
+      const contract = confirmed.contract ?? createInitialTaskContract({ session: runtimeSession, turn, text, context })
       const planItems = confirmed.planItems ?? createInitialPlanItems(contract)
       const contractMessageId = createMessageId('system')
       const contractPartId = createPartId()
       const planMessageId = createMessageId('system')
       const planPartId = createPartId()
 
-      this.emit({ type: 'task_contract.created', sessionId: this.session.id, turnId: turn.id, contract })
-      this.emitPart(turn.id, {
+      emitEvent({ type: 'task_contract.created', sessionId: runtimeSession.id, turnId: turn.id, contract })
+      emitPart(turn.id, {
         id: contractPartId,
         messageId: contractMessageId,
         type: 'task_contract',
         contract,
         createdAt: now(),
       })
-      this.emit({
+      emitEvent({
         type: 'plan.updated',
-        sessionId: this.session.id,
+        sessionId: runtimeSession.id,
         turnId: turn.id,
         items: planItems,
         reason: confirmed.reason ?? 'runtime 初始化任务计划',
         source: 'runtime',
         createdAt: now(),
       })
-      this.emitPart(turn.id, {
+      emitPart(turn.id, {
         id: planPartId,
         messageId: planMessageId,
         type: 'plan',
@@ -572,16 +685,16 @@ export class AgentThread {
         createdAt: now(),
       })
 
-      if (this.lastHandoff) {
+      if (!isTransient && this.lastHandoff) {
         const freshness = this.checkWorkspaceFreshness(this.lastHandoff, context)
         if (!freshness.fresh) {
           this.emitStaleWarning(turn.id, freshness.warnings)
         }
       }
-      this.checkLongRunningFreshness(turn.id, context)
+      if (!isTransient) this.checkLongRunningFreshness(turn.id, context)
 
       const reason = await new AgentLoop({
-        session: this.session,
+        session: runtimeSession,
         turn,
         text,
         context,
@@ -590,44 +703,46 @@ export class AgentThread {
         planItems,
         planPart: { id: planPartId, messageId: planMessageId },
         handoff: this.lastHandoff ?? undefined,
-        signal: this.abortController.signal,
-        emit: event => this.emit(event),
-        requestApproval: request => this.requestApproval(request),
+        signal: abortController.signal,
+        emit: emitEvent,
+        requestApproval: request => isTransient
+          ? Promise.resolve({ action: 'deny' as const, reason: '临时聊天不支持需要确认的操作。' })
+          : this.requestApproval(request),
         grants: this.grants,
+        turnMode: mode,
       }).run()
-      if (this.session.permissionMode === 'plan' && reason === 'completed') {
-        const confirmation = this.createPlanConfirmation(
-          turn.id,
-          this.latestTaskContract ?? contract,
-          this.latestPlanItems.length > 0 ? this.latestPlanItems : planItems,
-          'Plan Mode 需要用户确认后才会执行写入、命令或 sandbox 操作。',
-        )
-        this.emitPlanConfirmation(confirmation)
-      }
-      if (this.abortController.signal.aborted) {
-        this.activeTurn = { ...turn, status: 'interrupted' }
-        this.session = { ...this.session, status: 'interrupted', updatedAt: now() }
-        this.emit({ type: 'turn.completed', sessionId: this.session.id, turnId: turn.id, reason: 'interrupted' })
+      if (abortController.signal.aborted) {
+        if (!isTransient) {
+          this.activeTurn = { ...turn, status: 'interrupted' }
+          this.session = { ...this.session, status: 'interrupted', updatedAt: now() }
+        }
+        emitEvent({ type: 'turn.completed', sessionId: runtimeSession.id, turnId: turn.id, reason: 'interrupted' })
       } else {
-        this.activeTurn = { ...turn, status: reason === 'completed' ? 'completed' : 'failed' }
-        this.session = { ...this.session, status: reason === 'completed' ? 'idle' : 'error', updatedAt: now() }
-        this.emit({ type: 'turn.completed', sessionId: this.session.id, turnId: turn.id, reason })
+        if (!isTransient) {
+          this.activeTurn = { ...turn, status: reason === 'completed' ? 'completed' : 'failed' }
+          this.session = { ...this.session, status: reason === 'completed' ? 'idle' : 'error', updatedAt: now() }
+        }
+        emitEvent({ type: 'turn.completed', sessionId: runtimeSession.id, turnId: turn.id, reason })
       }
-      this.emit({ type: 'session.updated', session: this.session })
+      if (!isTransient) this.emit({ type: 'session.updated', session: this.session })
       return turn
     } catch (error) {
-      if (this.abortController.signal.aborted) {
-        this.activeTurn = { ...turn, status: 'interrupted' }
-        this.session = { ...this.session, status: 'interrupted', updatedAt: now() }
-        this.emit({ type: 'turn.completed', sessionId: this.session.id, turnId: turn.id, reason: 'interrupted' })
-        this.emit({ type: 'session.updated', session: this.session })
+      if (abortController.signal.aborted) {
+        if (!isTransient) {
+          this.activeTurn = { ...turn, status: 'interrupted' }
+          this.session = { ...this.session, status: 'interrupted', updatedAt: now() }
+        }
+        emitEvent({ type: 'turn.completed', sessionId: runtimeSession.id, turnId: turn.id, reason: 'interrupted' })
+        if (!isTransient) this.emit({ type: 'session.updated', session: this.session })
         return turn
       }
       const message = error instanceof Error ? error.message : String(error)
-      this.activeTurn = { ...turn, status: 'failed' }
-      this.session = { ...this.session, status: 'error', updatedAt: now() }
-      this.emit({ type: 'turn.failed', sessionId: this.session.id, turnId: turn.id, reason: 'model_error', error: message })
-      this.emit({ type: 'message.part.created', sessionId: this.session.id, turnId: turn.id, part: {
+      if (!isTransient) {
+        this.activeTurn = { ...turn, status: 'failed' }
+        this.session = { ...this.session, status: 'error', updatedAt: now() }
+      }
+      emitEvent({ type: 'turn.failed', sessionId: runtimeSession.id, turnId: turn.id, reason: 'model_error', error: message })
+      emitEvent({ type: 'message.part.created', sessionId: runtimeSession.id, turnId: turn.id, part: {
         id: createPartId(),
         messageId: createMessageId('assistant'),
         type: 'text',
@@ -635,10 +750,10 @@ export class AgentThread {
         text: `Agent 运行失败：${message}`,
         createdAt: now(),
       } })
-      this.emit({ type: 'session.updated', session: this.session })
+      if (!isTransient) this.emit({ type: 'session.updated', session: this.session })
       return turn
     } finally {
-      this.abortController = null
+      if (!isTransient) this.abortController = null
     }
   }
 
@@ -786,6 +901,13 @@ export class AgentThread {
     if (event.type === 'task_contract.created' || event.type === 'task_contract.updated') this.latestTaskContract = event.contract
     if (event.type === 'plan.updated') this.latestPlanItems = event.items
     if (event.type === 'plan.confirmation.requested' || event.type === 'plan.confirmation.resolved') this.latestPlanConfirmation = event.confirmation
+    if (event.type === 'message.part.created') {
+      const part = event.part
+      if (part.type === 'plan_question') this.latestPlanQuestions = [...this.latestPlanQuestions.filter(item => item.id !== part.question.id), part.question]
+      if (part.type === 'plan_draft') this.latestPlanDrafts = [...this.latestPlanDrafts.filter(item => item.id !== part.draft.id), part.draft]
+    }
+    if (event.type === 'plan.question.answered') this.latestPlanQuestions = [...this.latestPlanQuestions.filter(item => item.id !== event.question.id), event.question]
+    if (event.type === 'plan.draft.resolved') this.latestPlanDrafts = [...this.latestPlanDrafts.filter(item => item.id !== event.draft.id), event.draft]
     if (event.type === 'evidence.created') this.latestEvidence = [...this.latestEvidence.filter(item => item.id !== event.evidence.id), event.evidence].slice(-50)
     if (event.type === 'verification.coverage.updated') this.latestCoverage = event.coverage
     if (event.type === 'review.completed') this.latestReviewResult = event.result

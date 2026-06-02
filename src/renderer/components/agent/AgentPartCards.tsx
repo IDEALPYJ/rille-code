@@ -631,6 +631,22 @@ export function MessagePartView({
       </div>
     )
   }
+  if (part.type === 'plan_question') {
+    return (
+      <div className="agent-file-part">
+        <ListChecks size={13} />
+        <span>计划问题 · {part.question.question}</span>
+      </div>
+    )
+  }
+  if (part.type === 'plan_draft') {
+    if (part.draft.status === 'superseded') return null
+    return (
+      <div className="agent-message assistant">
+        <MarkdownMessage text={part.draft.markdown} />
+      </div>
+    )
+  }
   return (
     <div className={'agent-message ' + part.role}>
       <MarkdownMessage text={part.text} />

@@ -21,7 +21,7 @@
 | D | Model Gateway + Streaming Protocol | 已完成 | 已实现 | Responses adapter、SSE streaming、fallback trace、cache metrics 已落地 | J7 |
 | E | Tool Runtime + Tool Design | 已完成 | 已实现 | artifactRef、deferred discovery、组合工具、tool trajectory eval 已落地 | J7 |
 | F | Policy + Approval + Security | 已完成 | 已实现 | workspace grant、Guardian、BashArity subject、sandbox policy 已落地 | J7 |
-| G | Task Contract + Plan Mode | 已完成 | 已实现 | explicit Plan Mode、PlanConfirmation、跨 turn plan continuity、PlanItem evidence gate 已落地 | J7 |
+| G | Task Contract + Plan Confirmation | 已完成 | 已实现 | `/plan` 只读规划提示、PlanConfirmation、跨 turn plan continuity、PlanItem evidence gate 已落地 | J7 |
 | H | Context Engine + Prompt Cache | 已完成 | 已实现 | cache trace metrics、symbols/selections collector、untrusted boundary 已落地 | J7 |
 | I | Reviewable Editing + Rollback | 已完成 | 已实现 | 多文件 checkpoint restore、proposal set、sandbox diff proposals 已落地 | J7 |
 | J | Verification + Evidence Gate | 已完成 | 已实现 | browser/user evidence、waiver UI、artifact-backed evidence、coverage recompute 已落地 | M7 |
@@ -106,7 +106,7 @@
 - [x] G3. update_plan tool。
 - [x] G4. update_task_contract tool。
 - [x] G5. Task/Plan UI。
-- [x] G6. explicit Plan Mode。
+- [x] G6. `/plan` planning shortcut。
 - [x] G7. user confirmation gate。
 - [x] G8. plan continuity across turns。
 - [x] G9. PlanItem evidence binding gate。
@@ -287,8 +287,8 @@
 状态: 已完成
 完成日期: 2026-05-26
 涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/skillStore.ts`, `src/main/agent/mcpManager.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/tools.ts`, `src/main/agent/permissions.ts`, `src/main/agent/index.ts`, `src/main/agent/trace.ts`, `src/preload/index.ts`, `src/renderer/env.d.ts`, `eval/cases/*.json`
-实现摘要: Phase O 完成 SkillContract/PluginManifest/MCP protocol、项目与 userData skill/plugin discovery、keyword/manual skill activation trace、plugin manifest 扫描、真实 stdio MCP process lifecycle、最小 MCP JSON-RPC initialize/tools/list/tools/call、`mcp.<pluginId>.<serverId>.<toolName>` namespace、MCP sideEffect policy、Plan Mode read-only 限制、`search_skills`/`activate_skill` deferred tools 和 extension IPC。
-测试文件: `tests/agent/skillStore.test.ts`, `tests/agent/mcpManager.test.ts`, `tests/agent/contextBuilder.test.ts`, `tests/agent/tools.test.ts`, `eval/cases/skill_activation_happy.json`, `eval/cases/plugin_mcp_discovery.json`, `eval/cases/mcp_plan_mode_denied.json`, `eval/cases/mcp_startup_failure_recorded.json`
+实现摘要: Phase O 完成 SkillContract/PluginManifest/MCP protocol、项目与 userData skill/plugin discovery、keyword/manual skill activation trace、plugin manifest 扫描、真实 stdio MCP process lifecycle、最小 MCP JSON-RPC initialize/tools/list/tools/call、`mcp.<pluginId>.<serverId>.<toolName>` namespace、MCP sideEffect policy、三模式权限约束、`search_skills`/`activate_skill` deferred tools 和 extension IPC。
+测试文件: `tests/agent/skillStore.test.ts`, `tests/agent/mcpManager.test.ts`, `tests/agent/contextBuilder.test.ts`, `tests/agent/tools.test.ts`, `eval/cases/skill_activation_happy.json`, `eval/cases/plugin_mcp_discovery.json`, `eval/cases/mcp_default_side_effect_asks.json`, `eval/cases/mcp_startup_failure_recorded.json`
 验证命令: `npm test`; `npm run typecheck`; `npm run build`; `npm run eval:agent`; Phase O checklist 状态检索。
 验证结果: `npm test` 24 files / 180 tests passed；`npm run typecheck` passed；`npm run build` passed（保留既有 memory dynamic/static import warning）；`npm run eval:agent` 7/7 cases passed；Phase O checklist/status 检索无输出。
 剩余风险: Phase O 不加载任意插件 JS，不实现 HTTP/SSE MCP transport、online marketplace、签名/沙箱插件 runtime，也不提前实现 Phase P SubagentRunner、parallel scheduling 或 parent-child session execution。
@@ -342,7 +342,7 @@
 状态: 已完成
 完成日期: 2026-05-24
 涉及模块: `src/shared/agent/protocol.ts`, `src/main/agent/thread.ts`, `src/main/agent/runtime.ts`, `src/main/agent/permissions.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/editStore.ts`, `src/main/agent/checkpointStore.ts`, `src/main/agent/worktreeSandbox.ts`, `src/main/agent/verificationGate.ts`, `src/preload/index.ts`, `src/renderer/components/agent/AgentPanel.tsx`
-实现摘要: Phase G 完成 PlanConfirmation、显式 Plan Mode 禁写边界、跨 turn confirmed plan 复用、PlanItem evidence gate；Phase H 完成 context cache key/hash/eligible token trace、symbols/selections collector、untrusted context boundary；Phase I 完成 checkpoint 多文件 restore-as-proposals、proposalSet metadata、sandbox diff proposals 和 UI 确认入口。
+实现摘要: Phase G 完成 `/plan` 只读规划提示、PlanConfirmation、跨 turn confirmed plan 复用、PlanItem evidence gate；Phase H 完成 context cache key/hash/eligible token trace、symbols/selections collector、untrusted context boundary；Phase I 完成 checkpoint 多文件 restore-as-proposals、proposalSet metadata、sandbox diff proposals 和 UI 确认入口。
 测试文件: `tests/agent/contextBuilder.test.ts`, `tests/agent/runtime.test.ts`, `tests/agent/thread.test.ts`, `tests/agent/runtimeSubstrate.test.ts`
 验证命令: `npm test -- tests/agent/contextBuilder.test.ts tests/agent/runtime.test.ts tests/agent/thread.test.ts tests/agent/runtimeSubstrate.test.ts --reporter verbose`
 验证结果: 4 个 test files、36 个 tests 通过。

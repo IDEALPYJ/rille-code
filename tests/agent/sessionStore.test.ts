@@ -22,7 +22,7 @@ function session(): AgentSession {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     status: 'idle',
-    permissionMode: 'ask',
+    permissionMode: 'default',
   }
 }
 

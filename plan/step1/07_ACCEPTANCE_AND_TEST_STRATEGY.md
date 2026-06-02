@@ -49,7 +49,7 @@ npm run build
 | D | provider adapters、stream delta parse、native tools、fallback reason、usage/cache metrics。 |
 | E | tool validation、runtime-only deny、artifactRef、tool search、组合工具效果。 |
 | F | policy rule match、BashArity、grant expiry、Guardian/classifier、secret redaction。 |
-| G | contract creation/update、Plan Mode、confirmation gate、plan/evidence binding。 |
+| G | contract creation/update、`/plan` planning shortcut、confirmation gate、plan/evidence binding。 |
 | H | fragment priority、cacheKey、included/excluded trace、untrusted data、LSP/MCP fragments。 |
 | I | diff proposal、dirty guard、rollback、side-git/checkpoint、worktree patch merge。 |
 | J | evidence mapping、coverage gate、browser/user evidence、waiver、artifact-backed output。 |
@@ -69,7 +69,7 @@ npm run build
 
 示例：
 
-- 用户要求“只规划不要修改”时，模型进入 Plan Mode，而不是 propose edit。
+- 用户要求“只规划不要修改”时，模型只做只读探索并输出计划，而不是 propose edit。
 - 高风险命令出现时，runtime 请求 approval 或 deny。
 - 需要读文件时选择 read/search，而不是直接猜测。
 

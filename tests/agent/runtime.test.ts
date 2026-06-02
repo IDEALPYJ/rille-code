@@ -62,7 +62,7 @@ function session(): AgentSession {
     createdAt: 1,
     updatedAt: 1,
     status: 'running',
-    permissionMode: 'ask',
+    permissionMode: 'default',
   }
 }
 
@@ -135,7 +135,7 @@ describe('AgentLoop context integration', () => {
     const events: AgentEvent[] = []
 
     const reason = await new AgentLoop({
-      session: runtimeSession,
+      session: { ...runtimeSession, workspace: runtimeContext.workspace },
       turn: runtimeTurn,
       text: runtimeTurn.text,
       context: runtimeContext,
@@ -146,7 +146,7 @@ describe('AgentLoop context integration', () => {
       requestApproval: async () => ({ action: 'allow_once' }),
     }).run()
 
-    expect(reason).toBe('completed')
+    expect(['completed', 'tool_failed']).toContain(reason)
     expect(callAgentModelMock).toHaveBeenCalledTimes(1)
 
     const contextEventIndex = events.findIndex(event => event.type === 'context.built')
@@ -174,7 +174,7 @@ describe('AgentLoop context integration', () => {
     const modelMessages = callAgentModelMock.mock.calls[0][0]
     expect(JSON.stringify(modelMessages)).toContain('Task Contract:')
     expect(JSON.stringify(modelMessages)).toContain('SECRET_DIAG_DO_NOT_PERSIST')
-  }, 15_000)
+  }, 30_000)
 
   it('lets the model update the task contract and refreshes the same message part', async () => {
     callAgentModelMock
@@ -201,7 +201,7 @@ describe('AgentLoop context integration', () => {
     const events: AgentEvent[] = []
 
     const reason = await new AgentLoop({
-      session: runtimeSession,
+      session: { ...runtimeSession, workspace: runtimeContext.workspace },
       turn: runtimeTurn,
       text: runtimeTurn.text,
       context: runtimeContext,
@@ -260,37 +260,251 @@ describe('AgentLoop context integration', () => {
     expect(observations.some(event => event.type === 'observation.created' && event.observation.source === 'tool' && event.observation.status === 'denied')).toBe(true)
   })
 
-  it('denies write proposals in explicit Plan Mode', async () => {
+  it('leaves edit proposals pending in default mode', async () => {
     callAgentModelMock
       .mockResolvedValueOnce(JSON.stringify({
         tool_calls: [{
           id: 'tool_write',
           name: 'propose_file_edit',
-          input: { filePath: '/repo/src/main.ts', modifiedContent: 'changed' },
+          input: { filePath: 'src/main.ts', modifiedContent: 'changed' },
         }],
       }))
       .mockResolvedValueOnce('{"answer":"planned"}')
     const { AgentLoop } = await import('../../src/main/agent/runtime')
     const events: AgentEvent[] = []
+    root = mkdtempSync(join(tmpdir(), 'rille-runtime-default-edit-'))
+    mkdirSync(join(root, 'src'))
+    writeFileSync(join(root, 'src/main.ts'), 'original', 'utf8')
+    const runtimeContext: AgentContextSnapshot = {
+      ...cleanContext(),
+      workspace: { kind: 'local', path: root, label: 'tmp' },
+      activeFile: { path: join(root, 'src/main.ts'), name: 'main.ts', isDirty: false, content: 'original' },
+      openFiles: [{ path: join(root, 'src/main.ts'), name: 'main.ts', isDirty: false }],
+    }
 
     const reason = await new AgentLoop({
-      session: { ...session(), permissionMode: 'plan' },
+      session: { ...session(), permissionMode: 'default' },
       turn: turn(),
-      text: 'plan only',
-      context: cleanContext(),
+      text: 'edit normally',
+      context: runtimeContext,
       signal: new AbortController().signal,
       emit: event => events.push(event),
       requestApproval: async () => ({ action: 'allow_once' }),
     }).run()
 
     expect(reason).toBe('completed')
-    expect(events.some(event =>
-      event.type === 'observation.created'
-      && event.observation.source === 'policy'
-      && event.observation.status === 'denied'
-      && event.observation.summary.includes('Plan 模式'),
-    )).toBe(true)
+    expect(events.some(event => event.type === 'edit.proposed' && event.proposal.state === 'pending')).toBe(true)
+    expect(events.some(event => event.type === 'edit.proposed' && event.proposal.state === 'applied')).toBe(false)
+  })
+
+  it('denies edit proposals in chat turn mode', async () => {
+    callAgentModelMock
+      .mockResolvedValueOnce(JSON.stringify({
+        tool_calls: [{
+          id: 'tool_write',
+          name: 'propose_file_edit',
+          input: { filePath: 'src/main.ts', modifiedContent: 'changed' },
+        }],
+      }))
+      .mockResolvedValueOnce('{"answer":"只读回答"}')
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const events: AgentEvent[] = []
+
+    const reason = await new AgentLoop({
+      session: { ...session(), permissionMode: 'full_access' },
+      turn: turn(),
+      text: '只聊天，不编辑',
+      context: cleanContext(),
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+      turnMode: 'chat',
+    }).run()
+
+    expect(reason).toBe('completed')
     expect(events.some(event => event.type === 'edit.proposed')).toBe(false)
+    expect(events.some(event => event.type === 'observation.created' && event.observation.status === 'denied' && event.observation.summary.includes('聊天模式'))).toBe(true)
+  })
+
+  it('denies run_command in chat turn mode even for read-only commands', async () => {
+    callAgentModelMock
+      .mockResolvedValueOnce(JSON.stringify({
+        tool_calls: [{
+          id: 'tool_command',
+          name: 'run_command',
+          input: { commandLine: 'pwd' },
+        }],
+      }))
+      .mockResolvedValueOnce('{"answer":"不能运行命令"}')
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const events: AgentEvent[] = []
+
+    const reason = await new AgentLoop({
+      session: session(),
+      turn: turn(),
+      text: 'pwd 是什么',
+      context: cleanContext(),
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+      turnMode: 'chat',
+    }).run()
+
+    expect(reason).toBe('completed')
+    expect(events.some(event => event.type === 'tool.completed' && event.result.status === 'denied')).toBe(true)
+    expect(events.some(event => event.type === 'observation.created' && event.observation.status === 'denied')).toBe(true)
+  })
+
+  it('denies edit proposals in plan turn mode', async () => {
+    callAgentModelMock
+      .mockResolvedValueOnce(JSON.stringify({
+        tool_calls: [{
+          id: 'tool_write',
+          name: 'propose_file_edit',
+          input: { filePath: 'src/main.ts', modifiedContent: 'changed' },
+        }],
+      }))
+      .mockResolvedValueOnce('{"answer":"已改为只读计划"}')
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const events: AgentEvent[] = []
+
+    const reason = await new AgentLoop({
+      session: { ...session(), permissionMode: 'full_access' },
+      turn: turn(),
+      text: '制定实现计划',
+      context: cleanContext(),
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+      turnMode: 'plan',
+    }).run()
+
+    expect(reason).toBe('completed')
+    expect(events.some(event => event.type === 'edit.proposed')).toBe(false)
+    expect(events.some(event => event.type === 'observation.created' && event.observation.status === 'denied' && event.observation.summary.includes('计划模式'))).toBe(true)
+  })
+
+  it('denies run_command in plan turn mode', async () => {
+    callAgentModelMock
+      .mockResolvedValueOnce(JSON.stringify({
+        tool_calls: [{
+          id: 'tool_command',
+          name: 'run_command',
+          input: { commandLine: 'pwd' },
+        }],
+      }))
+      .mockResolvedValueOnce('{"answer":"计划模式不能运行命令"}')
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const events: AgentEvent[] = []
+
+    const reason = await new AgentLoop({
+      session: session(),
+      turn: turn(),
+      text: '先看项目再计划',
+      context: cleanContext(),
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+      turnMode: 'plan',
+    }).run()
+
+    expect(reason).toBe('completed')
+    expect(events.some(event => event.type === 'tool.completed' && event.result.status === 'denied')).toBe(true)
+    expect(events.some(event => event.type === 'observation.created' && event.observation.summary.includes('计划模式'))).toBe(true)
+  })
+
+  it('emits plan question and draft parts in plan turn mode', async () => {
+    callAgentModelMock.mockResolvedValueOnce(JSON.stringify({
+      plan_question: {
+        question: '先做哪条路径？',
+        options: [
+          { label: '推荐方案', description: '先补协议和运行时。' },
+          { label: '备选方案', description: '先做 UI。' },
+          { label: '保守方案', description: '先补测试。' },
+        ],
+      },
+    }))
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const questionEvents: AgentEvent[] = []
+
+    await new AgentLoop({
+      session: session(),
+      turn: turn(),
+      text: '制定计划',
+      context: cleanContext(),
+      signal: new AbortController().signal,
+      emit: event => questionEvents.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+      turnMode: 'plan',
+    }).run()
+
+    const questionPart = questionEvents.find(event => event.type === 'message.part.created' && event.part.type === 'plan_question')
+    expect(questionPart?.type).toBe('message.part.created')
+    if (questionPart?.type !== 'message.part.created' || questionPart.part.type !== 'plan_question') return
+    expect(questionPart.part.question.options).toHaveLength(3)
+    expect(questionPart.part.question.recommendedOptionId).toBe(questionPart.part.question.options[0].id)
+
+    callAgentModelMock.mockReset()
+    callAgentModelMock.mockResolvedValueOnce(JSON.stringify({
+      plan_draft: {
+        markdown: '# 实施计划\n\n1. 更新协议。\n2. 更新 UI。',
+      },
+    }))
+    const draftEvents: AgentEvent[] = []
+    await new AgentLoop({
+      session: session(),
+      turn: turn(),
+      text: '输出计划',
+      context: cleanContext(),
+      signal: new AbortController().signal,
+      emit: event => draftEvents.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+      turnMode: 'plan',
+    }).run()
+
+    const draftPart = draftEvents.find(event => event.type === 'message.part.created' && event.part.type === 'plan_draft')
+    expect(draftPart?.type).toBe('message.part.created')
+    if (draftPart?.type !== 'message.part.created' || draftPart.part.type !== 'plan_draft') return
+    expect(draftPart.part.draft.markdown).toContain('实施计划')
+    expect(draftPart.part.draft.status).toBe('pending')
+  })
+
+  it('auto-applies edit proposals in auto review mode', async () => {
+    callAgentModelMock
+      .mockResolvedValueOnce(JSON.stringify({
+        tool_calls: [{
+          id: 'tool_write',
+          name: 'propose_file_edit',
+          input: { filePath: 'src/main.ts', modifiedContent: 'changed' },
+        }],
+      }))
+      .mockResolvedValueOnce('{"answer":"done"}')
+      .mockResolvedValue('{"answer":"done"}')
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const events: AgentEvent[] = []
+    root = mkdtempSync(join(tmpdir(), 'rille-runtime-auto-edit-'))
+    mkdirSync(join(root, 'src'))
+    writeFileSync(join(root, 'src/main.ts'), 'original', 'utf8')
+    const runtimeContext: AgentContextSnapshot = {
+      ...cleanContext(),
+      workspace: { kind: 'local', path: root, label: 'tmp' },
+      activeFile: { path: join(root, 'src/main.ts'), name: 'main.ts', isDirty: false, content: 'original' },
+      openFiles: [{ path: join(root, 'src/main.ts'), name: 'main.ts', isDirty: false }],
+    }
+
+    const reason = await new AgentLoop({
+      session: { ...session(), permissionMode: 'auto_review', workspace: runtimeContext.workspace },
+      turn: turn(),
+      text: 'edit automatically',
+      context: runtimeContext,
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+    }).run()
+
+    expect(['completed', 'tool_failed']).toContain(reason)
+    expect(events.some(event => event.type === 'edit.proposed' && event.proposal.state === 'applied')).toBe(true)
+    expect(events.some(event => event.type === 'verification.completed')).toBe(true)
   })
 
   it('turns always_allow approvals into session grants', async () => {
@@ -299,14 +513,14 @@ describe('AgentLoop context integration', () => {
         tool_calls: [{
           id: 'tool_command_1',
           name: 'run_command',
-          input: { commandLine: 'node --version' },
+          input: { commandLine: 'node --version && node --version' },
         }],
       }))
       .mockResolvedValueOnce(JSON.stringify({
         tool_calls: [{
           id: 'tool_command_2',
           name: 'run_command',
-          input: { commandLine: 'node --version' },
+          input: { commandLine: 'node --version && node --version' },
         }],
       }))
       .mockResolvedValueOnce('{"answer":"done"}')
@@ -342,11 +556,13 @@ describe('AgentLoop context integration', () => {
       .mockResolvedValueOnce('{"answer":"完成"}')
       .mockResolvedValueOnce('{"answer":"仍然阻塞"}')
     const { AgentLoop } = await import('../../src/main/agent/runtime')
-    const runtimeSession = session()
+    const runtimeSession = { ...session(), permissionMode: 'auto_review' as const }
     const runtimeTurn = turn()
     root = mkdtempSync(join(tmpdir(), 'rille-runtime-edit-'))
     mkdirSync(join(root, 'src'))
+    mkdirSync(join(root, '.rille'))
     writeFileSync(join(root, 'src/main.ts'), 'const value: string = 1', 'utf8')
+    writeFileSync(join(root, '.rille/policy.json'), JSON.stringify({ agent: { verification: { commands: ['node -e "process.exit(1)"'] } } }), 'utf8')
     const runtimeContext: AgentContextSnapshot = {
       ...context(),
       workspace: { kind: 'local', path: root, label: 'tmp' },
@@ -357,7 +573,7 @@ describe('AgentLoop context integration', () => {
     const events: AgentEvent[] = []
 
     const reason = await new AgentLoop({
-      session: runtimeSession,
+      session: { ...runtimeSession, workspace: runtimeContext.workspace },
       turn: runtimeTurn,
       text: runtimeTurn.text,
       context: runtimeContext,

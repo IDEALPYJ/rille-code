@@ -4,6 +4,7 @@ import { appendFile, readFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import type { AgentEvent, AgentSession, AgentSessionSummary, MessagePart } from '../../shared/agent/protocol'
+import { normalizeAgentPermissionMode } from '../../shared/agent/permissionModes'
 import { hydrateEditProposal } from './editStore'
 
 interface StoredLine {
@@ -40,14 +41,15 @@ function ensureSessionDir(sessionId: string): void {
 
 export function saveSessionMeta(session: AgentSession): void {
   ensureSessionDir(session.id)
-  writeFileSync(metaPath(session.id), JSON.stringify(session, null, 2), 'utf8')
+  writeFileSync(metaPath(session.id), JSON.stringify({ ...session, permissionMode: normalizeAgentPermissionMode(session.permissionMode) }, null, 2), 'utf8')
 }
 
 export function readSessionMeta(sessionId: string): AgentSession | null {
   const path = metaPath(sessionId)
   if (!existsSync(path)) return null
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as AgentSession
+    const meta = JSON.parse(readFileSync(path, 'utf8')) as AgentSession
+    return { ...meta, permissionMode: normalizeAgentPermissionMode(meta.permissionMode) }
   } catch {
     return null
   }

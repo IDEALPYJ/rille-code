@@ -161,20 +161,20 @@ describe('MCP stdio lifecycle', () => {
 
     const readOnlyDecision = await decidePermission({
       call: { id: 'tool_mcp_read', name: 'mcp.fixture.stdio.echo', input: { value: 1 } },
-      mode: 'plan',
+      mode: 'default',
       sessionId: 'session_o_mcp',
       turnId: 'turn_o_mcp',
       context: { workspace: workspace(), activeFile: null, openFiles: [], diagnostics: [] },
     })
     const externalDecision = await decidePermission({
       call: { id: 'tool_mcp_external', name: 'mcp.fixture.stdio.erase', input: { value: 1 } },
-      mode: 'plan',
+      mode: 'default',
       sessionId: 'session_o_mcp',
       turnId: 'turn_o_mcp',
       context: { workspace: workspace(), activeFile: null, openFiles: [], diagnostics: [] },
     })
     expect(readOnlyDecision.action).toBe('allow')
-    expect(externalDecision.action).toBe('deny')
+    expect(externalDecision.action).toBe('ask')
 
     const stopped = stopMcpServer('fixture', 'stdio')
     expect(stopped?.status).toBe('stopped')

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent, MessagePart, TraceEvent } from '../../src/shared/agent/protocol'
-import { expandComposerDraft, subagentNodes, summarizeAgentWorkbench, traceDebugSummary } from '../../src/renderer/components/agent/workbenchState'
+import { expandComposerDraft, shouldShowSlashActions, slashActionAt, slashActions, subagentNodes, summarizeAgentWorkbench, traceDebugSummary } from '../../src/renderer/components/agent/workbenchState'
 
 describe('agent workbench state helpers', () => {
   it('computes risk, verification, review, and next action summary', () => {
@@ -36,6 +36,20 @@ describe('agent workbench state helpers', () => {
     expect(expanded).toContain('请修复当前问题')
     expect(expanded).toContain('/repo/src/app.ts')
     expect(expanded).toContain('/repo/src/app.ts:12:4')
+  })
+
+  it('describes slash action choices and keyboard cycling', () => {
+    expect(slashActions.map(action => action.id)).toEqual(['chat', 'plan', 'compact', 'btw'])
+    expect(slashActions.find(action => action.id === 'chat')?.immediate).toBe(false)
+    expect(slashActions.find(action => action.id === 'plan')?.immediate).toBe(false)
+    expect(slashActions.find(action => action.id === 'compact')?.immediate).toBe(true)
+    expect(slashActions.find(action => action.id === 'btw')?.immediate).toBe(true)
+    expect(slashActions.find(action => action.id === 'btw')?.label).toBe('临时聊天')
+    expect(shouldShowSlashActions('/')).toBe(true)
+    expect(shouldShowSlashActions('/bt')).toBe(true)
+    expect(shouldShowSlashActions('/btw hello')).toBe(false)
+    expect(slashActionAt(0, -1)).toBe(3)
+    expect(slashActionAt(3, 1)).toBe(0)
   })
 
   it('summarizes trace debug and subagent placeholder nodes', () => {

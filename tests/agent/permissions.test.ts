@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach } from 'vitest'
 import { addWorkspacePermissionGrant, classifyCommandRisk, classifyGuardian, decidePermission, parseCommandSubject, PermissionGrantStore } from '../../src/main/agent/permissions'
+import { normalizeAgentPermissionMode } from '../../src/shared/agent/permissionModes'
 
 let root = ''
 
@@ -42,7 +43,7 @@ describe('permission decisions', () => {
   it('allows read-only tools', async () => {
     const decision = await decidePermission({
       call: { id: 'tool_1', name: 'read_file', input: { filePath: 'x.ts' } },
-      mode: 'ask',
+      mode: 'default',
       sessionId: 'session_1',
       turnId: 'turn_1',
     })
@@ -52,7 +53,7 @@ describe('permission decisions', () => {
   it('denies runtime-only apply_file_edit from model calls', async () => {
     const decision = await decidePermission({
       call: { id: 'tool_1', name: 'apply_file_edit', input: { proposalId: 'proposal_1' } },
-      mode: 'ask',
+      mode: 'default',
       sessionId: 'session_1',
       turnId: 'turn_1',
     })
@@ -62,7 +63,7 @@ describe('permission decisions', () => {
   it('allows read-only subagent launches but asks for isolated writable subagents', async () => {
     const readOnly = await decidePermission({
       call: { id: 'tool_1', name: 'launch_subagent', input: { role: 'explorer', goal: 'inspect files' } },
-      mode: 'ask',
+      mode: 'default',
       sessionId: 'session_1',
       turnId: 'turn_1',
     })
@@ -70,7 +71,7 @@ describe('permission decisions', () => {
 
     const writable = await decidePermission({
       call: { id: 'tool_2', name: 'launch_subagent', input: { role: 'explorer', goal: 'edit safely', permissionScope: 'isolated_write', commands: ['npm test'] } },
-      mode: 'ask',
+      mode: 'default',
       sessionId: 'session_1',
       turnId: 'turn_1',
     })
@@ -78,28 +79,39 @@ describe('permission decisions', () => {
     expect(writable.policyDecision.sandboxRequired).toBe(true)
   })
 
-  it('denies isolated writable subagents in plan mode', async () => {
+  it('allows isolated writable subagents in full access mode', async () => {
     const decision = await decidePermission({
       call: { id: 'tool_1', name: 'launch_subagent', input: { role: 'explorer', goal: 'edit safely', permissionScope: 'isolated_write', commands: ['npm test'] } },
-      mode: 'plan',
+      mode: 'full_access',
       sessionId: 'session_1',
       turnId: 'turn_1',
     })
-    expect(decision.action).toBe('deny')
+    expect(decision.action).toBe('allow')
   })
 
-  it('asks for test commands and includes command details', async () => {
+  it('allows test commands by default', async () => {
     const decision = await decidePermission({
       call: { id: 'tool_1', name: 'run_command', input: { commandLine: 'npm run typecheck', cwd: '.', timeoutMs: 1000 } },
-      mode: 'ask',
+      mode: 'default',
+      sessionId: 'session_1',
+      turnId: 'turn_1',
+    })
+    expect(decision.action).toBe('allow')
+    expect(decision.policyDecision.risk).toBe('medium')
+  })
+
+  it('asks for high-risk commands in default and auto-review modes', async () => {
+    const decision = await decidePermission({
+      call: { id: 'tool_1', name: 'run_command', input: { commandLine: 'npm install', cwd: '.', timeoutMs: 1000 } },
+      mode: 'auto_review',
       sessionId: 'session_1',
       turnId: 'turn_1',
     })
     expect(decision.action).toBe('ask')
     if (decision.action === 'ask') {
-      expect(decision.request.risk).toBe('medium')
-      expect(decision.request.details?.commandRisk).toBe('test')
-      expect(String(decision.request.details?.commandSubject)).toContain('package:npm run')
+      expect(decision.request.risk).toBe('high')
+      expect(decision.request.details?.commandRisk).toBe('install')
+      expect(String(decision.request.details?.commandSubject)).toContain('package:npm install')
       expect(decision.request.details?.cwd).toBe('.')
     }
   })
@@ -107,11 +119,11 @@ describe('permission decisions', () => {
   it('matches workspace grants across reloads but isolates workspaces', async () => {
     root = mkdtempSync(join(tmpdir(), 'rille-policy-'))
     const context = { workspace: { kind: 'local' as const, path: root, label: 'tmp' }, activeFile: null, openFiles: [], diagnostics: [] }
-    addWorkspacePermissionGrant({ context, permission: 'command.run', pattern: 'run_command:npm run' })
+    addWorkspacePermissionGrant({ context, permission: 'command.run', pattern: 'run_command:npm install' })
 
     const allowed = await decidePermission({
-      call: { id: 'tool_1', name: 'run_command', input: { commandLine: 'npm run typecheck' } },
-      mode: 'ask',
+      call: { id: 'tool_1', name: 'run_command', input: { commandLine: 'npm install' } },
+      mode: 'default',
       sessionId: 'session_1',
       turnId: 'turn_1',
       context,
@@ -120,8 +132,8 @@ describe('permission decisions', () => {
     expect(allowed.policyDecision.grant?.scope).toBe('workspace')
 
     const other = await decidePermission({
-      call: { id: 'tool_1', name: 'run_command', input: { commandLine: 'npm run typecheck' } },
-      mode: 'ask',
+      call: { id: 'tool_1', name: 'run_command', input: { commandLine: 'npm install' } },
+      mode: 'default',
       sessionId: 'session_1',
       turnId: 'turn_1',
       context: { workspace: { kind: 'local', path: `${root}-other`, label: 'other' }, activeFile: null, openFiles: [], diagnostics: [] },
@@ -129,7 +141,7 @@ describe('permission decisions', () => {
     expect(other.action).toBe('ask')
   })
 
-  it('does not let project policy override destructive commands', async () => {
+  it('does not let project policy allow skip high-risk confirmation', async () => {
     root = mkdtempSync(join(tmpdir(), 'rille-policy-'))
     mkdirSync(join(root, '.rille'))
     writeFileSync(join(root, '.rille/policy.json'), JSON.stringify({
@@ -140,17 +152,17 @@ describe('permission decisions', () => {
 
     const decision = await decidePermission({
       call: { id: 'tool_1', name: 'run_command', input: { commandLine: 'rm -rf /' } },
-      mode: 'ask',
+      mode: 'default',
       sessionId: 'session_1',
       turnId: 'turn_1',
       context: { workspace: { kind: 'local', path: root, label: 'tmp' }, activeFile: null, openFiles: [], diagnostics: [] },
     })
 
-    expect(decision.action).toBe('deny')
+    expect(decision.action).toBe('ask')
     expect(decision.policyDecision.risk).toBe('critical')
   })
 
-  it('allows project policy verification commands in ask mode', async () => {
+  it('allows project policy verification commands in default mode', async () => {
     root = mkdtempSync(join(tmpdir(), 'rille-policy-'))
     mkdirSync(join(root, '.rille'))
     writeFileSync(join(root, '.rille/policy.json'), JSON.stringify({
@@ -159,7 +171,7 @@ describe('permission decisions', () => {
 
     const decision = await decidePermission({
       call: { id: 'tool_1', name: 'run_command', input: { commandLine: 'npm run typecheck' } },
-      mode: 'ask',
+      mode: 'default',
       sessionId: 'session_1',
       turnId: 'turn_1',
       context: { workspace: { kind: 'local', path: root, label: 'tmp' }, activeFile: null, openFiles: [], diagnostics: [] },
@@ -167,6 +179,35 @@ describe('permission decisions', () => {
 
     expect(decision.action).toBe('allow')
     expect(decision.policyDecision.matchedRule).toBe('verification:npm run typecheck')
+  })
+
+  it('full access bypasses command guardian and project policy denies', async () => {
+    root = mkdtempSync(join(tmpdir(), 'rille-policy-'))
+    mkdirSync(join(root, '.rille'))
+    writeFileSync(join(root, '.rille/policy.json'), JSON.stringify({
+      agent: {
+        permissions: [{ id: 'deny_push', permission: 'git.write', pattern: 'git push origin main', action: 'deny' }],
+      },
+    }), 'utf8')
+
+    const decision = await decidePermission({
+      call: { id: 'tool_1', name: 'run_command', input: { commandLine: 'git push origin main' } },
+      mode: 'full_access',
+      sessionId: 'session_1',
+      turnId: 'turn_1',
+      context: { workspace: { kind: 'local', path: root, label: 'tmp' }, activeFile: null, openFiles: [], diagnostics: [] },
+    })
+
+    expect(decision.action).toBe('allow')
+    expect(decision.policyDecision.risk).toBe('critical')
+  })
+
+  it('normalizes legacy permission modes', () => {
+    expect(normalizeAgentPermissionMode('ask')).toBe('default')
+    expect(normalizeAgentPermissionMode('plan')).toBe('default')
+    expect(normalizeAgentPermissionMode('accept_edits')).toBe('auto_review')
+    expect(normalizeAgentPermissionMode('auto')).toBe('auto_review')
+    expect(normalizeAgentPermissionMode('bypass')).toBe('full_access')
   })
 
   it('consumes once grants and keeps session grants', () => {

@@ -37,8 +37,8 @@
 | Harness 分层 | Anthropic Managed Agents、OpenAI Codex Harness | session、harness、sandbox/hand 分离；brain 不应耦合执行环境。 | 目标架构拆成 Session、Harness、Brain Gateway、Hands Runtime、Workspace Substrate。 |
 | Prompt cache | Claude Prompt Caching、Claude Code 拆解 | stable prefix 保持字节稳定；不要 mid-session 改工具集；compaction 要 cache-safe fork。 | Phase H 定义 stable/dynamic fragment，Phase L 实现 cache-safe compaction。 |
 | Tool design | Anthropic Writing Tools、Claude Seeing Like an Agent、OpenCode Tool 系统 | 少而强、面向 agent 任务设计、schema 驱动、输出高信号、错误可行动、渐进披露。 | Phase E 定义 tool metadata、artifactRef、组合工具、deferred tool/tool search。 |
-| 权限与安全 | Claude Auto Mode、Codex Guardian、DeepSeek ExecPolicy、OpenCode Permission | Ask 默认；高风险 fail closed；AI classifier/Guardian 可作为第二意见；BashArity 避免过宽匹配。 | Phase F 定义 policy engine、persistent grant、Guardian/classifier、command subject parsing。 |
-| Task/Plan | Claude Plan Mode、Claude Seeing Like an Agent | plan mode 不通过移除工具实现，而通过模式和工具约束实现；任务比 todo 更适合多 agent 协作。 | Phase G 定义 TaskContract、PlanItem、Plan Mode 和 user confirmation gate。 |
+| 权限与安全 | Claude Auto Mode、Codex Guardian、DeepSeek ExecPolicy、OpenCode Permission | 三模式权限；高风险命令确认；AI classifier/Guardian 可作为第二意见；BashArity 避免过宽匹配。 | Phase F 定义 policy engine、persistent grant、Guardian/classifier、command subject parsing。 |
+| Task/Plan | Claude Plan Mode、Claude Seeing Like an Agent | `/plan` 是只读规划提示，不再是独立权限枚举；任务比 todo 更适合多 agent 协作。 | Phase G 定义 TaskContract、PlanItem、planning shortcut 和 user confirmation gate。 |
 | Context | Codex Fragment、Claude CLAUDE.md、large codebase best practices | Context 是工作集，不是历史堆叠；项目规则、skills、LSP、MCP 要分层加载。 | Phase H 定义 ContextFragment、project rules、memory_ref、LSP/MCP context。 |
 | Reviewable edit | Claude agentic coding、OpenCode Snapshot、DeepSeek side-git | 用户应审查 diff；回滚不污染项目 git；快照和 checkpoint 是用户信任基础。 | Phase I 定义 diff proposal、dirty guard、rollback proposal、side-git/checkpoint。 |
 | Verification | Anthropic Harness Design、LangChain Harness Engineering | 完成必须有 evidence；generator 自验证不足；测试失败要进入 repair loop。 | Phase J 定义 Evidence、Coverage、before-stop gate、waiver。 |
@@ -54,7 +54,7 @@
 
 RilleCode V2 不直接复制任一项目：
 
-- 采用 Claude Code 的 prompt cache 和 Plan Mode 思路，但保留 RilleCode 当前的 TypeScript/Electron 技术栈和 IDE UI。
+- 采用 Claude Code 的 prompt cache 和 planning workflow 思路，但保留 RilleCode 当前的 TypeScript/Electron 技术栈和 IDE UI。
 - 采用 Codex 的 session/harness/sandbox 分离、Responses/streaming 模型和 Guardian 安全思想，但不要求 Phase A 就实现 OS 级 sandbox。
 - 采用 DeepSeek TUI 的 EventFrame、JobManager、side-git 和 BashArity 思路，但不把 RilleCode 改成 TUI-first。
 - 采用 OpenCode 的 part-based message、client/server control plane、schema tool 和 subagent permission 思路，但不引入 Effect-TS 作为必要前提。

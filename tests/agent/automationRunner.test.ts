@@ -56,7 +56,7 @@ describe('AutomationRunner', () => {
       goal: 'Run something',
       schedule: 'manual' as const,
       workspace: { path: '/tmp', label: 'test' },
-      permissionMode: 'plan' as const,
+      permissionMode: 'default' as const,
       contextFiles: ['/nonexistent/path/file.ts'],
       enabled: true,
       createdAt: Date.now(),

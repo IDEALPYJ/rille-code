@@ -20,7 +20,7 @@ Next phase:
 Phase K, Phase N
 
 Verification:
-Vitest 覆盖合同生成、更新归一化、PlanConfirmation replay/resolve、Plan Mode 禁写、PlanItem evidence gate。
+Vitest 覆盖合同生成、更新归一化、PlanConfirmation replay/resolve、三模式权限行为、PlanItem evidence gate。
 
 ## Capability: AgentLoop tool loop
 
@@ -121,7 +121,7 @@ Evidence files:
 `src/main/agent/permissions.ts`, `tests/agent/permissions.test.ts`, `src/main/agent/runtime.ts`
 
 Implemented details:
-已有 permission mode、`.rille/policy.json` loader、denial tracker、policy denial Observation、BashArity-aware command subject、Guardian/classifier、sandboxRequired policy。
+已有 default/auto_review/full_access permission mode、`.rille/policy.json` loader、denial tracker、policy denial Observation、BashArity-aware command subject、Guardian/classifier、sandboxRequired policy。
 
 Missing pieces:
 Guardian LLM 第二意见、完整安全审计 UI。
@@ -404,10 +404,10 @@ Target:
 Current status: 已实现
 
 Evidence files:
-`src/shared/agent/protocol.ts`, `src/main/agent/skillStore.ts`, `src/main/agent/mcpManager.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/tools.ts`, `src/main/agent/permissions.ts`, `src/main/agent/index.ts`, `src/main/agent/trace.ts`, `src/preload/index.ts`, `src/renderer/env.d.ts`, `tests/agent/skillStore.test.ts`, `tests/agent/mcpManager.test.ts`, `tests/agent/contextBuilder.test.ts`, `tests/agent/tools.test.ts`, `eval/cases/skill_activation_happy.json`, `eval/cases/plugin_mcp_discovery.json`, `eval/cases/mcp_plan_mode_denied.json`, `eval/cases/mcp_startup_failure_recorded.json`
+`src/shared/agent/protocol.ts`, `src/main/agent/skillStore.ts`, `src/main/agent/mcpManager.ts`, `src/main/agent/contextBuilder.ts`, `src/main/agent/tools.ts`, `src/main/agent/permissions.ts`, `src/main/agent/index.ts`, `src/main/agent/trace.ts`, `src/preload/index.ts`, `src/renderer/env.d.ts`, `tests/agent/skillStore.test.ts`, `tests/agent/mcpManager.test.ts`, `tests/agent/contextBuilder.test.ts`, `tests/agent/tools.test.ts`, `eval/cases/skill_activation_happy.json`, `eval/cases/plugin_mcp_discovery.json`, `eval/cases/mcp_default_side_effect_asks.json`, `eval/cases/mcp_startup_failure_recorded.json`
 
 Implemented details:
-已实现 SkillContract、PluginManifest、McpServerConfig、McpToolDescriptor、SkillActivation、PluginActivation、McpServerState；新增 skill/plugin/mcp_tool context fragment 和 skill/plugin/MCP trace/event；discovery 扫描项目 `.rille/skills`、`.rille/plugins` 与 userData `agent/skills`、`agent/plugins`，同 id 冲突保留更高优先级并记录；context builder 按关键词注入少量 active skills 和 MCP 摘要；`search_tools`/`search_skills` 可发现 deferred tools、skills 和 plugin MCP tools；`activate_skill` 写 activation trace，不执行外部代码；MCP manager 使用 stdio child_process 实现 initialize、tools/list、tools/call、start/stop/state/log artifact；MCP namespace 固定为 `mcp.<pluginId>.<serverId>.<toolName>`，未知 sideEffect 默认 external，Plan Mode 仅允许 read-only MCP tool。
+已实现 SkillContract、PluginManifest、McpServerConfig、McpToolDescriptor、SkillActivation、PluginActivation、McpServerState；新增 skill/plugin/mcp_tool context fragment 和 skill/plugin/MCP trace/event；discovery 扫描项目 `.rille/skills`、`.rille/plugins` 与 userData `agent/skills`、`agent/plugins`，同 id 冲突保留更高优先级并记录；context builder 按关键词注入少量 active skills 和 MCP 摘要；`search_tools`/`search_skills` 可发现 deferred tools、skills 和 plugin MCP tools；`activate_skill` 写 activation trace，不执行外部代码；MCP manager 使用 stdio child_process 实现 initialize、tools/list、tools/call、start/stop/state/log artifact；MCP namespace 固定为 `mcp.<pluginId>.<serverId>.<toolName>`，未知 sideEffect 默认 external，并按 default/auto_review/full_access 三模式进入确认或自动允许路径。
 
 Missing pieces:
 HTTP/SSE MCP transport、在线 marketplace、插件签名、沙箱化插件 runtime、任意用户 JS hook 和 Phase P SubagentRunner 不在 Phase O 范围。
@@ -416,7 +416,7 @@ Next phase:
 Phase P/Q
 
 Verification:
-Vitest 覆盖 skill/plugin discovery、冲突优先级、activation、context fragment、真实 stdio MCP lifecycle、MCP namespace/policy、tool discovery；eval cases 覆盖 skill activation、plugin MCP discovery、Plan Mode deny side-effect MCP、MCP startup failure。
+Vitest 覆盖 skill/plugin discovery、冲突优先级、activation、context fragment、真实 stdio MCP lifecycle、MCP namespace/policy、tool discovery；eval cases 覆盖 skill activation、plugin MCP discovery、默认权限确认 side-effect MCP、MCP startup failure。
 
 ## Capability: Subagents / Advisor / Parallel Work
 

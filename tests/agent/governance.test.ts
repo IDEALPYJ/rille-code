@@ -50,7 +50,7 @@ function session(workspacePath: string): AgentSession {
     createdAt: 1,
     updatedAt: 1,
     status: 'idle',
-    permissionMode: 'ask',
+    permissionMode: 'default',
   }
 }
 

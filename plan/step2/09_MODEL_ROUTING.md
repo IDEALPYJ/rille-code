@@ -16,7 +16,7 @@
 | R3. 实现 SSE event stream + request channel | 昂贵 | SSE 流解析 + request/response 通道映射，需与 HTTP transport 协调 |
 | R4. 增加 auth secret refs、header/env 注入和 redaction | 昂贵 | 安全敏感：密钥管理、redaction 边界、不能写入 event/trace |
 | R5. 增加 heartbeat、reconnect、degraded state 和日志 artifact | 便宜 | 状态机模式参照 Step1 processRegistry，日志走已有 ArtifactRef |
-| R6. 保持 namespace、sideEffect、Plan Mode policy 与 Step1 一致 | 便宜 | 复用已有 policy 校验，验证一致性 |
+| R6. 保持 namespace、sideEffect、三模式 permission policy 与 Step1 一致 | 便宜 | 复用已有 policy 校验，验证一致性 |
 | R7. 增加真实远程 MCP fixture 和 eval case | 便宜 | 参照已有 eval case 模板编写 fixture |
 
 ---

@@ -42,11 +42,13 @@
 
 ## 6. Permission Approval Flow
 
-- [ ] `ask` mode: command execution requests user approval
+- [ ] `默认权限`: edit apply and high-risk commands request user approval
+- [ ] `自动审查`: edit proposals apply automatically; high-risk commands request approval
+- [ ] `完全权限`: legal model-visible operations run without approval
 - [ ] Allow once works for single command
 - [ ] Allow session persists for the session duration
 - [ ] Deny properly blocks command execution
-- [ ] Plan mode restricts file writes
+- [ ] `/plan` remains a read-only planning prompt shortcut, not a separate permission mode
 
 ## 7. PTY Terminal Interaction
 

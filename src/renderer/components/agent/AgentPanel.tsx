@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUp,
+  Archive,
   Check,
   ChevronDown,
+  ListChecks,
+  MessageCircle,
+  PanelRight,
   Square,
 } from 'lucide-react'
 import type {
@@ -12,6 +16,7 @@ import type {
   AgentPermissionMode,
   AgentSession,
   AgentTurn,
+  AgentTurnMode,
   ApprovalRequest,
   EditProposal,
   MessagePart,
@@ -19,7 +24,7 @@ import type {
 } from '../../../shared/agent/protocol'
 import type { OpenFile } from '../../App'
 import type { EditorDiagnostic } from '../Editor'
-import { expandComposerDraft } from './workbenchState'
+import { expandComposerDraft, shouldShowSlashActions, slashActionAt, slashActions, type SlashActionId } from './workbenchState'
 import {
   fileNameFromPath,
   shortModelLabel,
@@ -35,16 +40,21 @@ interface Props {
   cursor: { line: number; column: number }
   session: AgentSession | null
   sessionId?: string | null
+  submitSessionId?: string | null
+  transientSessionId?: string | null
+  persistHistory?: boolean
+  allowSlashActions?: boolean
+  showPermissionMenu?: boolean
+  forceTurnMode?: AgentTurnMode
+  onOpenBtw?: () => void
   onSessionChange: (session: AgentSession | null) => void
   onFileApplied?: (filePath: string, content: string) => void
 }
 
 const permissionModes: Array<{ value: AgentPermissionMode; label: string; desc: string }> = [
-  { value: 'ask', label: 'Ask', desc: '写入前询问' },
-  { value: 'plan', label: 'Plan', desc: '仅读取与规划' },
-  { value: 'accept_edits', label: 'Auto-Apply', desc: '自动应用编辑，命令需确认' },
-  { value: 'auto', label: 'Auto', desc: '自动执行，命令需确认' },
-  { value: 'bypass', label: 'Bypass', desc: '完全自主，不询问' },
+  { value: 'default', label: '默认权限', desc: '编辑和高危命令需确认' },
+  { value: 'auto_review', label: '自动审查', desc: '自动应用编辑，高危命令确认' },
+  { value: 'full_access', label: '完全权限', desc: '自动允许所有合法操作' },
 ]
 
 function toContextSnapshot(props: Props): AgentContextSnapshot {
@@ -140,6 +150,45 @@ function ApprovalPopover({ request, onDecision }: {
 
 type EditProposalAction = 'apply_one' | 'apply_all' | 'reject'
 
+function SlashActionPopover({
+  selectedIndex,
+  onSelect,
+}: {
+  selectedIndex: number
+  onSelect: (id: SlashActionId) => void
+}) {
+  const icons: Record<SlashActionId, typeof MessageCircle> = {
+    chat: MessageCircle,
+    plan: ListChecks,
+    compact: Archive,
+    btw: PanelRight,
+  }
+  return (
+    <div className="approval-popover slash-action-popover enter">
+      <div className="approval-popover-card slash-action-card">
+        {slashActions.map((action, index) => {
+          const Icon = icons[action.id]
+          return (
+            <button
+              type="button"
+              key={action.id}
+              className={index === selectedIndex ? 'selected' : ''}
+              onMouseDown={event => event.preventDefault()}
+              onClick={() => onSelect(action.id)}
+            >
+              <Icon size={15} />
+              <span className="slash-action-copy">
+                <span>{action.label}</span>
+                <small>{action.description}</small>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function EditProposalPopover({
   proposals,
   onDecision,
@@ -209,36 +258,64 @@ export function AgentPanel(props: Props) {
   const [isTraceOpen, setIsTraceOpen] = useState(false)
   const [modelStore, setModelStore] = useState<AgentModelStoreSnapshot | null>(null)
   const [draft, setDraft] = useState('')
+  const [composerMode, setComposerMode] = useState<Extract<AgentTurnMode, 'chat' | 'plan'> | null>(null)
+  const [slashIndex, setSlashIndex] = useState(0)
   const [activeTurn, setActiveTurn] = useState<AgentTurn | null>(null)
   const [turnRunMeta, setTurnRunMeta] = useState<TurnRunMeta | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openComposeMenu, setOpenComposeMenu] = useState<'mode' | 'model' | null>(null)
   const threadRef = useRef<HTMLDivElement | null>(null)
   const composeRef = useRef<HTMLFormElement | null>(null)
+  const submittedAtRef = useRef<number | null>(null)
   const session = props.session
+  const displaySessionId = props.sessionId ?? session?.id ?? null
+  const submitSessionId = props.submitSessionId || session?.id || null
+  const persistHistory = props.persistHistory !== false
+  const allowSlashActions = props.allowSlashActions !== false && persistHistory
+  const showPermissionMenu = props.showPermissionMenu !== false && persistHistory
 
   useEffect(() => {
     const unsubscribe = window.rille.onAgentEvent((event: AgentEvent) => {
       if (event.type === 'session.created' || event.type === 'session.updated') {
-        if (props.sessionId && event.session.id === props.sessionId) props.onSessionChange(event.session)
+        if (displaySessionId && event.session.id === displaySessionId) props.onSessionChange(event.session)
         return
       }
-      if (!props.sessionId) return
-      if ('sessionId' in event && event.sessionId !== props.sessionId) return
+      if (!displaySessionId) return
+      if ('sessionId' in event && event.sessionId !== displaySessionId) return
       setAgentEvents(prev => [...prev.slice(-120), event])
       if (event.type === 'message.part.created') {
-        setParts(prev => prev.some(part => part.id === event.part.id)
-          ? prev.map(part => part.id === event.part.id ? event.part : part)
+        setParts(prev => prev.some(part =>
+          part.id === event.part.id
+          || (part.type === 'plan_question' && event.part.type === 'plan_question' && part.question.id === event.part.question.id)
+          || (part.type === 'plan_draft' && event.part.type === 'plan_draft' && part.draft.id === event.part.draft.id))
+          ? prev.map(part => (
+            part.id === event.part.id
+            || (part.type === 'plan_question' && event.part.type === 'plan_question' && part.question.id === event.part.question.id)
+            || (part.type === 'plan_draft' && event.part.type === 'plan_draft' && part.draft.id === event.part.draft.id)
+              ? event.part
+              : part
+          ))
           : [...prev, event.part])
       } else if (event.type === 'message.part.updated') {
-        setParts(prev => prev.some(part => part.id === event.part.id)
-          ? prev.map(part => part.id === event.part.id ? event.part : part)
+        setParts(prev => prev.some(part =>
+          part.id === event.part.id
+          || (part.type === 'plan_question' && event.part.type === 'plan_question' && part.question.id === event.part.question.id)
+          || (part.type === 'plan_draft' && event.part.type === 'plan_draft' && part.draft.id === event.part.draft.id))
+          ? prev.map(part => (
+            part.id === event.part.id
+            || (part.type === 'plan_question' && event.part.type === 'plan_question' && part.question.id === event.part.question.id)
+            || (part.type === 'plan_draft' && event.part.type === 'plan_draft' && part.draft.id === event.part.draft.id)
+              ? event.part
+              : part
+          ))
           : [...prev, event.part])
       } else if (event.type === 'turn.started') {
+        const submittedAt = submittedAtRef.current
+        submittedAtRef.current = null
         setActiveTurn(event.turn)
         setTurnRunMeta({
           turnId: event.turn.id,
-          startedAt: event.turn.createdAt,
+          startedAt: submittedAt ?? event.turn.createdAt,
           status: 'running',
         })
       } else if (event.type === 'turn.completed' || event.type === 'turn.failed') {
@@ -267,7 +344,7 @@ export function AgentPanel(props: Props) {
       }
     })
     return unsubscribe
-  }, [props.onFileApplied, props.onSessionChange, props.sessionId])
+  }, [displaySessionId, props.onFileApplied, props.onSessionChange])
 
   useEffect(() => {
     let cancelled = false
@@ -280,10 +357,15 @@ export function AgentPanel(props: Props) {
     setActiveTurn(null)
     setTurnRunMeta(null)
     setError(null)
-    if (!props.sessionId) return () => {
+    setDraft('')
+    setComposerMode(null)
+    if (!displaySessionId) return () => {
       cancelled = true
     }
-    window.rille.agentResumeSession(props.sessionId)
+    if (!persistHistory) return () => {
+      cancelled = true
+    }
+    window.rille.agentResumeSession(displaySessionId)
       .then(resumed => {
         if (!cancelled) props.onSessionChange(resumed)
       })
@@ -293,7 +375,7 @@ export function AgentPanel(props: Props) {
     return () => {
       cancelled = true
     }
-  }, [props.onSessionChange, props.sessionId])
+  }, [displaySessionId, persistHistory, props.onSessionChange])
 
   const refreshModels = useCallback(async () => {
     setModelStore(await window.rille.agentListModelProfiles())
@@ -320,30 +402,68 @@ export function AgentPanel(props: Props) {
 
 
   const pendingProposals = useMemo(() => Object.values(proposals).filter(proposal => proposal.state === 'pending'), [proposals])
-  const selectedMode = session?.permissionMode ?? 'ask'
+  const selectedMode = session?.permissionMode ?? 'default'
   const selectedModeLabel = permissionModes.find(mode => mode.value === selectedMode)?.label ?? selectedMode
   const modelProfiles = modelStore?.profiles ?? []
   const activeModelProfile = modelProfiles.find(profile => profile.id === modelStore?.activeProfileId) ?? modelProfiles[0]
   const activeModelLabel = activeModelProfile
     ? shortModelLabel(activeModelProfile.model)
     : '模型'
+  const isRunning = session?.status === 'running' || Boolean(activeTurn)
+  const showSlashMenu = allowSlashActions && !composerMode && shouldShowSlashActions(draft)
+
+  const runCompact = useCallback(async () => {
+    if (!session) return
+    try {
+      setDraft('')
+      setError(null)
+      await window.rille.agentCompactContext(session.id, activeTurn?.id, 'manual slash action')
+    } catch (compactError) {
+      setError(compactError instanceof Error ? compactError.message : '上下文压缩失败。')
+    }
+  }, [activeTurn, session])
+
+  const selectSlashAction = useCallback((id: SlashActionId) => {
+    if (id === 'chat') {
+      setComposerMode('chat')
+      setDraft('')
+      return
+    }
+    if (id === 'plan') {
+      setComposerMode('plan')
+      setDraft('')
+      return
+    }
+    if (id === 'compact') {
+      void runCompact()
+      return
+    }
+    props.onOpenBtw?.()
+    setDraft('')
+  }, [props.onOpenBtw, runCompact])
 
   const submit = useCallback(async () => {
     const text = expandComposerDraft(draft.trim(), { activeFile: props.activeFile, cursor: props.cursor })
-    if (!text || !session || session.status === 'running') return
+    if (!text || !session || isRunning) return
     try {
       const latestConfig = await window.rille.agentGetConfig()
       if (!latestConfig.apiKeyConfigured) {
         setError('请先点击顶部设置配置 Agent 模型和 API Key。Ollama 可不填 API Key。')
         return
       }
+      const mode: AgentTurnMode = props.forceTurnMode ?? composerMode ?? 'agent'
+      if (!submitSessionId) return
+      if (submitSessionId !== session.id) await window.rille.agentResumeSession(submitSessionId)
+      submittedAtRef.current = Date.now()
       setDraft('')
+      setComposerMode(null)
       setError(null)
-      await window.rille.agentSubmitTurn(session.id, text, toContextSnapshot(props))
+      await window.rille.agentSubmitTurn(submitSessionId, text, toContextSnapshot(props), { mode, transientSessionId: props.transientSessionId ?? undefined })
     } catch (submitError) {
+      submittedAtRef.current = null
       setError(submitError instanceof Error ? submitError.message : '提交失败。')
     }
-  }, [draft, props, session])
+  }, [composerMode, draft, isRunning, props, session, submitSessionId])
 
   const interrupt = useCallback(async () => {
     if (!session || !activeTurn) return
@@ -429,7 +549,7 @@ export function AgentPanel(props: Props) {
         {parts.length === 0 ? (
           <div className="agent-empty-state" aria-hidden="true" />
         ) : (
-          <ChatTurnView parts={parts} activeTurn={activeTurn} traceEvents={traceEvents} runMeta={turnRunMeta} />
+          <ChatTurnView parts={parts} activeTurn={activeTurn} traceEvents={traceEvents} runMeta={turnRunMeta} sessionId={session?.id} context={toContextSnapshot(props)} />
         )}
         {error && <div className="agent-error">{error}</div>}
       </div>
@@ -439,6 +559,10 @@ export function AgentPanel(props: Props) {
         ref={composeRef}
         onSubmit={(event) => {
           event.preventDefault()
+          if (showSlashMenu) {
+            selectSlashAction(slashActions[slashIndex]?.id ?? 'chat')
+            return
+          }
           void submit()
         }}
       >
@@ -448,26 +572,55 @@ export function AgentPanel(props: Props) {
         {pendingProposals.length > 0 && Object.keys(approvals).length === 0 && (
           <EditProposalPopover proposals={pendingProposals} onDecision={respondProposal} />
         )}
-        <textarea
-          value={draft}
-          rows={2}
-          placeholder=""
-          onChange={event => setDraft(event.target.value)}
-          onKeyDown={event => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault()
-              void submit()
-            }
-          }}
-        />
+        {showSlashMenu && (
+          <SlashActionPopover
+            selectedIndex={slashIndex}
+            onSelect={selectSlashAction}
+          />
+        )}
+        <div className="agent-compose-input-row">
+          {composerMode && (
+            <span className={'agent-compose-chip ' + composerMode} aria-label={composerMode === 'plan' ? '计划模式' : '聊天模式'}>
+              {composerMode === 'plan' ? <ListChecks size={14} /> : <MessageCircle size={14} />}
+              {composerMode === 'plan' ? '计划' : '聊天'}
+            </span>
+          )}
+          <textarea
+            value={draft}
+            rows={2}
+            placeholder=""
+            onChange={event => setDraft(event.target.value)}
+            onKeyDown={event => {
+              if (showSlashMenu && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                event.preventDefault()
+                setSlashIndex(index => slashActionAt(index, event.key === 'ArrowDown' ? 1 : -1))
+                return
+              }
+              if (showSlashMenu && event.key === 'Enter') {
+                event.preventDefault()
+                selectSlashAction(slashActions[slashIndex]?.id ?? 'chat')
+                return
+              }
+              if (event.key === 'Backspace' && composerMode && !draft && event.currentTarget.selectionStart === 0) {
+                event.preventDefault()
+                setComposerMode(null)
+                return
+              }
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                void submit()
+              }
+            }}
+          />
+        </div>
         <div className="agent-compose-actions">
-          <div className="agent-compose-menu-wrap mode-menu">
+          {showPermissionMenu && <div className="agent-compose-menu-wrap mode-menu">
             <button
               type="button"
               className="agent-compose-menu-trigger"
               aria-label="Agent 模式"
               aria-expanded={openComposeMenu === 'mode'}
-              disabled={!session || session.status === 'running'}
+              disabled={!session || isRunning}
               onClick={() => setOpenComposeMenu(openComposeMenu === 'mode' ? null : 'mode')}
             >
               <span>{selectedModeLabel}</span>
@@ -497,7 +650,7 @@ export function AgentPanel(props: Props) {
                 ))}
               </div>
             )}
-          </div>
+          </div>}
           <div className="agent-compose-menu-wrap model-menu">
             <button
               type="button"
@@ -537,10 +690,10 @@ export function AgentPanel(props: Props) {
               </div>
             )}
           </div>
-          {session?.status === 'running' && activeTurn ? (
+          {persistHistory && session?.status === 'running' && activeTurn ? (
             <button type="button" title="停止" aria-label="停止" onClick={() => void interrupt()}><Square size={14} /></button>
           ) : (
-            <button type="submit" title="发送" aria-label="发送" disabled={!draft.trim() || !session}><ArrowUp size={16} /></button>
+            <button type="submit" title="发送" aria-label="发送" disabled={!draft.trim() || !session || isRunning}><ArrowUp size={16} /></button>
           )}
         </div>
       </form>

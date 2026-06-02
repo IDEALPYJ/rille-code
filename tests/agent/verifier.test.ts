@@ -42,7 +42,7 @@ describe('discoverVerificationCommands', () => {
       createdAt: 1,
       updatedAt: 1,
       status: 'idle',
-      permissionMode: 'ask',
+      permissionMode: 'default',
     }
     const turn: AgentTurn = { id: 'turn_verify', sessionId: session.id, text: 'verify', createdAt: 1, status: 'running' }
     const { result, evidence } = await new VerifierRunner(session, turn).runFirstAvailableWithEvidence()

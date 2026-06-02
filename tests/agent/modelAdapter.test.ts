@@ -48,7 +48,7 @@ describe('parseTextJsonModelAction', () => {
       createdAt: 1,
       updatedAt: 1,
       status: 'idle',
-      permissionMode: 'ask',
+      permissionMode: 'default',
     }
     const contract: TaskContract = {
       id: 'contract_1',

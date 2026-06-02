@@ -8,7 +8,7 @@
 | 会话列表 (group by project, archive 分组) | Guaranteed | |
 | 工具执行 (read_file, write_file via proposal, search, git_status, git_diff) | Guaranteed | shell:true 用于需要 .cmd 的命令 |
 | Workspace 文件 I/O (read/write with path normalization) | Guaranteed | 反斜杠自动归一化为正斜杠 |
-| 权限引擎 (allow/ask/deny + grant store + guardian) | Guaranteed | |
+| 权限引擎 (default/auto_review/full_access + grant store + guardian) | Guaranteed | 默认权限确认编辑应用和高危命令；自动审查自动应用编辑；完全权限自动允许合法操作 |
 | PTY 终端 (cmd.exe, PowerShell, Git Bash, WSL) | Guaranteed | node-pty 需要在 Windows 上编译原生模块 |
 | Edit proposals + Monaco DiffEditor | Guaranteed | |
 | Checkpoint 创建与恢复 | Guaranteed | |

@@ -4,6 +4,7 @@ import {
   aggregateUsage,
   buildProcessGroups,
   buildRunSteps,
+  elapsedMsForRun,
   formatUsageSummary,
   latestRunningOperation,
   summarizeOperations,
@@ -41,6 +42,12 @@ function toolPart(input: {
 }
 
 describe('AgentTurnView process helpers', () => {
+  it('calculates elapsed time from submitted turn metadata and stops after completion', () => {
+    expect(elapsedMsForRun({ turnId: 'turn_1', startedAt: 1000, status: 'running' }, 3600)).toBe(2600)
+    expect(elapsedMsForRun({ turnId: 'turn_1', startedAt: 1000, completedAt: 4200, status: 'completed' }, 9000)).toBe(3200)
+    expect(elapsedMsForRun(null, 9000)).toBe(0)
+  })
+
   it('summarizes completed operations by kind', () => {
     const parts = [
       toolPart({ id: 'read_1', name: 'read_file' }),

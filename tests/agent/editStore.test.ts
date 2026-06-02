@@ -18,7 +18,7 @@ function fixtures() {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     status: 'idle',
-    permissionMode: 'ask',
+    permissionMode: 'default',
   }
   const turn: AgentTurn = { id: 'turn_test', sessionId: session.id, text: 'test', createdAt: Date.now(), status: 'completed' }
   return { session, turn, filePath: join(root, 'src/file.ts') }

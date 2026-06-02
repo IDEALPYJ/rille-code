@@ -73,7 +73,7 @@ export function AutomationList({ collapsed: externalCollapsed, onToggleCollapse 
         goal: formGoal || '执行任务',
         schedule: formSchedule === 'cron' ? { cron: formCron } : 'manual',
         workspace: { path: '', label: '' } as AutomationSpec['workspace'],
-        permissionMode: 'plan',
+        permissionMode: 'default',
         enabled: formEnabled,
       })
       setFormName(''); setFormGoal(''); setFormSchedule('manual'); setFormCron('0 9 * * *'); setFormEnabled(true)

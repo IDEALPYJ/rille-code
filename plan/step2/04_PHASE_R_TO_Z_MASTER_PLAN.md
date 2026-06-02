@@ -25,7 +25,7 @@ Checklist：
 - [x] R3. 实现 SSE event stream + request channel。
 - [x] R4. 增加 auth secret refs、header/env 注入和 redaction。
 - [x] R5. 增加 heartbeat、reconnect、degraded state 和日志 artifact。
-- [x] R6. 保持 namespace、sideEffect、Plan Mode policy 与 Step1 一致。
+- [x] R6. 保持 namespace、sideEffect、三模式 permission policy 与 Step1 一致。
 - [x] R7. 增加真实远程 MCP fixture 和 eval case。
 
 ## Phase S: Windows Compatibility + Sandbox

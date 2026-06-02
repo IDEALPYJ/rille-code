@@ -10,7 +10,7 @@
 | D | Model Gateway + Streaming Protocol | 已实现 |
 | E | Tool Runtime + Tool Design | 已实现 |
 | F | Policy + Approval + Security | 已实现 |
-| G | Task Contract + Plan Mode | 已实现 |
+| G | Task Contract + Plan Confirmation | 已实现 |
 | H | Context Engine + Prompt Cache | 已实现 |
 | I | Reviewable Editing + Rollback | 已实现 |
 | J | Verification + Evidence Gate | 已实现 |
@@ -150,7 +150,7 @@ Checklist：
 
 设计内容：
 
-- Ask 默认。
+- 三种权限模式：默认权限、自动审查、完全权限。
 - classify command subject，支持 BashArity。
 - `.rille/policy.json` project rules。
 - deny-and-continue 和 alternatives。
@@ -173,9 +173,9 @@ Checklist：
 - [x] F10. BashArity-aware policy subject。
 - [x] F11. sandbox policy。
 
-当前状态：已实现。Policy 层支持 once/session/workspace grant，workspace grant 按 workspace key 持久化并带 expiresAt/revoked/audit；deterministic Guardian 识别 secret exposure、network exfiltration、destructive shell、credential path、publish/deploy；BashArity-aware subject 识别 chain、pipe、redirect、subshell、env assignment、primary command 和 arity；高风险可隔离命令通过 `sandboxRequired` 进入 ask/fail-closed 路径。
+当前状态：已实现。Policy 层支持 default、auto_review、full_access 三种权限模式，以及 once/session/workspace grant；workspace grant 按 workspace key 持久化并带 expiresAt/revoked/audit；deterministic Guardian 识别 secret exposure、network exfiltration、destructive shell、credential path、publish/deploy；BashArity-aware subject 识别 chain、pipe、redirect、subshell、env assignment、primary command 和 arity；默认权限和自动审查下高风险命令进入确认卡片，完全权限在基础校验通过后自动允许。
 
-## Phase G: Task Contract + Plan Mode
+## Phase G: Task Contract + Plan Confirmation
 
 目标：把用户请求转成可验证任务合同和可更新执行计划。
 
@@ -183,7 +183,7 @@ Checklist：
 
 - goal、scope、non-goals、constraints、acceptance criteria、risk、assumption。
 - structured plan item。
-- Plan Mode：只探索、只读、输出计划，退出后才能执行。
+- `/plan` 快捷提示：只读探索并输出计划；执行仍由当前三种权限模式约束。
 - user confirmation gate for ambiguous/high-risk tasks。
 - PlanItem 与 Evidence 绑定。
 
@@ -194,12 +194,12 @@ Checklist：
 - [x] G3. update_plan tool。
 - [x] G4. update_task_contract tool。
 - [x] G5. Task/Plan UI。
-- [x] G6. explicit Plan Mode。
+- [x] G6. `/plan` planning shortcut。
 - [x] G7. user confirmation gate。
 - [x] G8. plan continuity across turns。
 - [x] G9. PlanItem evidence binding gate。
 
-当前状态：已实现。`permissionMode: plan` 成为显式 Plan Mode；runtime 只允许只读探索、tool discovery 和计划更新，禁止写入、命令、apply edit 和 sandbox 操作；PlanConfirmation 事件和 UI 确认卡已落地；replay 会重建最近 TaskContract、PlanItems、PlanConfirmation、Evidence/Coverage；已确认计划可跨 turn 复用；completed PlanItem 必须绑定 evidence，否则 rule review 阻塞最终完成。
+当前状态：已实现。显式 `permissionMode: plan` 已移除，权限收敛为 default、auto_review、full_access；`/plan` 作为普通只读规划提示词保留。PlanConfirmation 事件和 UI 确认卡仍可用于用户确认计划；replay 会重建最近 TaskContract、PlanItems、PlanConfirmation、Evidence/Coverage；已确认计划可跨 turn 复用；completed PlanItem 必须绑定 evidence，否则 rule review 阻塞最终完成。
 
 ## Phase H: Context Engine + Prompt Cache
 
@@ -426,7 +426,7 @@ Checklist：
 - [x] O6. MCP tool namespace and policy。
 - [x] O7. skill/plugin eval cases。
 
-当前状态：已实现。已新增 SkillContract/PluginManifest/MCP protocol、项目与 userData discovery store、keyword/manual activation trace、plugin manifest 扫描、真实 stdio MCP server lifecycle、MCP JSON-RPC initialize/tools/list/tools/call、`mcp.<pluginId>.<serverId>.<toolName>` namespace、Plan Mode/policy sideEffect 约束、`search_skills`/`activate_skill` deferred tools、extension IPC，以及 Phase O deterministic eval cases。
+当前状态：已实现。已新增 SkillContract/PluginManifest/MCP protocol、项目与 userData discovery store、keyword/manual activation trace、plugin manifest 扫描、真实 stdio MCP server lifecycle、MCP JSON-RPC initialize/tools/list/tools/call、`mcp.<pluginId>.<serverId>.<toolName>` namespace、三模式 permission/policy sideEffect 约束、`search_skills`/`activate_skill` deferred tools、extension IPC，以及 Phase O deterministic eval cases。
 
 ## Phase P: Subagents + Advisor + Parallel Work
 

@@ -1,5 +1,6 @@
 import type { WebContents } from 'electron'
-import type { AgentConfigSnapshot, AgentConfigUpdate, AgentEvent, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, AutomationRun, AutomationSpec, CheckpointRef, CompactionResult, ContextSourceSnapshot, EditProposal, ExecutionSandbox, ExtensionDiscoverySnapshot, GovernanceAuditReport, McpServerState, ModelUpgradeReview, PlanConfirmation, PluginManifest, ReviewQueueItem, RuntimeProcessSummary, RuntimeStateArtifact, SkillContract, SubagentRun } from '../../shared/agent/protocol'
+import type { AgentConfigSnapshot, AgentConfigUpdate, AgentEvent, AgentIpcResult, AgentModelProfile, AgentModelProfileUpdate, AgentModelStoreSnapshot, AgentOp, AgentSession, AgentSessionSummary, AgentTurn, ArtifactPayload, ArtifactRef, AutomationRun, AutomationSpec, CheckpointRef, CompactionResult, ContextSourceSnapshot, EditProposal, ExecutionSandbox, ExtensionDiscoverySnapshot, GovernanceAuditReport, McpServerState, ModelUpgradeReview, PlanConfirmation, PlanDraft, PluginManifest, ReviewQueueItem, RuntimeProcessSummary, RuntimeStateArtifact, SkillContract, SubagentRun } from '../../shared/agent/protocol'
+import { normalizeAgentPermissionMode } from '../../shared/agent/permissionModes'
 import { deleteAgentModelProfile, listAgentModelProfiles, readAgentConfigSnapshot, saveAgentConfig, saveAgentModelProfile, selectAgentModelProfile } from './config'
 import { testAgentProvider } from './provider'
 import { AgentThread } from './thread'
@@ -39,7 +40,7 @@ function requireThread(sessionId: string): AgentThread {
 
 export function createAgentSession(sender: WebContents, op: Extract<AgentOp, { type: 'session.create' }>): AgentIpcResult<AgentSession> {
   try {
-    const thread = new AgentThread(sender, op.workspace, op.permissionMode)
+    const thread = new AgentThread(sender, op.workspace, normalizeAgentPermissionMode(op.permissionMode))
     threads.set(thread.id, thread)
     thread.emitCreated()
     return ok(thread.view)
@@ -55,8 +56,12 @@ export async function resumeAgentSession(sender: WebContents, op: Extract<AgentO
       const meta = readSessionMeta(op.sessionId)
       if (!meta) throw new Error('Agent session does not exist.')
       if (meta.status === 'archived') throw new Error('归档会话不能恢复，请先取消归档。')
-      const restored: AgentSession = { ...meta, status: meta.status === 'running' || meta.status === 'waiting_approval' ? 'idle' : meta.status }
-      if (restored.status !== meta.status) saveSessionMeta(restored)
+      const restored: AgentSession = {
+        ...meta,
+        status: meta.status === 'running' || meta.status === 'waiting_approval' ? 'idle' : meta.status,
+        permissionMode: normalizeAgentPermissionMode(meta.permissionMode),
+      }
+      if (restored.status !== meta.status || restored.permissionMode !== meta.permissionMode) saveSessionMeta(restored)
       thread = new AgentThread(sender, restored.workspace, restored.permissionMode, restored)
       threads.set(thread.id, thread)
     }
@@ -133,7 +138,7 @@ export function unarchiveAgentSession(op: Extract<AgentOp, { type: 'session.unar
 
 export async function submitAgentTurn(op: Extract<AgentOp, { type: 'turn.submit' }>): Promise<AgentIpcResult<AgentTurn>> {
   try {
-    return ok(await requireThread(op.sessionId).submitTurn(op.text, op.context))
+    return ok(await requireThread(op.sessionId).submitTurn(op.text, op.context, { mode: op.mode, transientSessionId: op.transientSessionId }))
   } catch (error) {
     return fail(error)
   }
@@ -141,9 +146,11 @@ export async function submitAgentTurn(op: Extract<AgentOp, { type: 'turn.submit'
 
 type AgentDispatchValue =
   | AgentSession
+  | AgentTurn
   | EditProposal
   | EditProposal[]
   | PlanConfirmation
+  | PlanDraft
   | boolean
   | null
   | ArtifactPayload
@@ -222,6 +229,12 @@ export async function dispatchAgentOp(op: AgentOp, sender?: WebContents | null):
     }
     if (op.type === 'context.compact') {
       return ok(await requireThread(op.sessionId).compactContext(op.turnId, op.reason))
+    }
+    if (op.type === 'plan.answerQuestion') {
+      return ok(await requireThread(op.sessionId).answerPlanQuestion(op.questionId, op.answer))
+    }
+    if (op.type === 'plan.resolveDraft') {
+      return ok(await requireThread(op.sessionId).resolvePlanDraft(op.draftId, op.action, op.feedback, op.context))
     }
     if (op.type === 'edit.apply') {
       return ok(await requireThread(op.sessionId).applyEdit(op.proposalId, op.context))

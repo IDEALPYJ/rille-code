@@ -1,4 +1,5 @@
-export type AgentPermissionMode = 'plan' | 'ask' | 'accept_edits' | 'auto' | 'bypass'
+export type AgentPermissionMode = 'default' | 'auto_review' | 'full_access'
+export type AgentTurnMode = 'agent' | 'chat' | 'plan'
 
 export type AgentProviderId =
   | 'openai'
@@ -1411,6 +1412,36 @@ export interface EditProposalSet {
   createdAt: number
 }
 
+export interface PlanQuestionOption {
+  id: string
+  label: string
+  description: string
+}
+
+export interface PlanQuestion {
+  id: string
+  sessionId: string
+  turnId: string
+  question: string
+  options: PlanQuestionOption[]
+  recommendedOptionId?: string
+  answered?: string
+  createdAt: number
+  answeredAt?: number
+}
+
+export interface PlanDraft {
+  id: string
+  sessionId: string
+  turnId: string
+  markdown: string
+  status: 'pending' | 'executing' | 'rejected' | 'superseded'
+  revision: number
+  feedbackHistory: string[]
+  createdAt: number
+  resolvedAt?: number
+}
+
 export type MessagePart =
   | { id: string; messageId: string; type: 'text'; role: 'user' | 'assistant' | 'system'; text: string; createdAt: number }
   | { id: string; messageId: string; type: 'reasoning'; text: string; redacted?: boolean; createdAt: number }
@@ -1418,6 +1449,8 @@ export type MessagePart =
   | { id: string; messageId: string; type: 'task_contract'; contract: TaskContract; createdAt: number }
   | { id: string; messageId: string; type: 'plan'; items: AgentPlanItem[]; reason?: string; createdAt: number }
   | { id: string; messageId: string; type: 'plan_confirmation'; confirmation: PlanConfirmation; createdAt: number }
+  | { id: string; messageId: string; type: 'plan_question'; question: PlanQuestion; createdAt: number }
+  | { id: string; messageId: string; type: 'plan_draft'; draft: PlanDraft; createdAt: number }
   | { id: string; messageId: string; type: 'tool'; call: ToolCallView; state: ToolState; output?: ToolResultView; createdAt: number }
   | { id: string; messageId: string; type: 'file'; filePath: string; range?: AgentTextRange; label: string; createdAt: number }
   | { id: string; messageId: string; type: 'diff'; proposalId: string; title: string; state: EditProposal['state']; createdAt: number }
@@ -1500,10 +1533,12 @@ export type AgentOp =
   | { type: 'sandbox.dispose'; sessionId: string; sandboxId: string }
   | { type: 'sandbox.diffAsProposals'; sessionId: string; sandboxId: string; turnId?: string }
   | { type: 'runtime.state.capture'; sessionId: string; turnId?: string; workspace?: AgentWorkspaceLocation | null }
-  | { type: 'turn.submit'; sessionId: string; text: string; context: AgentContextSnapshot }
+  | { type: 'turn.submit'; sessionId: string; text: string; context: AgentContextSnapshot; mode?: AgentTurnMode; transientSessionId?: string }
   | { type: 'turn.interrupt'; sessionId: string; turnId: string }
   | { type: 'plan.confirm'; sessionId: string; confirmationId: string }
   | { type: 'plan.reject'; sessionId: string; confirmationId: string; reason?: string }
+  | { type: 'plan.answerQuestion'; sessionId: string; questionId: string; answer: string }
+  | { type: 'plan.resolveDraft'; sessionId: string; draftId: string; action: 'execute' | 'reject' | 'revise'; feedback?: string; context?: AgentContextSnapshot }
   | { type: 'evidence.user.add'; sessionId: string; turnId?: string; criterionId?: string; status?: VerificationStatus; summary: string; output?: string; artifactId?: string }
   | { type: 'evidence.browser.add'; sessionId: string; turnId?: string; criterionId?: string; url: string; title?: string; status?: VerificationStatus; summary: string; screenshotArtifactId?: string; domExcerptArtifactId?: string }
   | { type: 'evidence.waive'; sessionId: string; turnId?: string; criterionId?: string; evidenceIds?: string[]; reason: string; scope?: Waiver['scope']; expiresAt?: number }
@@ -1562,6 +1597,8 @@ export type AgentEvent =
   | { type: 'plan.updated'; sessionId: string; turnId: string; items: AgentPlanItem[]; reason?: string; source: StructuredPlanSource; createdAt: number }
   | { type: 'plan.confirmation.requested'; sessionId: string; turnId: string; confirmation: PlanConfirmation }
   | { type: 'plan.confirmation.resolved'; sessionId: string; turnId: string; confirmation: PlanConfirmation }
+  | { type: 'plan.question.answered'; sessionId: string; turnId: string; question: PlanQuestion }
+  | { type: 'plan.draft.resolved'; sessionId: string; turnId: string; draft: PlanDraft }
   | { type: 'context.built'; sessionId: string; turnId: string; summary: ContextBuiltSummary; trace: ContextTrace; createdAt: number }
   | { type: 'message.part.created'; sessionId: string; turnId?: string; part: MessagePart }
   | { type: 'message.part.updated'; sessionId: string; turnId?: string; part: MessagePart }
