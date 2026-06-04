@@ -4,9 +4,11 @@ import {
   aggregateUsage,
   buildProcessGroups,
   buildRunSteps,
+  collectChatItems,
   elapsedMsForRun,
   formatUsageSummary,
   latestRunningOperation,
+  shouldShowRunHeader,
   summarizeOperations,
   toolIconKind,
 } from '../../src/renderer/components/agent/AgentTurnView'
@@ -168,6 +170,50 @@ describe('AgentTurnView process helpers', () => {
     expect(usage.outputTokens).toBe(500)
     expect(usage.cachedInputTokens).toBe(250)
     expect(formatUsageSummary(usage)).toBe('Input 1.0k · Output 500 · Cache 250 · $0.0123')
+  })
+
+  it('keeps the run header condition boolean so React does not render a stray zero', () => {
+    expect(shouldShowRunHeader({
+      runStepsLength: 0,
+      activeTurn: null,
+      runMeta: null,
+      usage: { inputTokens: 0, outputTokens: 0 },
+    })).toBe(false)
+    expect(shouldShowRunHeader({
+      runStepsLength: 0,
+      activeTurn: null,
+      runMeta: null,
+      usage: { inputTokens: 12, outputTokens: 0 },
+    })).toBe(true)
+  })
+
+  it('keeps plan draft and confirmation parts in final chat items', () => {
+    const parts: MessagePart[] = [
+      { id: 'user_1', messageId: 'message_user', type: 'text', role: 'user', text: '请规划', createdAt: 1 },
+      { id: 'draft_1', messageId: 'message_plan', type: 'plan_draft', draft: {
+        id: 'plan_draft_1',
+        sessionId: 'session_1',
+        turnId: 'turn_1',
+        markdown: '# 计划\n\n- 检查',
+        status: 'pending',
+        revision: 1,
+        feedbackHistory: [],
+        createdAt: 2,
+      }, createdAt: 2 },
+      { id: 'confirmation_1', messageId: 'message_plan', type: 'plan_confirmation', confirmation: {
+        id: 'plan_confirmation_1',
+        sessionId: 'session_1',
+        turnId: 'turn_1',
+        contractId: 'contract_1',
+        planItemIds: ['plan_1'],
+        status: 'pending',
+        riskLevel: 'low',
+        reason: '确认计划',
+        createdAt: 3,
+      }, createdAt: 3 },
+    ]
+
+    expect(collectChatItems(parts).map(item => item.type)).toEqual(['user_text', 'plan_draft', 'plan_confirmation'])
   })
 
   it('maps operation names to icon kinds', () => {

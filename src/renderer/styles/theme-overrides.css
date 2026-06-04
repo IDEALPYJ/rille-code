@@ -274,7 +274,8 @@
   backdrop-filter: blur(14px);
 }
 
-.conversation-area .agent-compose textarea {
+.conversation-area .agent-compose textarea,
+.conversation-area .agent-compose .agent-compose-rich-editor {
   min-height: 42px;
   max-height: 120px;
   padding: 4px 0;
@@ -287,7 +288,8 @@
   box-shadow: none;
 }
 
-.conversation-area .agent-compose textarea:focus {
+.conversation-area .agent-compose textarea:focus,
+.conversation-area .agent-compose .agent-compose-rich-editor:focus {
   border-color: transparent;
   box-shadow: none;
 }
@@ -944,7 +946,8 @@ select {
   box-shadow: var(--ui-shadow-floating);
 }
 
-.conversation-area .agent-compose textarea {
+.conversation-area .agent-compose textarea,
+.conversation-area .agent-compose .agent-compose-rich-editor {
   min-height: 44px;
   font-size: var(--ui-font-lg);
   line-height: var(--ui-line-md);
@@ -2483,6 +2486,7 @@ select {
   inset: 0;
   z-index: -1;
   border: 1px solid rgba(31, 41, 55, 0.07);
+  border-top: 0;
   border-radius: inherit;
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 18px 46px rgba(15, 23, 42, 0.13);

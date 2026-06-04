@@ -1,17 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, ChevronDown, Clock3, Loader2, Pencil, Search, Terminal, Wrench } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AgentContextSnapshot, AgentTurn, AgentUsage, MessagePart, TraceEvent } from '../../../shared/agent/protocol'
-import { fileNameFromPath, MarkdownMessage, toolResultBadges } from './AgentPartCards'
+import { fileNameFromPath, MarkdownMessage, PlanConfirmationPart, toolResultBadges } from './AgentPartCards'
 
 // ── Chat item model ──
 
-type ChatItem =
+export type ChatItem =
   | { type: 'user_text'; text: string }
   | { type: 'assistant_text'; text: string }
   | { type: 'handoff'; summary: string; nextSteps: string[] }
   | { type: 'plan_question'; part: Extract<MessagePart, { type: 'plan_question' }> }
   | { type: 'plan_draft'; part: Extract<MessagePart, { type: 'plan_draft' }> }
+  | { type: 'plan_confirmation'; part: Extract<MessagePart, { type: 'plan_confirmation' }> }
 
 type ToolPart = Extract<MessagePart, { type: 'tool' }>
 
@@ -330,28 +331,43 @@ function estimateOutputTokens(parts: MessagePart[], usage: UsageSummary): number
   return Math.ceil(streamedChars / 4)
 }
 
-function useChatItems(parts: MessagePart[]): ChatItem[] {
-  return useMemo(() => {
-    const items: ChatItem[] = []
-    const lastToolIndex = parts.reduce((latest, part, index) => part.type === 'tool' && part.call.name !== 'model_config' ? index : latest, -1)
-    for (let index = 0; index < parts.length; index += 1) {
-      const part = parts[index]
-      if (part.type === 'text') {
-        if (part.role === 'user') items.push({ type: 'user_text', text: part.text })
-        if (part.role === 'assistant' && (lastToolIndex === -1 || index > lastToolIndex)) {
-          const text = stripVerificationSection(part.text)
-          if (text.trim()) items.push({ type: 'assistant_text', text })
-        }
+export function collectChatItems(parts: MessagePart[]): ChatItem[] {
+  const items: ChatItem[] = []
+  const lastToolIndex = parts.reduce((latest, part, index) => part.type === 'tool' && part.call.name !== 'model_config' ? index : latest, -1)
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index]
+    if (part.type === 'text') {
+      if (part.role === 'user') items.push({ type: 'user_text', text: part.text })
+      if (part.role === 'assistant' && (lastToolIndex === -1 || index > lastToolIndex)) {
+        const text = stripVerificationSection(part.text)
+        if (text.trim()) items.push({ type: 'assistant_text', text })
       }
-      if (part.type === 'handoff') {
-        const filtered = stripVerificationSection(part.handoff.summary)
-        if (filtered) items.push({ type: 'handoff', summary: filtered, nextSteps: part.handoff.nextSteps })
-      }
-      if (part.type === 'plan_question') items.push({ type: 'plan_question', part })
-      if (part.type === 'plan_draft' && part.draft.status !== 'superseded') items.push({ type: 'plan_draft', part })
     }
-    return items
-  }, [parts])
+    if (part.type === 'handoff') {
+      const filtered = stripVerificationSection(part.handoff.summary)
+      if (filtered) items.push({ type: 'handoff', summary: filtered, nextSteps: part.handoff.nextSteps })
+    }
+    if (part.type === 'plan_question') items.push({ type: 'plan_question', part })
+    if (part.type === 'plan_draft' && part.draft.status !== 'superseded') items.push({ type: 'plan_draft', part })
+    if (part.type === 'plan_confirmation') items.push({ type: 'plan_confirmation', part })
+  }
+  return items
+}
+
+function useChatItems(parts: MessagePart[]): ChatItem[] {
+  return useMemo(() => collectChatItems(parts), [parts])
+}
+
+export function shouldShowRunHeader(input: {
+  runStepsLength: number
+  activeTurn?: AgentTurn | null
+  runMeta?: TurnRunMeta | null
+  usage: Pick<UsageSummary, 'inputTokens' | 'outputTokens'>
+}): boolean {
+  return input.runStepsLength > 0
+    || Boolean(input.activeTurn || input.runMeta)
+    || input.usage.inputTokens > 0
+    || input.usage.outputTokens > 0
 }
 
 // ── Tool summary expandable line ──
@@ -611,8 +627,9 @@ export function ChatTurnView({
   }, [isRunning, runMeta?.turnId])
 
   const userItems = items.filter(item => item.type === 'user_text')
-  const finalItems = items.filter(item => item.type === 'assistant_text' || item.type === 'handoff' || item.type === 'plan_question' || item.type === 'plan_draft')
-  const showHeader = runSteps.length > 0 || Boolean(activeTurn || runMeta) || usage.inputTokens || usage.outputTokens
+  const finalItems = items.filter(item => item.type === 'assistant_text' || item.type === 'handoff' || item.type === 'plan_question' || item.type === 'plan_draft' || item.type === 'plan_confirmation')
+  const showHeader = shouldShowRunHeader({ runStepsLength: runSteps.length, activeTurn, runMeta, usage })
+  const handlePlanConfirmationResolved = useCallback(() => {}, [])
 
   return (
     <div className="agent-turn-view">
@@ -665,6 +682,9 @@ export function ChatTurnView({
         }
         if (item.type === 'plan_draft') {
           return <PlanDraftCard key={`plan-draft-${item.part.draft.id}`} part={item.part} sessionId={sessionId} context={context} />
+        }
+        if (item.type === 'plan_confirmation') {
+          return <PlanConfirmationPart key={`plan-confirmation-${item.part.confirmation.id}-${item.part.confirmation.status}`} part={item.part} sessionId={sessionId} onResolved={handlePlanConfirmationResolved} />
         }
         return null
       })}

@@ -24,7 +24,7 @@ import type {
 } from '../../../shared/agent/protocol'
 import type { OpenFile } from '../../App'
 import type { EditorDiagnostic } from '../Editor'
-import { expandComposerDraft, shouldShowSlashActions, slashActionAt, slashActions, type SlashActionId } from './workbenchState'
+import { composerInlineModeLabel, expandComposerDraft, removeLeadingSlashAction, shouldShowSlashActions, slashActionAt, slashActions, type SlashActionId } from './workbenchState'
 import {
   fileNameFromPath,
   shortModelLabel,
@@ -150,6 +150,18 @@ function ApprovalPopover({ request, onDecision }: {
 
 type EditProposalAction = 'apply_one' | 'apply_all' | 'reject'
 
+function isSelectionAtDraftStart(editor: HTMLDivElement | null): boolean {
+  if (!editor) return false
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return false
+  const draftNode = editor.querySelector('[data-compose-draft]')
+  if (!draftNode) return false
+  const range = selection.getRangeAt(0)
+  if (range.startContainer === draftNode) return range.startOffset === 0
+  if (range.startContainer === draftNode.firstChild) return range.startOffset === 0
+  return false
+}
+
 function SlashActionPopover({
   selectedIndex,
   onSelect,
@@ -266,7 +278,11 @@ export function AgentPanel(props: Props) {
   const [openComposeMenu, setOpenComposeMenu] = useState<'mode' | 'model' | null>(null)
   const threadRef = useRef<HTMLDivElement | null>(null)
   const composeRef = useRef<HTMLFormElement | null>(null)
+  const richEditorRef = useRef<HTMLDivElement | null>(null)
   const submittedAtRef = useRef<number | null>(null)
+  const draftRef = useRef(draft)
+  const onSessionChangeRef = useRef(props.onSessionChange)
+  const onFileAppliedRef = useRef(props.onFileApplied)
   const session = props.session
   const displaySessionId = props.sessionId ?? session?.id ?? null
   const submitSessionId = props.submitSessionId || session?.id || null
@@ -275,9 +291,18 @@ export function AgentPanel(props: Props) {
   const showPermissionMenu = props.showPermissionMenu !== false && persistHistory
 
   useEffect(() => {
+    draftRef.current = draft
+  }, [draft])
+
+  useEffect(() => {
+    onSessionChangeRef.current = props.onSessionChange
+    onFileAppliedRef.current = props.onFileApplied
+  })
+
+  useEffect(() => {
     const unsubscribe = window.rille.onAgentEvent((event: AgentEvent) => {
       if (event.type === 'session.created' || event.type === 'session.updated') {
-        if (displaySessionId && event.session.id === displaySessionId) props.onSessionChange(event.session)
+        if (displaySessionId && event.session.id === displaySessionId) onSessionChangeRef.current(event.session)
         return
       }
       if (!displaySessionId) return
@@ -329,7 +354,7 @@ export function AgentPanel(props: Props) {
       } else if (event.type === 'edit.proposed') {
         setProposals(prev => ({ ...prev, [event.proposal.id]: event.proposal }))
         if (event.proposal.state === 'applied') {
-          props.onFileApplied?.(event.proposal.filePath, event.proposal.modifiedContent)
+          onFileAppliedRef.current?.(event.proposal.filePath, event.proposal.modifiedContent)
         }
       } else if (event.type === 'approval.requested') {
         setApprovals(prev => ({ ...prev, [event.request.id]: event.request }))
@@ -344,7 +369,7 @@ export function AgentPanel(props: Props) {
       }
     })
     return unsubscribe
-  }, [displaySessionId, props.onFileApplied, props.onSessionChange])
+  }, [displaySessionId])
 
   useEffect(() => {
     let cancelled = false
@@ -367,7 +392,7 @@ export function AgentPanel(props: Props) {
     }
     window.rille.agentResumeSession(displaySessionId)
       .then(resumed => {
-        if (!cancelled) props.onSessionChange(resumed)
+        if (!cancelled) onSessionChangeRef.current(resumed)
       })
       .catch(createError => {
         if (!cancelled) setError(createError instanceof Error ? createError.message : 'Agent 会话创建失败。')
@@ -375,7 +400,7 @@ export function AgentPanel(props: Props) {
     return () => {
       cancelled = true
     }
-  }, [displaySessionId, persistHistory, props.onSessionChange])
+  }, [displaySessionId, persistHistory])
 
   const refreshModels = useCallback(async () => {
     setModelStore(await window.rille.agentListModelProfiles())
@@ -412,6 +437,21 @@ export function AgentPanel(props: Props) {
   const isRunning = session?.status === 'running' || Boolean(activeTurn)
   const showSlashMenu = allowSlashActions && !composerMode && shouldShowSlashActions(draft)
 
+  useEffect(() => {
+    if (!composerMode) return
+    const editor = richEditorRef.current
+    const textNode = editor?.querySelector('[data-compose-draft]')
+    if (!editor || !textNode) return
+    if (textNode.textContent !== draft) textNode.textContent = draft
+    const selection = window.getSelection()
+    const range = document.createRange()
+    range.selectNodeContents(textNode)
+    range.collapse(false)
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    editor.focus()
+  }, [composerMode])
+
   const runCompact = useCallback(async () => {
     if (!session) return
     try {
@@ -426,12 +466,12 @@ export function AgentPanel(props: Props) {
   const selectSlashAction = useCallback((id: SlashActionId) => {
     if (id === 'chat') {
       setComposerMode('chat')
-      setDraft('')
+      setDraft(value => removeLeadingSlashAction(value))
       return
     }
     if (id === 'plan') {
       setComposerMode('plan')
-      setDraft('')
+      setDraft(value => removeLeadingSlashAction(value))
       return
     }
     if (id === 'compact') {
@@ -442,8 +482,17 @@ export function AgentPanel(props: Props) {
     setDraft('')
   }, [props.onOpenBtw, runCompact])
 
-  const submit = useCallback(async () => {
-    const text = expandComposerDraft(draft.trim(), { activeFile: props.activeFile, cursor: props.cursor })
+  const updateDraftFromRichEditor = useCallback((): string => {
+    const textNode = richEditorRef.current?.querySelector('[data-compose-draft]')
+    const nextDraft = textNode?.textContent ?? ''
+    draftRef.current = nextDraft
+    setDraft(nextDraft)
+    return nextDraft
+  }, [])
+
+  const submit = useCallback(async (draftOverride?: string) => {
+    const sourceDraft = draftOverride ?? draftRef.current
+    const text = expandComposerDraft(sourceDraft.trim(), { activeFile: props.activeFile, cursor: props.cursor })
     if (!text || !session || isRunning) return
     try {
       const latestConfig = await window.rille.agentGetConfig()
@@ -463,7 +512,7 @@ export function AgentPanel(props: Props) {
       submittedAtRef.current = null
       setError(submitError instanceof Error ? submitError.message : '提交失败。')
     }
-  }, [composerMode, draft, isRunning, props, session, submitSessionId])
+  }, [composerMode, isRunning, props, session, submitSessionId])
 
   const interrupt = useCallback(async () => {
     if (!session || !activeTurn) return
@@ -579,39 +628,58 @@ export function AgentPanel(props: Props) {
           />
         )}
         <div className="agent-compose-input-row">
-          {composerMode && (
-            <span className={'agent-compose-chip ' + composerMode} aria-label={composerMode === 'plan' ? '计划模式' : '聊天模式'}>
-              {composerMode === 'plan' ? <ListChecks size={14} /> : <MessageCircle size={14} />}
-              {composerMode === 'plan' ? '计划' : '聊天'}
-            </span>
+          {composerMode ? (
+            <div
+              ref={richEditorRef}
+              className="agent-compose-rich-editor"
+              contentEditable
+              role="textbox"
+              aria-multiline="true"
+              suppressContentEditableWarning
+              onInput={updateDraftFromRichEditor}
+              onKeyDown={event => {
+                if (event.key === 'Backspace' && (!draftRef.current || isSelectionAtDraftStart(richEditorRef.current))) {
+                  event.preventDefault()
+                  setComposerMode(null)
+                  return
+                }
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  const nextDraft = updateDraftFromRichEditor()
+                  void submit(nextDraft)
+                }
+              }}
+            >
+              <span contentEditable={false} className="agent-compose-inline-mode">
+                {composerMode === 'plan' ? <ListChecks size={13} /> : <MessageCircle size={13} />}
+                <span>{composerInlineModeLabel(composerMode)}</span>
+              </span>
+              <span data-compose-draft>{draft}</span>
+            </div>
+          ) : (
+            <textarea
+              value={draft}
+              rows={2}
+              placeholder=""
+              onChange={event => setDraft(event.target.value)}
+              onKeyDown={event => {
+                if (showSlashMenu && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                  event.preventDefault()
+                  setSlashIndex(index => slashActionAt(index, event.key === 'ArrowDown' ? 1 : -1))
+                  return
+                }
+                if (showSlashMenu && event.key === 'Enter') {
+                  event.preventDefault()
+                  selectSlashAction(slashActions[slashIndex]?.id ?? 'chat')
+                  return
+                }
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  void submit()
+                }
+              }}
+            />
           )}
-          <textarea
-            value={draft}
-            rows={2}
-            placeholder=""
-            onChange={event => setDraft(event.target.value)}
-            onKeyDown={event => {
-              if (showSlashMenu && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
-                event.preventDefault()
-                setSlashIndex(index => slashActionAt(index, event.key === 'ArrowDown' ? 1 : -1))
-                return
-              }
-              if (showSlashMenu && event.key === 'Enter') {
-                event.preventDefault()
-                selectSlashAction(slashActions[slashIndex]?.id ?? 'chat')
-                return
-              }
-              if (event.key === 'Backspace' && composerMode && !draft && event.currentTarget.selectionStart === 0) {
-                event.preventDefault()
-                setComposerMode(null)
-                return
-              }
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault()
-                void submit()
-              }
-            }}
-          />
         </div>
         <div className="agent-compose-actions">
           {showPermissionMenu && <div className="agent-compose-menu-wrap mode-menu">

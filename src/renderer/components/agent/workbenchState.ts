@@ -16,6 +16,7 @@ export interface ComposerContext {
 }
 
 export type SlashActionId = 'chat' | 'plan' | 'compact' | 'btw'
+export type ComposerInlineMode = Extract<SlashActionId, 'chat' | 'plan'>
 
 export interface SlashAction {
   id: SlashActionId
@@ -37,6 +38,14 @@ export function shouldShowSlashActions(input: string): boolean {
 
 export function slashActionAt(current: number, direction: 1 | -1): number {
   return (current + direction + slashActions.length) % slashActions.length
+}
+
+export function removeLeadingSlashAction(input: string): string {
+  return input.replace(/^\/[^\s/]*(?:\s+)?/, '')
+}
+
+export function composerInlineModeLabel(mode: ComposerInlineMode): string {
+  return mode === 'plan' ? '计划' : '聊天'
 }
 
 export function summarizeAgentWorkbench(parts: MessagePart[], events: AgentEvent[]): AgentRiskSummary {

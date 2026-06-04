@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent, MessagePart, TraceEvent } from '../../src/shared/agent/protocol'
-import { expandComposerDraft, shouldShowSlashActions, slashActionAt, slashActions, subagentNodes, summarizeAgentWorkbench, traceDebugSummary } from '../../src/renderer/components/agent/workbenchState'
+import { composerInlineModeLabel, expandComposerDraft, removeLeadingSlashAction, shouldShowSlashActions, slashActionAt, slashActions, subagentNodes, summarizeAgentWorkbench, traceDebugSummary } from '../../src/renderer/components/agent/workbenchState'
 
 describe('agent workbench state helpers', () => {
   it('computes risk, verification, review, and next action summary', () => {
@@ -50,6 +50,18 @@ describe('agent workbench state helpers', () => {
     expect(shouldShowSlashActions('/btw hello')).toBe(false)
     expect(slashActionAt(0, -1)).toBe(3)
     expect(slashActionAt(3, 1)).toBe(0)
+  })
+
+  it('removes only the leading slash action token when selecting chat or plan', () => {
+    expect(removeLeadingSlashAction('/plan 请分析当前实现')).toBe('请分析当前实现')
+    expect(removeLeadingSlashAction('/chat\n第二行内容')).toBe('第二行内容')
+    expect(removeLeadingSlashAction('/')).toBe('')
+    expect(removeLeadingSlashAction('保留普通草稿')).toBe('保留普通草稿')
+  })
+
+  it('labels inline composer modes', () => {
+    expect(composerInlineModeLabel('plan')).toBe('计划')
+    expect(composerInlineModeLabel('chat')).toBe('聊天')
   })
 
   it('summarizes trace debug and subagent placeholder nodes', () => {

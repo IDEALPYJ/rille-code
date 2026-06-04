@@ -205,6 +205,21 @@ function parsePlanInteraction(text: string, sessionId: string, turnId: string): 
   return null
 }
 
+function createPlanDraftFromMarkdown(text: string, sessionId: string, turnId: string): PlanDraft | null {
+  const markdown = text.trim()
+  if (!markdown) return null
+  return {
+    id: `plan_draft_${randomUUID()}`,
+    sessionId,
+    turnId,
+    markdown,
+    status: 'pending',
+    revision: 1,
+    feedbackHistory: [],
+    createdAt: now(),
+  }
+}
+
 function cacheKeyForContext(sessionId: string, turnId: string, prompt: string): string {
   return `rille:${sessionId}:${turnId}:${prompt.length}:${prompt.slice(0, 80)}`
 }
@@ -527,6 +542,18 @@ export class AgentLoop {
               messageId: assistantMessageId,
               type: 'plan_draft',
               draft: interaction.draft,
+              createdAt: now(),
+            })
+            this.emitStage(assistantMessageId, 'completed', '计划已生成')
+            return this.finalize('completed')
+          }
+          const draft = createPlanDraftFromMarkdown(action.text, this.options.session.id, this.options.turn.id)
+          if (draft) {
+            this.emitPart({
+              id: createPartId(),
+              messageId: assistantMessageId,
+              type: 'plan_draft',
+              draft,
               createdAt: now(),
             })
             this.emitStage(assistantMessageId, 'completed', '计划已生成')

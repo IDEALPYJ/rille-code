@@ -743,6 +743,37 @@ describe('AgentLoop context integration', () => {
     if (handoffEvent?.type !== 'handoff.created') return
     expect(handoffEvent.handoff.failedAttempts.length).toBeGreaterThanOrEqual(0)
   })
+
+  it('wraps plain markdown answers as plan drafts in plan mode', async () => {
+    callAgentModelMock.mockResolvedValueOnce('# 修复计划\n\n## Summary\n只读分析后再实现。')
+    const { AgentLoop } = await import('../../src/main/agent/runtime')
+    const runtimeSession = session()
+    const runtimeTurn = turn()
+    const runtimeContext = cleanContext()
+    const contract = diagnosticsOnlyContract(runtimeSession, runtimeTurn, runtimeContext)
+    const planItems = createInitialPlanItems(contract, 1)
+    const events: AgentEvent[] = []
+
+    const reason = await new AgentLoop({
+      session: runtimeSession,
+      turn: runtimeTurn,
+      text: runtimeTurn.text,
+      context: runtimeContext,
+      taskContract: contract,
+      planItems,
+      signal: new AbortController().signal,
+      emit: event => events.push(event),
+      requestApproval: async () => ({ action: 'allow_once' }),
+      turnMode: 'plan',
+    }).run()
+
+    expect(reason).toBe('completed')
+    const createdParts = events
+      .filter((event): event is Extract<AgentEvent, { type: 'message.part.created' }> => event.type === 'message.part.created')
+      .map(event => event.part)
+    expect(createdParts.some(part => part.type === 'plan_draft' && part.draft.markdown.includes('修复计划'))).toBe(true)
+    expect(createdParts.some(part => part.type === 'text' && part.role === 'assistant' && part.text.includes('修复计划'))).toBe(false)
+  })
 })
 
 describe('AgentLoop evaluator integration', () => {
